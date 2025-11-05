@@ -363,6 +363,14 @@ class ApiShipFetchHelper
 		// Выполняем batch INSERT если есть данные
 		$inserted = 0;
 		if (!empty($values)) {
+			// Безусловное логирование для отладки
+			Log::add(
+				sprintf('fetchPointsStep: provider=%s, offset=%d, values_count=%d, chunk_count=%d',
+					$provider, $offset, count($values), count($chunk)),
+				Log::INFO,
+				'com_radicalmart_telegram'
+			);
+
 			$sql = "INSERT INTO " . $db->quoteName('#__radicalmart_apiship_points') . "
 				(" . $db->quoteName('provider') . ", " . $db->quoteName('ext_id') . ", "
 				. $db->quoteName('title') . ", " . $db->quoteName('address') . ", "

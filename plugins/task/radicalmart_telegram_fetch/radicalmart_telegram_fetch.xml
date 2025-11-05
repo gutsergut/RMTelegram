@@ -1,7 +1,7 @@
 <?xml version="1.0" encoding="utf-8"?>
 <extension type="plugin" group="task" method="upgrade" version="5.0">
     <name>plg_task_radicalmart_telegram_fetch</name>
-    <version>0.1.20</version>
+    <version>0.1.21</version>
     <creationDate>2025-10-26</creationDate>
     <author>Project Team</author>
     <license>GPL</license>
