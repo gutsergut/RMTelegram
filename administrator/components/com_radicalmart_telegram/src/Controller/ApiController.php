@@ -92,26 +92,17 @@ class ApiController extends BaseController
 	 */
 	public function apishipfetchStep()
 	{
-		// КРИТИЧЕСКИ ВАЖНО: Логируем ДО очистки буферов
+		// Логируем в отдельный файл для отладки
 		$logFile = JPATH_ADMINISTRATOR . '/logs/com_radicalmart_telegram_debug.log';
 		$timestamp = date('Y-m-d H:i:s');
-		@file_put_contents($logFile,
-			"[$timestamp] ApiController::apishipfetchStep CALLED" . PHP_EOL,
-			FILE_APPEND);
-		@file_put_contents($logFile,
-			"[$timestamp] ob_get_level: " . ob_get_level() . PHP_EOL,
-			FILE_APPEND);
+		@file_put_contents($logFile, "[$timestamp] === NEW REQUEST ===" . PHP_EOL, FILE_APPEND);
 
-		// Очищаем все буферы вывода
-		while (ob_get_level()) {
-			ob_end_clean();
-		}
+		// НЕ ИСПОЛЬЗУЕМ ob_end_clean - он крашит скрипт!
+		// Просто выводим JSON напрямую
 
-		@file_put_contents($logFile,
-			"[$timestamp] After ob_end_clean, level: " . ob_get_level() . PHP_EOL,
-			FILE_APPEND);		// Устанавливаем JSON заголовки
-		header('Content-Type: application/json; charset=utf-8');
-		header('Cache-Control: no-cache, must-revalidate');
+		// Устанавливаем JSON заголовки
+		@header('Content-Type: application/json; charset=utf-8');
+		@header('Cache-Control: no-cache, must-revalidate');
 		@file_put_contents($logFile, "[$timestamp] Headers set" . PHP_EOL, FILE_APPEND);
 
 		$app = Factory::getApplication();
