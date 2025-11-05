@@ -370,8 +370,31 @@ class ApiShipFetchHelper
 					" . $db->quoteName('meta') . " = VALUES(" . $db->quoteName('meta') . "),
 					" . $db->quoteName('updated_at') . " = VALUES(" . $db->quoteName('updated_at') . ")";
 
-			$db->setQuery($sql)->execute();
-			$inserted = count($values);
+			try {
+				$db->setQuery($sql)->execute();
+				$inserted = count($values);
+
+				// Логируем успех
+				$params = ComponentHelper::getParams('com_radicalmart_telegram');
+				if ($params->get('logs_enabled', 1)) {
+					Log::add(
+						sprintf('Inserted %d points for provider %s at offset %d', $inserted, $provider, $offset),
+						Log::INFO,
+						'com_radicalmart_telegram'
+					);
+				}
+			} catch (\Exception $e) {
+				// Логируем ошибку
+				$params = ComponentHelper::getParams('com_radicalmart_telegram');
+				if ($params->get('logs_enabled', 1)) {
+					Log::add(
+						sprintf('Error inserting points for %s: %s', $provider, $e->getMessage()),
+						Log::ERROR,
+						'com_radicalmart_telegram'
+					);
+				}
+				throw $e;
+			}
 		}
 
 		return [
