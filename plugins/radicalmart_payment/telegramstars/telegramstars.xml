@@ -2,7 +2,7 @@
 <extension type="plugin" group="radicalmart_payment" method="upgrade" version="5.0">
     <name>plg_radicalmart_payment_telegramstars</name>
     <author>Project Team</author>
-    <version>0.1.22</version>
+    <version>0.1.23</version>
     <description>PLG_RADICALMART_PAYMENT_TELEGRAMSTARS_XML_DESCRIPTION</description>
     <files>
         <filename plugin="telegramstars">telegramstars.php</filename>

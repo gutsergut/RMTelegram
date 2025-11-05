@@ -92,8 +92,15 @@ class ApiController extends BaseController
 	 */
 	public function apishipfetchStep()
 	{
-		// Безусловное логирование вызова контроллера
-		Log::add('ApiController::apishipfetchStep CALLED', Log::INFO, 'com_radicalmart_telegram');
+		// КРИТИЧЕСКИ ВАЖНО: Логируем ДО очистки буферов
+		try {
+			$logFile = JPATH_ADMINISTRATOR . '/logs/com_radicalmart_telegram.log.php';
+			file_put_contents($logFile,
+				date('[Y-m-d H:i:s]') . ' ApiController::apishipfetchStep CALLED' . PHP_EOL,
+				FILE_APPEND | LOCK_EX);
+		} catch (\Exception $e) {
+			// Игнорируем ошибки логирования
+		}
 
 		// Очищаем все буферы вывода
 		while (ob_get_level()) {
