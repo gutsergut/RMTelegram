@@ -93,23 +93,26 @@ class ApiController extends BaseController
 	public function apishipfetchStep()
 	{
 		// КРИТИЧЕСКИ ВАЖНО: Логируем ДО очистки буферов
-		try {
-			$logFile = JPATH_ADMINISTRATOR . '/logs/com_radicalmart_telegram.log.php';
-			file_put_contents($logFile,
-				date('[Y-m-d H:i:s]') . ' ApiController::apishipfetchStep CALLED' . PHP_EOL,
-				FILE_APPEND | LOCK_EX);
-		} catch (\Exception $e) {
-			// Игнорируем ошибки логирования
-		}
+		$logFile = JPATH_ADMINISTRATOR . '/logs/com_radicalmart_telegram_debug.log';
+		$timestamp = date('Y-m-d H:i:s');
+		@file_put_contents($logFile,
+			"[$timestamp] ApiController::apishipfetchStep CALLED" . PHP_EOL,
+			FILE_APPEND);
+		@file_put_contents($logFile,
+			"[$timestamp] ob_get_level: " . ob_get_level() . PHP_EOL,
+			FILE_APPEND);
 
 		// Очищаем все буферы вывода
 		while (ob_get_level()) {
 			ob_end_clean();
 		}
 
-		// Устанавливаем JSON заголовки
+		@file_put_contents($logFile,
+			"[$timestamp] After ob_end_clean, level: " . ob_get_level() . PHP_EOL,
+			FILE_APPEND);		// Устанавливаем JSON заголовки
 		header('Content-Type: application/json; charset=utf-8');
 		header('Cache-Control: no-cache, must-revalidate');
+		@file_put_contents($logFile, "[$timestamp] Headers set" . PHP_EOL, FILE_APPEND);
 
 		$app = Factory::getApplication();
 		$input = $app->input;
@@ -117,9 +120,9 @@ class ApiController extends BaseController
 		// Проверяем токен
 		try {
 			$this->checkToken();
-			Log::add('ApiController::apishipfetchStep token OK', Log::INFO, 'com_radicalmart_telegram');
+			@file_put_contents($logFile, "[$timestamp] Token OK" . PHP_EOL, FILE_APPEND);
 		} catch (\Exception $e) {
-			Log::add('ApiController::apishipfetchStep token FAIL: ' . $e->getMessage(), Log::ERROR, 'com_radicalmart_telegram');
+			@file_put_contents($logFile, "[$timestamp] Token FAIL: " . $e->getMessage() . PHP_EOL, FILE_APPEND);
 			echo json_encode(['success' => false, 'error' => 'CSRF token validation failed']);
 			jexit();
 		}
@@ -130,15 +133,18 @@ class ApiController extends BaseController
 		$offset = $input->getInt('offset', 0);
 		$batchSize = $input->getInt('batchSize', 500);
 
-		Log::add(sprintf('ApiController::apishipfetchStep params: provider=%s, offset=%d, batchSize=%d',
-			$provider, $offset, $batchSize), Log::INFO, 'com_radicalmart_telegram');
+		@file_put_contents($logFile,
+			sprintf("[$timestamp] Params: provider=%s, offset=%d, batchSize=%d" . PHP_EOL, $provider, $offset, $batchSize),
+			FILE_APPEND);
 
 		try {
+			@file_put_contents($logFile, "[$timestamp] Calling fetchPointsStep..." . PHP_EOL, FILE_APPEND);
 			$result = ApiShipFetchHelper::fetchPointsStep($provider, $offset, $batchSize);
-			Log::add('ApiController::apishipfetchStep SUCCESS', Log::INFO, 'com_radicalmart_telegram');
+			@file_put_contents($logFile, "[$timestamp] fetchPointsStep returned: " . json_encode($result) . PHP_EOL, FILE_APPEND);
 			echo json_encode($result);
 		} catch (\Throwable $e) {
-			Log::add('ApiController::apishipfetchStep ERROR: ' . $e->getMessage(), Log::ERROR, 'com_radicalmart_telegram');
+			@file_put_contents($logFile, "[$timestamp] ERROR: " . $e->getMessage() . PHP_EOL, FILE_APPEND);
+			@file_put_contents($logFile, "[$timestamp] Trace: " . $e->getTraceAsString() . PHP_EOL, FILE_APPEND);
 			echo json_encode([
 				'success' => false,
 				'error' => $e->getMessage(),
