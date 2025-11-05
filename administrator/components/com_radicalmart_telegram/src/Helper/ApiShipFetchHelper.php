@@ -189,13 +189,22 @@ class ApiShipFetchHelper
 								" . $db->quoteName('meta') . " = VALUES(" . $db->quoteName('meta') . "),
 								" . $db->quoteName('updated_at') . " = VALUES(" . $db->quoteName('updated_at') . ")";
 
-						$db->setQuery($sql)->execute();
+						try {
+							$db->setQuery($sql)->execute();
 
-						Log::add(
-							"ApiShip provider '{$prov}': inserted " . count($values) . " points",
-							Log::INFO,
-							'com_radicalmart_telegram'
-						);
+							Log::add(
+								"ApiShip provider '{$prov}': inserted " . count($values) . " points at offset {$offset}",
+								Log::INFO,
+								'com_radicalmart_telegram'
+							);
+						} catch (\Exception $e) {
+							Log::add(
+								"ApiShip provider '{$prov}': INSERT ERROR at offset {$offset}: " . $e->getMessage(),
+								Log::ERROR,
+								'com_radicalmart_telegram'
+							);
+							throw $e;
+						}
 					}					$offset += $limit;
 				}
 
