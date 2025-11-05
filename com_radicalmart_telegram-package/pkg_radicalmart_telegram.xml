@@ -2,7 +2,7 @@
 <extension type="package" method="upgrade" version="5.0">
     <name>pkg_radicalmart_telegram</name>
     <author>Project Team</author>
-    <version>0.1.21</version>
+    <version>0.1.22</version>
     <description>PKG_RADICALMART_TELEGRAM_DESCRIPTION</description>
     <packagename>radicalmart_telegram</packagename>
     <packager>RadicalMart</packager>

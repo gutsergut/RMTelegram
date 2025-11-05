@@ -9,6 +9,7 @@ namespace Joomla\Component\RadicalMartTelegram\Administrator\Controller;
 
 use Joomla\CMS\Factory;
 use Joomla\CMS\Language\Text;
+use Joomla\CMS\Log\Log;
 use Joomla\CMS\MVC\Controller\BaseController;
 use Joomla\CMS\Router\Route;
 use Joomla\Component\RadicalMartTelegram\Administrator\Helper\ApiShipFetchHelper;
@@ -91,6 +92,9 @@ class ApiController extends BaseController
 	 */
 	public function apishipfetchStep()
 	{
+		// Безусловное логирование вызова контроллера
+		Log::add('ApiController::apishipfetchStep CALLED', Log::INFO, 'com_radicalmart_telegram');
+
 		// Очищаем все буферы вывода
 		while (ob_get_level()) {
 			ob_end_clean();
@@ -106,7 +110,9 @@ class ApiController extends BaseController
 		// Проверяем токен
 		try {
 			$this->checkToken();
+			Log::add('ApiController::apishipfetchStep token OK', Log::INFO, 'com_radicalmart_telegram');
 		} catch (\Exception $e) {
+			Log::add('ApiController::apishipfetchStep token FAIL: ' . $e->getMessage(), Log::ERROR, 'com_radicalmart_telegram');
 			echo json_encode(['success' => false, 'error' => 'CSRF token validation failed']);
 			jexit();
 		}
@@ -117,10 +123,15 @@ class ApiController extends BaseController
 		$offset = $input->getInt('offset', 0);
 		$batchSize = $input->getInt('batchSize', 500);
 
+		Log::add(sprintf('ApiController::apishipfetchStep params: provider=%s, offset=%d, batchSize=%d',
+			$provider, $offset, $batchSize), Log::INFO, 'com_radicalmart_telegram');
+
 		try {
 			$result = ApiShipFetchHelper::fetchPointsStep($provider, $offset, $batchSize);
+			Log::add('ApiController::apishipfetchStep SUCCESS', Log::INFO, 'com_radicalmart_telegram');
 			echo json_encode($result);
 		} catch (\Throwable $e) {
+			Log::add('ApiController::apishipfetchStep ERROR: ' . $e->getMessage(), Log::ERROR, 'com_radicalmart_telegram');
 			echo json_encode([
 				'success' => false,
 				'error' => $e->getMessage(),
