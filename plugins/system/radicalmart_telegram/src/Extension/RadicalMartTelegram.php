@@ -14,16 +14,20 @@ use Joomla\CMS\Factory;
 use Joomla\Registry\Registry;
 use Joomla\CMS\Language\Text;
 use Joomla\CMS\Menu\AdministratorMenuItem;
+use Joomla\CMS\Component\ComponentHelper;
+use Joomla\Event\Event;
 
 class RadicalMartTelegram extends CMSPlugin implements SubscriberInterface
 {
     protected $autoloadLanguage = true;
+    protected bool $removeAdministratorMenu = false;
 
     public static function getSubscribedEvents(): array
     {
         return [
             'onRadicalMartAfterChangeOrderStatus' => 'onAfterChangeOrderStatus',
             'onRadicalMartPreprocessSubmenu' => 'onRadicalMartPreprocessSubmenu',
+            'onPreprocessMenuItems' => 'onPreprocessMenuItems',
         ];
     }
 
@@ -99,7 +103,61 @@ class RadicalMartTelegram extends CMSPlugin implements SubscriberInterface
             'params'    => new Registry(),
         ]));
 
+        $root->addChild(new AdministratorMenuItem([
+            'title'     => 'COM_RADICALMART_TELEGRAM_MENU_CONFIGURATION',
+            'type'      => 'component',
+            'link'      => 'index.php?option=com_config&view=component&component=com_radicalmart_telegram',
+            'element'   => 'com_config',
+            'class'     => '',
+            'ajaxbadge' => null,
+            'dashboard' => null,
+            'scope'     => 'default',
+            'params'    => new Registry(),
+        ]));
+
         $results[] = $root;
+    }
+
+    public function onPreprocessMenuItems(Event $event): void
+    {
+        $context  = $event->getArgument(0);
+        $children = $event->getArgument(1);
+
+        $this->removeTelegramAdministratorComponentsMenuItem($context, $children);
+
+        $event->setArgument(1, $children);
+    }
+
+    protected function removeTelegramAdministratorComponentsMenuItem(?string $context = null, array $children = []): void
+    {
+        $app = Factory::getApplication();
+
+        if (!$app->isClient('administrator') || $context !== 'com_menus.administrator.module' || $this->removeAdministratorMenu)
+        {
+            return;
+        }
+
+        $component = ComponentHelper::getComponent('com_radicalmart_telegram');
+        if (!$component || empty($component->id))
+        {
+            return;
+        }
+
+        foreach ($children as $child)
+        {
+            if ($child instanceof AdministratorMenuItem
+                && $child->type === 'component'
+                && (int) $child->component_id === (int) $component->id)
+            {
+                $parent = $child->getParent();
+                if ($parent)
+                {
+                    $parent->removeChild($child);
+                }
+
+                $this->removeAdministratorMenu = true;
+            }
+        }
     }
 
     public function onAfterChangeOrderStatus(?string $context = null, ?object $order = null,

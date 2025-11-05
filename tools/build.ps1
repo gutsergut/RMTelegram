@@ -68,9 +68,9 @@ $PackageSource = Join-Path $Root 'com_radicalmart_telegram-package'
 Copy-Item -Path (Join-Path $PackageSource 'pkg_radicalmart_telegram.xml') -Destination $Stage -Force
 Copy-Item -Path (Join-Path $PackageSource 'script.php') -Destination $Stage -Force
 New-Item -ItemType Directory -Path (Join-Path $Stage 'language\ru-RU') -Force | Out-Null
-Copy-Item -Path (Join-Path $Root 'administrator\language\ru-RU\ru-RU.pkg_radicalmart_telegram.sys.ini') -Destination (Join-Path $Stage 'language\ru-RU') -Force
+Copy-Item -Path (Join-Path $Root 'language\ru-RU\ru-RU.pkg_radicalmart_telegram.sys.ini') -Destination (Join-Path $Stage 'language\ru-RU') -Force
 New-Item -ItemType Directory -Path (Join-Path $Stage 'language\en-GB') -Force | Out-Null
-Copy-Item -Path (Join-Path $Root 'administrator\language\en-GB\en-GB.pkg_radicalmart_telegram.sys.ini') -Destination (Join-Path $Stage 'language\en-GB') -Force
+Copy-Item -Path (Join-Path $Root 'language\en-GB\en-GB.pkg_radicalmart_telegram.sys.ini') -Destination (Join-Path $Stage 'language\en-GB') -Force
 
 $PackagesDir = Join-Path $Stage 'packages'
 if (Test-Path $PackagesDir) { Remove-Item -Recurse -Force $PackagesDir }

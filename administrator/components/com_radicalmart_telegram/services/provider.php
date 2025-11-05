@@ -39,12 +39,25 @@ return new class () implements ServiceProviderInterface {
 
         // Register console command (Joomla 5 auto-discovers tagged console commands)
         if (class_exists(ApiShipFetchCommand::class)) {
-            $container->set(ApiShipFetchCommand::class)
-                ->addTag('console.command', ['command' => 'com_radicalmart_telegram:apiship:fetch']);
+            $container->set(
+                ApiShipFetchCommand::class,
+                function () {
+                    return new ApiShipFetchCommand();
+                },
+                true
+            );
+            $container->tag('console.command', [ApiShipFetchCommand::class]);
         }
+
         if (class_exists(HousekeepCommand::class)) {
-            $container->set(HousekeepCommand::class)
-                ->addTag('console.command', ['command' => 'com_radicalmart_telegram:housekeep']);
+            $container->set(
+                HousekeepCommand::class,
+                function () {
+                    return new HousekeepCommand();
+                },
+                true
+            );
+            $container->tag('console.command', [HousekeepCommand::class]);
         }
     }
 };
