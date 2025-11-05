@@ -1,0 +1,14 @@
+{
+  "name": "com_radicalmart_telegram",
+  "version": "1.0.0",
+  "description": "Assets for RadicalMart Telegram component",
+  "assets": {
+    "com_radicalmart_telegram.imask": {
+      "js": [
+        "vendor/imask/imask.min.js"
+      ],
+      "dependencies": []
+    }
+  }
+}
+

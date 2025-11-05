@@ -1,0 +1,49 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<extension type="plugin" group="radicalmart_payment" method="upgrade" version="5.0">
+    <name>plg_radicalmart_payment_telegramcards</name>
+    <author>Project Team</author>
+    <version>0.1.0</version>
+    <description>Telegram Payments (cards) via YooKassa/Robokassa — sends invoice to chat</description>
+    <files>
+        <filename plugin="telegramcards">telegramcards.php</filename>
+    </files>
+    <languages folder="language">
+        <language tag="ru-RU">ru-RU/plg_radicalmart_payment_telegramcards.ini</language>
+    </languages>
+    <config>
+        <fields name="params">
+            <fieldset name="basic">
+                <field name="env" type="list" default="test" label="Environment" description="Payments environment">
+                    <option value="test">Test</option>
+                    <option value="prod">Production</option>
+                </field>
+                <field name="provider" type="list" default="yookassa" label="Provider" description="Cards provider">
+                    <option value="yookassa">YooKassa</option>
+                    <option value="robokassa">Robokassa</option>
+                </field>
+                <field name="yk_token_test" type="password" label="YooKassa provider_token (test)"/>
+                <field name="yk_token_prod" type="password" label="YooKassa provider_token (prod)"/>
+                <field name="rk_token_test" type="password" label="Robokassa provider_token (test)"/>
+                <field name="rk_token_prod" type="password" label="Robokassa provider_token (prod)"/>
+            </fieldset>
+            <fieldset name="refund">
+                <field name="yk_shop_id" type="text" label="YooKassa Shop ID"/>
+                <field name="yk_secret_key" type="password" label="YooKassa Secret Key"/>
+                <field name="yk_refund_url" type="text" default="https://api.yookassa.ru/v3/refunds" label="YooKassa Refund URL"/>
+                <field name="rk_login" type="text" label="Robokassa Login"/>
+                <field name="rk_password1" type="password" label="Robokassa Password1"/>
+                <field name="rk_password2" type="password" label="Robokassa Password2"/>
+                <field name="rk_refund_url" type="text" label="Robokassa Refund URL"/>
+                <field name="rk_http_method" type="list" default="GET" label="Robokassa HTTP method" description="Метод запроса к Refund API">
+                    <option value="GET">GET</option>
+                    <option value="POST">POST</option>
+                </field>
+                <field name="rk_culture" type="text" label="Robokassa Culture" description="Напр., ru"/>
+                <field name="rk_invoice_source" type="list" default="provider_charge_id" label="Robokassa InvoiceID source" description="Источник значения InvoiceID">
+                    <option value="provider_charge_id">Provider charge id (из Telegram successful_payment)</option>
+                    <option value="order_number">Order number</option>
+                </field>
+            </fieldset>
+        </fields>
+    </config>
+</extension>

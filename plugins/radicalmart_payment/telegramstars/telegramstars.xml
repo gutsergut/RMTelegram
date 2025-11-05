@@ -1,0 +1,25 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<extension type="plugin" group="radicalmart_payment" method="upgrade" version="5.0">
+    <name>plg_radicalmart_payment_telegramstars</name>
+    <author>Project Team</author>
+    <version>0.1.0</version>
+    <description>PLG_RADICALMART_PAYMENT_TELEGRAMSTARS_XML_DESCRIPTION</description>
+    <files>
+        <filename plugin="telegramstars">telegramstars.php</filename>
+    </files>
+    <languages folder="language">
+        <language tag="ru-RU">ru-RU/plg_radicalmart_payment_telegramstars.ini</language>
+    </languages>
+    <config>
+        <fields name="params">
+            <fieldset name="basic" label="PLG_RADICALMART_PAYMENT_TELEGRAMSTARS_FIELDSET_BASIC">
+                <field name="conversion_percent" type="number" default="5" step="0.1" label="PLG_RADICALMART_PAYMENT_TELEGRAMSTARS_CONV_LABEL" description="PLG_RADICALMART_PAYMENT_TELEGRAMSTARS_CONV_DESC"/>
+                <field name="rub_per_star" type="number" default="10" step="0.1" label="PLG_RADICALMART_PAYMENT_TELEGRAMSTARS_RUB_PER_STAR_LABEL" description="PLG_RADICALMART_PAYMENT_TELEGRAMSTARS_RUB_PER_STAR_DESC"/>
+                <field name="allowed_categories" type="text" label="PLG_RADICALMART_PAYMENT_TELEGRAMSTARS_ALLOWED_CATS_LABEL" description="PLG_RADICALMART_PAYMENT_TELEGRAMSTARS_ALLOWED_CATS_DESC"/>
+                <field name="allowed_products" type="text" label="PLG_RADICALMART_PAYMENT_TELEGRAMSTARS_ALLOWED_PROD_LABEL" description="PLG_RADICALMART_PAYMENT_TELEGRAMSTARS_ALLOWED_PROD_DESC"/>
+                <field name="excluded_categories" type="text" label="PLG_RADICALMART_PAYMENT_TELEGRAMSTARS_EXCLUDED_CATS_LABEL" description="PLG_RADICALMART_PAYMENT_TELEGRAMSTARS_EXCLUDED_CATS_DESC"/>
+                <field name="excluded_products" type="text" label="PLG_RADICALMART_PAYMENT_TELEGRAMSTARS_EXCLUDED_PROD_LABEL" description="PLG_RADICALMART_PAYMENT_TELEGRAMSTARS_EXCLUDED_PROD_DESC"/>
+            </fieldset>
+        </fields>
+    </config>
+</extension>

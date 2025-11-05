@@ -1,0 +1,24 @@
+<?xml version="1.0" encoding="utf-8"?>
+<form>
+  <fields name="">
+    <fieldset name="filter">
+      <field name="alias" type="text" label="COM_RADICALMART_TELEGRAM_FILTER_FIELD_ALIAS" description="COM_RADICALMART_TELEGRAM_FILTER_FIELD_ALIAS_DESC" required="true" />
+      <field name="label" type="text" label="COM_RADICALMART_TELEGRAM_FILTER_FIELD_LABEL" description="COM_RADICALMART_TELEGRAM_FILTER_FIELD_LABEL_DESC" />
+      <field name="type" type="list" default="text" label="COM_RADICALMART_TELEGRAM_FILTER_FIELD_TYPE" description="COM_RADICALMART_TELEGRAM_FILTER_FIELD_TYPE_DESC">
+        <option value="text">Text</option>
+        <option value="number">Number</option>
+        <option value="select">Select</option>
+        <option value="checkbox">Checkbox</option>
+        <option value="range">Range</option>
+      </field>
+      <field name="options" type="textarea" rows="4" label="COM_RADICALMART_TELEGRAM_FILTER_FIELD_OPTIONS" description="COM_RADICALMART_TELEGRAM_FILTER_FIELD_OPTIONS_DESC" />
+      <field name="placeholder" type="text" label="COM_RADICALMART_TELEGRAM_FILTER_FIELD_PLACEHOLDER" />
+      <field name="placeholder_from" type="text" label="COM_RADICALMART_TELEGRAM_FILTER_FIELD_PLACEHOLDER_FROM" />
+      <field name="placeholder_to" type="text" label="COM_RADICALMART_TELEGRAM_FILTER_FIELD_PLACEHOLDER_TO" />
+      <field name="enabled" type="radio" default="1" label="JENABLED">
+        <option value="1">JYES</option>
+        <option value="0">JNO</option>
+      </field>
+    </fieldset>
+  </fields>
+  </form>
