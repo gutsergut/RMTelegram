@@ -28,7 +28,70 @@ class RadicalMartTelegram extends CMSPlugin implements SubscriberInterface
             'onRadicalMartAfterChangeOrderStatus' => 'onAfterChangeOrderStatus',
             'onRadicalMartPreprocessSubmenu' => 'onRadicalMartPreprocessSubmenu',
             'onPreprocessMenuItems' => 'onPreprocessMenuItems',
+            'onAfterDispatch' => 'onAfterDispatch',
+            'onBeforeRender' => 'onBeforeRender',
+            'onAfterRender' => 'onAfterRender',
         ];
+    }
+
+    /**
+     * Early check to prevent EngageBox from rendering in WebApp
+     */
+    public function onAfterDispatch(): void
+    {
+        $app = Factory::getApplication();
+
+        if (!$app->isClient('site')) {
+            return;
+        }
+
+        $input = $app->input;
+        if ($input->get('option') === 'com_radicalmart_telegram' && $input->get('view') === 'app') {
+            // Set flag to prevent EngageBox rendering
+            define('RADICALMART_TELEGRAM_WEBAPP', true);
+
+            // Hack: disable EngageBox rendering by overriding component state
+            $app->set('engagebox.disable', true);
+
+            // Set global flag that EngageBox checks (if it exists)
+            if (!defined('NR_DISABLE')) {
+                define('NR_DISABLE', true);
+            }
+        }
+    }
+
+    /**
+     * Before render - try to clear EngageBox HTML if it was set
+     */
+    public function onBeforeRender(): void
+    {
+        $app = Factory::getApplication();
+
+        if (!$app->isClient('site')) {
+            return;
+        }
+
+        $input = $app->input;
+        if ($input->get('option') === 'com_radicalmart_telegram' && $input->get('view') === 'app') {
+            // Try to access EngageBox plugin and clear its HTML
+            $dispatcher = $app->getDispatcher();
+            if ($dispatcher && method_exists($dispatcher, 'getListeners')) {
+                foreach ($dispatcher->getListeners('onAfterRender') as $listener) {
+                    if (is_array($listener) && isset($listener[0])) {
+                        $plugin = $listener[0];
+                        if ($plugin instanceof \PlgSystemRstBox && property_exists($plugin, 'html')) {
+                            // Use reflection to access private property
+                            $reflection = new \ReflectionClass($plugin);
+                            if ($reflection->hasProperty('html')) {
+                                $property = $reflection->getProperty('html');
+                                $property->setAccessible(true);
+                                $property->setValue($plugin, '');
+                            }
+                        }
+                    }
+                }
+            }
+        }
     }
 
     public function onRadicalMartPreprocessSubmenu(array &$results, AdministratorMenuItem $parent, Registry $params): void
@@ -160,7 +223,148 @@ class RadicalMartTelegram extends CMSPlugin implements SubscriberInterface
         }
     }
 
-    public function onAfterChangeOrderStatus(?string $context = null, ?object $order = null,
+    public function onAfterRender(): void
+    {
+        $app = Factory::getApplication();
+
+        // Only process site frontend
+        if (!$app->isClient('site')) {
+            return;
+        }
+
+        $input = $app->input;
+        $option = $input->get('option', '');
+        $view = $input->get('view', '');
+
+        // Only process our WebApp view
+        if ($option !== 'com_radicalmart_telegram' || $view !== 'app') {
+            return;
+        }
+
+        // Get component params
+        $params = ComponentHelper::getParams('com_radicalmart_telegram');
+
+        // Check if filtering is enabled
+        if (!(int) $params->get('filter_scripts_enabled', 1)) {
+            return;
+        }
+
+        // Get current body
+        $body = $app->getBody();
+        if (empty($body)) {
+            return;
+        }
+
+        // Get configuration
+        $scriptPaths = $params->get('filter_scripts_paths', "/media/com_rstbox/\n/components/com_j_sms_registration/");
+        $htmlSelectors = $params->get('filter_html_selectors', "div[class*=eb-init]\ndiv[class*=eb-dialog]\ndiv[class*=eb-inst]\ndiv#jsms_vk_shtorka");
+        $inlinePatterns = $params->get('filter_inline_patterns', "var COM_J_SMS_REGISTRATION");
+
+        // Process script/style paths
+        if (!empty($scriptPaths)) {
+            $paths = array_filter(array_map('trim', explode("\n", $scriptPaths)));
+            foreach ($paths as $path) {
+                $escapedPath = preg_quote($path, '/');
+                // Remove <link> tags
+                $body = preg_replace('/<link[^>]*href="[^"]*' . $escapedPath . '[^"]*"[^>]*>/i', '', $body);
+                // Remove <script> tags
+                $body = preg_replace('/<script[^>]*src="[^"]*' . $escapedPath . '[^"]*"[^>]*><\/script>/i', '', $body);
+            }
+        }
+
+        // Process inline script patterns
+        if (!empty($inlinePatterns)) {
+            $patterns = array_filter(array_map('trim', explode("\n", $inlinePatterns)));
+            foreach ($patterns as $pattern) {
+                $escapedPattern = preg_quote($pattern, '/');
+                // Match individual <script> blocks that contain the pattern
+                // Use negative lookahead to avoid matching across multiple script tags
+                $body = preg_replace_callback(
+                    '/<script(?![^>]*\ssrc=)[^>]*>(.*?)<\/script>/is',
+                    function($matches) use ($escapedPattern) {
+                        // Check if this specific script block contains the pattern
+                        if (preg_match('/' . $escapedPattern . '/i', $matches[1])) {
+                            return ''; // Remove this script block
+                        }
+                        return $matches[0]; // Keep this script block
+                    },
+                    $body
+                );
+            }
+        }
+
+        // Additional cleanup: remove SMS registration inline scripts (use callback to avoid greedy matching)
+        $body = preg_replace_callback(
+            '/<script(?![^>]*\ssrc=)[^>]*>(.*?)<\/script>/is',
+            function($matches) {
+                // Remove only if contains sitogonmask or j_sms_registration
+                if (preg_match('/jQuery\.sitogonmask|j_sms_registration/i', $matches[1])) {
+                    return '';
+                }
+                return $matches[0];
+            },
+            $body
+        );
+
+        // Process HTML selectors
+        if (!empty($htmlSelectors)) {
+            $selectors = array_filter(array_map('trim', explode("\n", $htmlSelectors)));
+            foreach ($selectors as $selector) {
+                // Parse selector: tag[attr=value] or tag[attr*=value] or tag#id
+                if (preg_match('/^(\w+)\[([^=\*]+)([\*]?)=([^\]]+)\]$/', $selector, $matches)) {
+                    $tag = $matches[1];
+                    $attr = $matches[2];
+                    $isPartial = $matches[3] === '*';
+                    $value = trim($matches[4]);
+
+                    if ($isPartial) {
+                        // Partial match: attr*=value
+                        $escapedValue = preg_quote($value, '/');
+                        $pattern = '/<' . $tag . '[^>]*\s' . $attr . '="[^"]*\b' . $escapedValue . '\b[^"]*"[^>]*>.*?<\/' . $tag . '>/is';
+                    } else {
+                        // Exact match: attr=value
+                        $escapedValue = preg_quote($value, '/');
+                        $pattern = '/<' . $tag . '[^>]*\s' . $attr . '="' . $escapedValue . '"[^>]*>.*?<\/' . $tag . '>/is';
+                    }
+                    $body = preg_replace($pattern, '', $body);
+                } elseif (preg_match('/^(\w+)#(\w+)$/', $selector, $matches)) {
+                    // ID selector: tag#id
+                    $tag = $matches[1];
+                    $id = $matches[2];
+                    $pattern = '/<' . $tag . '[^>]*\sid="' . $id . '"[^>]*>.*?<\/' . $tag . '>/is';
+                    $body = preg_replace($pattern, '', $body);
+                }
+            }
+        }
+
+        // Additional cleanup: remove all remaining EngageBox/SMS elements by patterns
+        // Remove any <div> with class containing 'eb-' (EngageBox)
+        $body = preg_replace('/<div[^>]*class="[^"]*\beb-[^"]*"[^>]*>.*?<\/div>/is', '', $body);
+
+        // Remove any element with data-attributes from EngageBox
+        $body = preg_replace('/<[^>]*data-ebox[^>]*>.*?<\/[^>]+>/is', '', $body);
+
+        // Remove EngageBox overlay/backdrop
+        $body = preg_replace('/<div[^>]*class="[^"]*rstbox[^"]*"[^>]*>.*?<\/div>/is', '', $body);
+
+        // Remove SMS registration elements
+        $body = preg_replace('/<div[^>]*id="jsms_[^"]*"[^>]*>.*?<\/div>/is', '', $body);
+
+        // Remove RadicalMicro blocks if enabled
+        if ((int) $params->get('filter_radicalmicro', 1)) {
+            // Remove RadicalMicro comment blocks
+            $body = preg_replace('/<!-- RadicalMicro: start -->.*?<!-- RadicalMicro: end -->/is', '', $body);
+
+            // Remove any remaining OpenGraph meta tags
+            $body = preg_replace('/<meta[^>]*property="og:[^"]*"[^>]*>/i', '', $body);
+
+            // Remove any remaining Schema.org JSON-LD scripts
+            $body = preg_replace('/<script[^>]*type="application\/ld\+json"[^>]*>.*?<\/script>/is', '', $body);
+        }
+
+        // Set cleaned body back
+        $app->setBody($body);
+    }    public function onAfterChangeOrderStatus(?string $context = null, ?object $order = null,
                                              int $oldStatus = 0, int $newStatus = 0, bool $isNew = false)
     {
         try {

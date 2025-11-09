@@ -92,29 +92,28 @@ class ApiController extends BaseController
 	 */
 	public function apishipfetchStep()
 	{
-		// Логируем в отдельный файл для отладки
-		$logFile = JPATH_ADMINISTRATOR . '/logs/com_radicalmart_telegram_debug.log';
-		$timestamp = date('Y-m-d H:i:s');
-		@file_put_contents($logFile, "[$timestamp] === NEW REQUEST ===" . PHP_EOL, FILE_APPEND);
+		$debug = [];
+		$debug[] = 'apishipfetchStep called';
 
-		// НЕ ИСПОЛЬЗУЕМ ob_end_clean - он крашит скрипт!
-		// Просто выводим JSON напрямую
-
-		// Устанавливаем JSON заголовки
 		@header('Content-Type: application/json; charset=utf-8');
 		@header('Cache-Control: no-cache, must-revalidate');
-		@file_put_contents($logFile, "[$timestamp] Headers set" . PHP_EOL, FILE_APPEND);
+		$debug[] = 'Headers set';
 
 		$app = Factory::getApplication();
 		$input = $app->input;
+		$debug[] = 'Got app and input';
 
 		// Проверяем токен
 		try {
 			$this->checkToken();
-			@file_put_contents($logFile, "[$timestamp] Token OK" . PHP_EOL, FILE_APPEND);
+			$debug[] = 'Token OK';
 		} catch (\Exception $e) {
-			@file_put_contents($logFile, "[$timestamp] Token FAIL: " . $e->getMessage() . PHP_EOL, FILE_APPEND);
-			echo json_encode(['success' => false, 'error' => 'CSRF token validation failed']);
+			$debug[] = 'Token FAIL: ' . $e->getMessage();
+			echo json_encode([
+				'success' => false,
+				'error' => 'CSRF token validation failed',
+				'debug' => $debug
+			]);
 			jexit();
 		}
 
@@ -123,25 +122,25 @@ class ApiController extends BaseController
 		$provider = $input->getString('provider', '');
 		$offset = $input->getInt('offset', 0);
 		$batchSize = $input->getInt('batchSize', 500);
-
-		@file_put_contents($logFile,
-			sprintf("[$timestamp] Params: provider=%s, offset=%d, batchSize=%d" . PHP_EOL, $provider, $offset, $batchSize),
-			FILE_APPEND);
+		$debug[] = "Params: provider=$provider, offset=$offset, batchSize=$batchSize";
 
 		try {
-			@file_put_contents($logFile, "[$timestamp] Calling fetchPointsStep..." . PHP_EOL, FILE_APPEND);
+			$debug[] = 'Calling fetchPointsStep...';
 			$result = ApiShipFetchHelper::fetchPointsStep($provider, $offset, $batchSize);
-			@file_put_contents($logFile, "[$timestamp] fetchPointsStep returned: " . json_encode($result) . PHP_EOL, FILE_APPEND);
+			$debug[] = 'fetchPointsStep returned';
+			$result['debug'] = $debug;
 			echo json_encode($result);
 		} catch (\Throwable $e) {
-			@file_put_contents($logFile, "[$timestamp] ERROR: " . $e->getMessage() . PHP_EOL, FILE_APPEND);
-			@file_put_contents($logFile, "[$timestamp] Trace: " . $e->getTraceAsString() . PHP_EOL, FILE_APPEND);
+			$debug[] = 'ERROR: ' . $e->getMessage();
+			$debug[] = 'File: ' . $e->getFile() . ':' . $e->getLine();
 			echo json_encode([
 				'success' => false,
 				'error' => $e->getMessage(),
 				'step' => $step,
 				'provider' => $provider,
-				'offset' => $offset
+				'offset' => $offset,
+				'debug' => $debug,
+				'trace' => explode("\n", $e->getTraceAsString())
 			]);
 		}
 
@@ -157,30 +156,45 @@ class ApiController extends BaseController
 	 */
 	public function apishipfetchInit()
 	{
-		// Очищаем все буферы вывода
-		while (ob_get_level()) {
-			ob_end_clean();
-		}
+		$debug = [];
+		$debug[] = 'apishipfetchInit called';
 
-		// Устанавливаем JSON заголовки
-		header('Content-Type: application/json; charset=utf-8');
-		header('Cache-Control: no-cache, must-revalidate');
+		@header('Content-Type: application/json; charset=utf-8');
+		@header('Cache-Control: no-cache, must-revalidate');
+		$debug[] = 'Headers set';
 
 		$app = Factory::getApplication();
+		$debug[] = 'Got app';
 
 		// Проверяем токен
 		try {
 			$this->checkToken();
+			$debug[] = 'Token OK';
 		} catch (\Exception $e) {
-			echo json_encode(['success' => false, 'error' => 'CSRF token validation failed']);
+			$debug[] = 'Token FAIL: ' . $e->getMessage();
+			echo json_encode([
+				'success' => false,
+				'error' => 'CSRF token validation failed',
+				'debug' => $debug
+			]);
 			jexit();
 		}
 
 		try {
+			$debug[] = 'Calling getProvidersInfo...';
 			$result = ApiShipFetchHelper::getProvidersInfo();
+			$debug[] = 'getProvidersInfo returned';
+			$result['debug'] = $debug;
 			echo json_encode($result);
 		} catch (\Throwable $e) {
-			echo json_encode(['success' => false, 'error' => $e->getMessage()]);
+			$debug[] = 'ERROR: ' . $e->getMessage();
+			$debug[] = 'File: ' . $e->getFile() . ':' . $e->getLine();
+			echo json_encode([
+				'success' => false,
+				'error' => $e->getMessage(),
+				'debug' => $debug,
+				'trace' => explode("\n", $e->getTraceAsString())
+			]);
 		}
 
 		jexit();

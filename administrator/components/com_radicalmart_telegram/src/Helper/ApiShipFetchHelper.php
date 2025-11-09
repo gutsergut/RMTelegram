@@ -262,19 +262,27 @@ class ApiShipFetchHelper
 	 */
 	public static function getProvidersInfo(): array
 	{
+		$debug = [];
+		$debug[] = 'getProvidersInfo called';
+
 		$params = ComponentHelper::getParams('com_radicalmart_telegram');
 		$token = $params->get('apiship_api_key');
 		$providersList = array_filter(explode(',', $params->get('apiship_providers', 'yataxi,cdek,x5')));
+		$debug[] = 'Got token: ' . substr($token, 0, 10) . '..., providers: ' . implode(',', $providersList);
 
 		if (empty($token) || empty($providersList)) {
+			$debug[] = 'Token or providers empty!';
 			throw new \Exception('Missing API token or providers list');
 		}
 
 		$operation = [2, 3];
 		$providers = [];
+		$debug[] = 'Getting totals for each provider...';
 
 		foreach ($providersList as $prov) {
+			$debug[] = "Calling getPointsTotal for $prov...";
 			$total = ApiShipHelper::getPointsTotal($token, [$prov], $operation);
+			$debug[] = "$prov total: $total";
 			$providers[] = [
 				'code' => $prov,
 				'name' => $prov,
@@ -282,10 +290,12 @@ class ApiShipFetchHelper
 			];
 		}
 
+		$debug[] = 'Returning ' . count($providers) . ' providers';
 		return [
 			'success' => true,
 			'providers' => $providers,
-			'batchSize' => 500
+			'batchSize' => 500,
+			'debug' => $debug
 		];
 	}
 
@@ -302,106 +312,139 @@ class ApiShipFetchHelper
 	 */
 	public static function fetchPointsStep(string $provider, int $offset, int $batchSize = 500): array
 	{
+		$debug = [];
+		$debug[] = "fetchPointsStep called: provider=$provider, offset=$offset, batchSize=$batchSize";
+
 		$params = ComponentHelper::getParams('com_radicalmart_telegram');
 		$token = $params->get('apiship_api_key');
+		$debug[] = 'Got params and token: ' . substr($token, 0, 10) . '...';
 
 		if (empty($token)) {
+			$debug[] = 'Token is empty!';
 			throw new \Exception('Missing API token');
 		}
 
 		$db = Factory::getContainer()->get('DatabaseDriver');
 		$operation = [2, 3];
+		$debug[] = 'Got DB connection';
 
 		// Получаем чанк точек
+		$debug[] = 'Calling ApiShipHelper::getPoints...';
 		$chunk = ApiShipHelper::getPoints($token, [$provider], $operation, $offset, $batchSize);
+		$debug[] = 'getPoints returned ' . count($chunk) . ' items';
 
 		if (empty($chunk)) {
+			$debug[] = 'Chunk is empty, returning';
 			return [
 				'success' => true,
 				'provider' => $provider,
 				'offset' => $offset,
 				'fetched' => 0,
 				'inserted' => 0,
-				'completed' => true
+				'completed' => true,
+				'debug' => $debug
 			];
 		}
 
-		// Batch INSERT
+		// Batch INSERT (нативно под Joomla 5 + устойчивый парс координат)
 		$values = [];
 		$now = (new \Joomla\CMS\Date\Date())->toSql();
 
 		foreach ($chunk as $row) {
-			// Convert stdClass to array if needed
-			$row = (array) $row;
+			if (is_object($row)) {
+				$row = get_object_vars($row);
+			}
 
-			$extId   = (string) ($row['id'] ?? ($row['externalId'] ?? ''));
+			$extId   = (string) ($row['id'] ?? ($row['externalId'] ?? ($row['code'] ?? '')));
 			$title   = (string) ($row['title'] ?? ($row['name'] ?? ''));
 			$address = (string) ($row['address'] ?? '');
-			$lat     = isset($row['latitude']) ? (float)$row['latitude'] : (isset($row['location']['latitude']) ? (float)$row['location']['latitude'] : null);
-			$lon     = isset($row['longitude']) ? (float)$row['longitude'] : (isset($row['location']['longitude']) ? (float)$row['location']['longitude'] : null);
 
-			if ($lat === null || $lon === null || $extId === '') {
+			$lat = isset($row['latitude']) ? (float) $row['latitude'] : null;
+			$lon = isset($row['longitude']) ? (float) $row['longitude'] : null;
+			if (($lat === null || $lon === null) && isset($row['location'])) {
+				$loc = $row['location'];
+				if (is_object($loc)) {
+					$lat = $lat ?? (isset($loc->latitude) ? (float) $loc->latitude : null);
+					$lon = $lon ?? (isset($loc->longitude) ? (float) $loc->longitude : null);
+				} elseif (is_array($loc)) {
+					$lat = $lat ?? (isset($loc['latitude']) ? (float) $loc['latitude'] : null);
+					$lon = $lon ?? (isset($loc['longitude']) ? (float) $loc['longitude'] : null);
+				}
+			}
+
+			if ($extId === '' || $lat === null || $lon === null) {
+				$debug[] = 'Skip row: extId/coords missing';
 				continue;
 			}
 
 			$meta = json_encode($row, JSON_UNESCAPED_UNICODE);
 
-			$values[] = "("
-				. $db->quote($provider) . ","
+			$values[] =
+				$db->quote($provider) . ","
 				. $db->quote($extId) . ","
 				. $db->quote($title) . ","
 				. $db->quote($address) . ","
-				. (string)$lat . ","
-				. (string)$lon . ","
+				. (string) $lat . ","
+				. (string) $lon . ","
 				. $db->quote('giveout') . ","
-				. "ST_GeomFromText('POINT(" . (string)$lon . " " . (string)$lat . ")', 4326),"
+				. "POINT(" . (string) $lon . "," . (string) $lat . "),"
 				. $db->quote($meta) . ","
-				. $db->quote($now)
-				. ")";
+				. $db->quote($now);
 		}
 
-		// Выполняем batch INSERT если есть данные
 		$inserted = 0;
-		if (!empty($values)) {
-			// Безусловное логирование для отладки
-			Log::add(
-				sprintf('fetchPointsStep: provider=%s, offset=%d, values_count=%d, chunk_count=%d',
-					$provider, $offset, count($values), count($chunk)),
-				Log::INFO,
-				'com_radicalmart_telegram'
-			);
+		$debug[] = 'Prepared ' . count($values) . ' values for INSERT';
 
-			$sql = "INSERT INTO " . $db->quoteName('#__radicalmart_apiship_points') . "
-				(" . $db->quoteName('provider') . ", " . $db->quoteName('ext_id') . ", "
-				. $db->quoteName('title') . ", " . $db->quoteName('address') . ", "
-				. $db->quoteName('lat') . ", " . $db->quoteName('lon') . ", "
-				. $db->quoteName('operation') . ", " . $db->quoteName('point') . ", "
-				. $db->quoteName('meta') . ", " . $db->quoteName('updated_at') . ")
-				VALUES " . implode(", ", $values) . "
-				ON DUPLICATE KEY UPDATE
-					" . $db->quoteName('title') . " = VALUES(" . $db->quoteName('title') . "),
-					" . $db->quoteName('address') . " = VALUES(" . $db->quoteName('address') . "),
-					" . $db->quoteName('lat') . " = VALUES(" . $db->quoteName('lat') . "),
-					" . $db->quoteName('lon') . " = VALUES(" . $db->quoteName('lon') . "),
-					" . $db->quoteName('point') . " = VALUES(" . $db->quoteName('point') . "),
-					" . $db->quoteName('meta') . " = VALUES(" . $db->quoteName('meta') . "),
-					" . $db->quoteName('updated_at') . " = VALUES(" . $db->quoteName('updated_at') . ")";
+		if (!empty($values)) {
+			$debug[] = 'Building INSERT query (Query Builder)...';
+			$columns = [
+				$db->quoteName('provider'),
+				$db->quoteName('ext_id'),
+				$db->quoteName('title'),
+				$db->quoteName('address'),
+				$db->quoteName('lat'),
+				$db->quoteName('lon'),
+				$db->quoteName('operation'),
+				$db->quoteName('point'),
+				$db->quoteName('meta'),
+				$db->quoteName('updated_at'),
+			];
+
+			$query = $db->getQuery(true)
+				->insert($db->quoteName('#__radicalmart_apiship_points'))
+				->columns($columns);
+
+			foreach ($values as $v) {
+				$query->values($v);
+			}
+
+			$onDup = ' ON DUPLICATE KEY UPDATE '
+				. $db->quoteName('title') . ' = VALUES(' . $db->quoteName('title') . '), '
+				. $db->quoteName('address') . ' = VALUES(' . $db->quoteName('address') . '), '
+				. $db->quoteName('lat') . ' = VALUES(' . $db->quoteName('lat') . '), '
+				. $db->quoteName('lon') . ' = VALUES(' . $db->quoteName('lon') . '), '
+				. $db->quoteName('point') . ' = VALUES(' . $db->quoteName('point') . '), '
+				. $db->quoteName('meta') . ' = VALUES(' . $db->quoteName('meta') . '), '
+				. $db->quoteName('updated_at') . ' = VALUES(' . $db->quoteName('updated_at') . ')';
+
+			$sql = (string) $query . $onDup;
+			$debug[] = 'SQL built, length: ' . strlen($sql);
 
 			try {
+				$debug[] = 'Executing INSERT in transaction...';
+				$db->transactionStart();
 				$db->setQuery($sql)->execute();
+				$db->transactionCommit();
 				$inserted = count($values);
-
-				// Логируем успех
-				$params = ComponentHelper::getParams('com_radicalmart_telegram');
-				if ($params->get('logs_enabled', 1)) {
-					Log::add(
-						sprintf('Inserted %d points for provider %s at offset %d', $inserted, $provider, $offset),
-						Log::INFO,
-						'com_radicalmart_telegram'
-					);
-				}
+				$debug[] = "INSERT successful, inserted $inserted rows";
 			} catch (\Exception $e) {
-				// Логируем ошибку
+				$debug[] = 'INSERT FAILED: ' . $e->getMessage();
+				if ($db->transactionDepth()) {
+					try { $db->transactionRollback(); } catch (\Throwable $er) {
+						$debug[] = 'Rollback error: ' . $er->getMessage();
+					}
+				}
+
 				$params = ComponentHelper::getParams('com_radicalmart_telegram');
 				if ($params->get('logs_enabled', 1)) {
 					Log::add(
@@ -412,15 +455,19 @@ class ApiShipFetchHelper
 				}
 				throw $e;
 			}
+		} else {
+			$debug[] = 'No values to insert (all rows skipped)';
 		}
 
+		$debug[] = 'Returning result';
 		return [
 			'success' => true,
 			'provider' => $provider,
 			'offset' => $offset,
 			'fetched' => count($chunk),
 			'inserted' => $inserted,
-			'completed' => count($chunk) < $batchSize
+			'completed' => count($chunk) < $batchSize,
+			'debug' => $debug
 		];
 	}
 }

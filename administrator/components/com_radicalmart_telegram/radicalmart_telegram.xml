@@ -3,7 +3,7 @@
     <name>com_radicalmart_telegram</name>
     <author>Project Team</author>
     <creationDate>2025-10</creationDate>
-    <version>0.1.25</version>
+    <version>0.1.29</version>
     <description>COM_RADICALMART_TELEGRAM_XML_DESCRIPTION</description>
     <namespace path="src">Joomla\Component\RadicalMartTelegram</namespace>
 

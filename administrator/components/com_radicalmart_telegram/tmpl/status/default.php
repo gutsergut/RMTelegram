@@ -38,6 +38,11 @@ use Joomla\CMS\Router\Route;
                 <div id="progressDetails" class="mt-2">
                     <!-- Provider progress details -->
                 </div>
+                <hr/>
+                <details open>
+                    <summary class="small text-muted">Debug</summary>
+                    <pre id="pvzDebug" style="max-height:200px;overflow:auto;background:#111;color:#0f0;padding:8px;font-size:12px;margin:0;"></pre>
+                </details>
             </div>
         </div>
     </div>
@@ -64,7 +69,8 @@ use Joomla\CMS\Router\Route;
     </table>
 </div>
 
-<script>
+<?php $nonceAttr = method_exists($this->document, 'getCspNonce') ? ' nonce="' . htmlspecialchars($this->document->getCspNonce(), ENT_QUOTES, 'UTF-8') . '"' : ''; ?>
+<script<?php echo $nonceAttr; ?>>
 (function() {
     'use strict';
 
@@ -82,7 +88,21 @@ use Joomla\CMS\Router\Route;
     let totalPoints = 0;
     let processedPoints = 0;
 
-    btnStart.addEventListener('click', startFetch);
+    // Visible Debug helper
+    function logDebug() {
+        try { console.log.apply(console, arguments); } catch (e) {}
+        const el = document.getElementById('pvzDebug');
+        if (!el) return;
+        const msg = Array.from(arguments).map(v => {
+            try { return typeof v === 'string' ? v : JSON.stringify(v); } catch (_) { return String(v); }
+        }).join(' ');
+        el.textContent += `[${new Date().toISOString()}] ${msg}\n`;
+        el.scrollTop = el.scrollHeight;
+    }
+
+    logDebug('[PVZ] Script loaded');
+
+    btnStart.addEventListener('click', function() { logDebug('[PVZ] Start button clicked'); startFetch(); });
     btnCancel.addEventListener('click', cancelFetch);
 
     function startFetch() {
@@ -99,15 +119,28 @@ use Joomla\CMS\Router\Route;
         updateProgress(0, '<?php echo Text::_('COM_RADICALMART_TELEGRAM_PVZ_PROGRESS_INITIALIZING'); ?>');
 
         // Инициализация - получаем список провайдеров
-        fetch('index.php?option=com_radicalmart_telegram&task=api.apishipfetchInit&format=raw', {
+        const initUrl = 'index.php?option=com_radicalmart_telegram&task=api.apishipfetchInit&format=raw';
+        logDebug('[PVZ] Init request →', initUrl);
+        fetch(initUrl, {
             method: 'POST',
             headers: {
                 'Content-Type': 'application/x-www-form-urlencoded',
             },
             body: '<?php echo \Joomla\CMS\Session\Session::getFormToken(); ?>=1'
         })
-        .then(response => response.json())
+        .then(async (response) => {
+            logDebug('[PVZ] Init HTTP status:', response.status);
+            const text = await response.text();
+            logDebug('[PVZ] Init raw response (first 1000 chars):', text.slice(0, 1000));
+            try {
+                return JSON.parse(text);
+            } catch (e) {
+                throw new Error('Invalid JSON from apishipfetchInit: ' + e.message);
+            }
+        })
         .then(data => {
+            logDebug('[PVZ] Init response parsed:', data);
+            if (data.debug) logDebug('[PVZ] Init debug:', data.debug);
             if (!data.success) {
                 throw new Error(data.error || 'Initialization failed');
             }
@@ -119,6 +152,7 @@ use Joomla\CMS\Router\Route;
             processNextBatch();
         })
         .catch(error => {
+            logDebug('[PVZ] Init error:', error && (error.stack || error.message || String(error)));
             showError('Ошибка инициализации: ' + error.message);
             resetButtons();
         });
@@ -161,15 +195,28 @@ use Joomla\CMS\Router\Route;
         formData.append('offset', currentOffset.toString());
         formData.append('batchSize', '500');
 
-        fetch('index.php?option=com_radicalmart_telegram&task=api.apishipfetchStep&format=raw', {
+        const stepUrl = 'index.php?option=com_radicalmart_telegram&task=api.apishipfetchStep&format=raw';
+        logDebug('[PVZ] Step request →', stepUrl, JSON.stringify({ provider: provider.code, offset: currentOffset }));
+        fetch(stepUrl, {
             method: 'POST',
             headers: {
                 'Content-Type': 'application/x-www-form-urlencoded',
             },
             body: formData
         })
-        .then(response => response.json())
+        .then(async (response) => {
+            logDebug('[PVZ] Step HTTP status:', response.status);
+            const text = await response.text();
+            logDebug('[PVZ] Step raw response (first 1000 chars):', text.slice(0, 1000));
+            try {
+                return JSON.parse(text);
+            } catch (e) {
+                throw new Error('Invalid JSON from apishipfetchStep: ' + e.message);
+            }
+        })
         .then(data => {
+            logDebug('[PVZ] Step response parsed:', data);
+            if (data.debug) logDebug('[PVZ] Step debug:', data.debug);
             if (!data.success) {
                 throw new Error(data.error || 'Fetch step failed');
             }

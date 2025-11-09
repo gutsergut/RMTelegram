@@ -1,173 +1,102 @@
 <?xml version="1.0" encoding="utf-8"?>
 <config>
-    <fieldset name="basic" label="COM_RADICALMART_TELEGRAM_FIELDSET_BASIC">
-        <field
-            name="store_title"
-            type="text"
-            label="COM_RADICALMART_TELEGRAM_STORE_TITLE_LABEL"
-            description="COM_RADICALMART_TELEGRAM_STORE_TITLE_DESC"
-            class="input-xlarge"
-            default="магазин Cacao.Land"
-        />
-        <field
-            name="bot_token"
-            type="password"
-            label="COM_RADICALMART_TELEGRAM_BOT_TOKEN_LABEL"
-            description="COM_RADICALMART_TELEGRAM_BOT_TOKEN_DESC"
-            class="input-xlarge"
-        />
-        <field
-            name="webhook_secret"
-            type="text"
-            label="COM_RADICALMART_TELEGRAM_WEBHOOK_SECRET_LABEL"
-            description="COM_RADICALMART_TELEGRAM_WEBHOOK_SECRET_DESC"
-            filter="string"
-            class="input-large"
-        />
-        <field
-            name="webapp_allowed_domains"
-            type="textarea"
-            label="COM_RADICALMART_TELEGRAM_WEBAPP_ALLOWED_DOMAINS_LABEL"
-            description="COM_RADICALMART_TELEGRAM_WEBAPP_ALLOWED_DOMAINS_DESC"
-            filter="raw"
-            rows="3"
-            default="https://cacao.land"
-        />
-        <field name="logs_enabled" type="radio" default="1"
-               label="COM_RADICALMART_TELEGRAM_LOGS_ENABLED_LABEL"
-               description="COM_RADICALMART_TELEGRAM_LOGS_ENABLED_DESC">
-            <option value="1">JYES</option>
-            <option value="0">JNO</option>
-        </field>
-    </fieldset>
+       <fieldset name="basic" label="COM_RADICALMART_TELEGRAM_FIELDSET_BASIC">
+              <field name="store_title" type="text" label="COM_RADICALMART_TELEGRAM_STORE_TITLE_LABEL" description="COM_RADICALMART_TELEGRAM_STORE_TITLE_DESC" class="input-xlarge" default="магазин Cacao.Land" />
+              <field name="bot_token" type="password" label="COM_RADICALMART_TELEGRAM_BOT_TOKEN_LABEL" description="COM_RADICALMART_TELEGRAM_BOT_TOKEN_DESC" class="input-xlarge" />
+              <field name="webhook_secret" type="text" label="COM_RADICALMART_TELEGRAM_WEBHOOK_SECRET_LABEL" description="COM_RADICALMART_TELEGRAM_WEBHOOK_SECRET_DESC" filter="string" class="input-large" />
+              <field name="webapp_allowed_domains" type="textarea" label="COM_RADICALMART_TELEGRAM_WEBAPP_ALLOWED_DOMAINS_LABEL" description="COM_RADICALMART_TELEGRAM_WEBAPP_ALLOWED_DOMAINS_DESC" filter="raw" rows="3" default="https://cacao.land" />
+              <field name="logs_enabled" type="radio" default="1" label="COM_RADICALMART_TELEGRAM_LOGS_ENABLED_LABEL" description="COM_RADICALMART_TELEGRAM_LOGS_ENABLED_DESC">
+                     <option value="1">JYES</option>
+                     <option value="0">JNO</option>
+              </field>
+       </fieldset>
 
-    <fieldset name="payments" label="COM_RADICALMART_TELEGRAM_FIELDSET_PAYMENTS">
-        <field name="payments_telegram_cards" type="radio" default="1"
-               label="COM_RADICALMART_TELEGRAM_PAYMENTS_CARDS_LABEL"
-               description="COM_RADICALMART_TELEGRAM_PAYMENTS_CARDS_DESC">
-            <option value="1">JYES</option>
-            <option value="0">JNO</option>
-        </field>
-        <field name="payments_telegram_stars" type="radio" default="1"
-               label="COM_RADICALMART_TELEGRAM_PAYMENTS_STARS_LABEL"
-               description="COM_RADICALMART_TELEGRAM_PAYMENTS_STARS_DESC">
-            <option value="1">JYES</option>
-            <option value="0">JNO</option>
-        </field>
-        <field name="payments_link" type="radio" default="1"
-               label="COM_RADICALMART_TELEGRAM_PAYMENTS_LINK_LABEL"
-               description="COM_RADICALMART_TELEGRAM_PAYMENTS_LINK_DESC">
-            <option value="1">JYES</option>
-            <option value="0">JNO</option>
-        </field>
-        <field name="payments_env" type="list" default="test"
-               label="COM_RADICALMART_TELEGRAM_PAYMENTS_ENV_LABEL"
-               description="COM_RADICALMART_TELEGRAM_PAYMENTS_ENV_DESC">
-            <option value="test">Test</option>
-            <option value="prod">Production</option>
-        </field>
-        <field name="provider_cards" type="list" default="yookassa"
-               label="COM_RADICALMART_TELEGRAM_PROVIDER_CARDS_LABEL"
-               description="COM_RADICALMART_TELEGRAM_PROVIDER_CARDS_DESC">
-            <option value="yookassa">YooKassa</option>
-            <option value="robokassa">Robokassa</option>
-        </field>
-        <field name="yookassa_provider_token_test" type="password"
-               label="COM_RADICALMART_TELEGRAM_YK_TOKEN_TEST_LABEL"
-               description="COM_RADICALMART_TELEGRAM_YK_TOKEN_TEST_DESC"
-               class="input-xlarge"/>
-        <field name="yookassa_provider_token_prod" type="password"
-               label="COM_RADICALMART_TELEGRAM_YK_TOKEN_PROD_LABEL"
-               description="COM_RADICALMART_TELEGRAM_YK_TOKEN_PROD_DESC"
-               class="input-xlarge"/>
-        <field name="robokassa_provider_token_test" type="password"
-               label="COM_RADICALMART_TELEGRAM_RK_TOKEN_TEST_LABEL"
-               description="COM_RADICALMART_TELEGRAM_RK_TOKEN_TEST_DESC"
-               class="input-xlarge"/>
-        <field name="robokassa_provider_token_prod" type="password"
-               label="COM_RADICALMART_TELEGRAM_RK_TOKEN_PROD_LABEL"
-               description="COM_RADICALMART_TELEGRAM_RK_TOKEN_PROD_DESC"
-               class="input-xlarge"/>
-        <field name="stars_conversion_percent" type="number" step="0.1" default="5"
-               label="COM_RADICALMART_TELEGRAM_STARS_CONV_LABEL"
-               description="COM_RADICALMART_TELEGRAM_STARS_CONV_DESC"/>
-        <field name="paid_status_id" type="number" default="0"
-               label="COM_RADICALMART_TELEGRAM_PAID_STATUS_ID_LABEL"
-               description="COM_RADICALMART_TELEGRAM_PAID_STATUS_ID_DESC"/>
-        <field name="refunded_status_id" type="number" default="0"
-               label="COM_RADICALMART_TELEGRAM_REFUNDED_STATUS_ID_LABEL"
-               description="COM_RADICALMART_TELEGRAM_REFUNDED_STATUS_ID_DESC"/>
-        <field name="partial_refunded_status_id" type="number" default="0"
-               label="COM_RADICALMART_TELEGRAM_PARTIAL_REFUNDED_STATUS_ID_LABEL"
-               description="COM_RADICALMART_TELEGRAM_PARTIAL_REFUNDED_STATUS_ID_DESC"/>
-    </fieldset>
+       <fieldset name="payments" label="COM_RADICALMART_TELEGRAM_FIELDSET_PAYMENTS">
+              <field name="payments_telegram_cards" type="radio" default="1" label="COM_RADICALMART_TELEGRAM_PAYMENTS_CARDS_LABEL" description="COM_RADICALMART_TELEGRAM_PAYMENTS_CARDS_DESC">
+                     <option value="1">JYES</option>
+                     <option value="0">JNO</option>
+              </field>
+              <field name="payments_telegram_stars" type="radio" default="1" label="COM_RADICALMART_TELEGRAM_PAYMENTS_STARS_LABEL" description="COM_RADICALMART_TELEGRAM_PAYMENTS_STARS_DESC">
+                     <option value="1">JYES</option>
+                     <option value="0">JNO</option>
+              </field>
+              <field name="payments_link" type="radio" default="1" label="COM_RADICALMART_TELEGRAM_PAYMENTS_LINK_LABEL" description="COM_RADICALMART_TELEGRAM_PAYMENTS_LINK_DESC">
+                     <option value="1">JYES</option>
+                     <option value="0">JNO</option>
+              </field>
+              <field name="payments_env" type="list" default="test" label="COM_RADICALMART_TELEGRAM_PAYMENTS_ENV_LABEL" description="COM_RADICALMART_TELEGRAM_PAYMENTS_ENV_DESC">
+                     <option value="test">Test</option>
+                     <option value="prod">Production</option>
+              </field>
+              <field name="provider_cards" type="list" default="yookassa" label="COM_RADICALMART_TELEGRAM_PROVIDER_CARDS_LABEL" description="COM_RADICALMART_TELEGRAM_PROVIDER_CARDS_DESC">
+                     <option value="yookassa">YooKassa</option>
+                     <option value="robokassa">Robokassa</option>
+              </field>
+              <field name="yookassa_provider_token_test" type="password" label="COM_RADICALMART_TELEGRAM_YK_TOKEN_TEST_LABEL" description="COM_RADICALMART_TELEGRAM_YK_TOKEN_TEST_DESC" class="input-xlarge"/>
+              <field name="yookassa_provider_token_prod" type="password" label="COM_RADICALMART_TELEGRAM_YK_TOKEN_PROD_LABEL" description="COM_RADICALMART_TELEGRAM_YK_TOKEN_PROD_DESC" class="input-xlarge"/>
+              <field name="robokassa_provider_token_test" type="password" label="COM_RADICALMART_TELEGRAM_RK_TOKEN_TEST_LABEL" description="COM_RADICALMART_TELEGRAM_RK_TOKEN_TEST_DESC" class="input-xlarge"/>
+              <field name="robokassa_provider_token_prod" type="password" label="COM_RADICALMART_TELEGRAM_RK_TOKEN_PROD_LABEL" description="COM_RADICALMART_TELEGRAM_RK_TOKEN_PROD_DESC" class="input-xlarge"/>
+              <field name="stars_conversion_percent" type="number" step="0.1" default="5" label="COM_RADICALMART_TELEGRAM_STARS_CONV_LABEL" description="COM_RADICALMART_TELEGRAM_STARS_CONV_DESC"/>
+              <field name="paid_status_id" type="number" default="0" label="COM_RADICALMART_TELEGRAM_PAID_STATUS_ID_LABEL" description="COM_RADICALMART_TELEGRAM_PAID_STATUS_ID_DESC"/>
+              <field name="refunded_status_id" type="number" default="0" label="COM_RADICALMART_TELEGRAM_REFUNDED_STATUS_ID_LABEL" description="COM_RADICALMART_TELEGRAM_REFUNDED_STATUS_ID_DESC"/>
+              <field name="partial_refunded_status_id" type="number" default="0" label="COM_RADICALMART_TELEGRAM_PARTIAL_REFUNDED_STATUS_ID_LABEL" description="COM_RADICALMART_TELEGRAM_PARTIAL_REFUNDED_STATUS_ID_DESC"/>
+       </fieldset>
 
-    <fieldset name="delivery" label="COM_RADICALMART_TELEGRAM_FIELDSET_DELIVERY">
-        <field name="pvz_map_enabled" type="radio" default="1"
-               label="COM_RADICALMART_TELEGRAM_PVZ_MAP_LABEL"
-               description="COM_RADICALMART_TELEGRAM_PVZ_MAP_DESC">
-            <option value="1">JYES</option>
-            <option value="0">JNO</option>
-        </field>
-        <field name="apiship_api_key" type="password"
-               label="ApiShip API Key"
-               description="Ключ доступа к ApiShip. Используется для загрузки ПВЗ."
-               default="4446add5de10615e33d5834f0c931925"
-               class="input-xlarge"/>
-        <field name="apiship_providers" type="textarea"
-               label="ApiShip провайдеры"
-               description="Список провайдеров через запятую (например: yataxi,cdek,x5)."
-               default="yataxi,cdek,x5"
-               rows="1"/>
-        <field name="pvz_cache_enabled" type="radio" default="1"
-               label="Кешировать выдачу ПВЗ (bbox)"
-               description="Включить файловый кеш ответов api.pvz для уменьшения нагрузки (в пределах TTL).">
-            <option value="1">JYES</option>
-            <option value="0">JNO</option>
-        </field>
-        <field name="pvz_cache_ttl" type="number" default="60" min="0"
-               label="TTL кеша ПВЗ (сек)"
-               description="Время жизни кеша bbox‑ответов. 0 — отключить кеш."/>
-        <field name="pvz_cache_precision" type="number" default="2" min="0" max="4"
-               label="Точность bbox для кеша (знаков после запятой)"
-               description="Нормализация bbox для ключа кеша (2 ≈ 0.01° ≈ 1.1 км)."/>
-        <field name="yandex_maps_api_key" type="text"
-               label="Yandex.Maps API Key"
-               description="Ключ Yandex.Maps для отображения карты ПВЗ в WebApp"
-               class="input-xlarge"/>
-        <field name="apiship_manual_fetch" type="note"
-               label="Обновление базы ПВЗ"
-               description="Нажмите для ручной выгрузки ПВЗ из ApiShip (использует текущие провайдеры).">
-            <option value="">
-                <![CDATA[
-                <a class="btn btn-small btn-success" target="_blank"
-                   href="index.php?option=com_radicalmart_telegram&task=api.apishipfetch">
+       <fieldset name="delivery" label="COM_RADICALMART_TELEGRAM_FIELDSET_DELIVERY">
+              <field name="pvz_map_enabled" type="radio" default="1" label="COM_RADICALMART_TELEGRAM_PVZ_MAP_LABEL" description="COM_RADICALMART_TELEGRAM_PVZ_MAP_DESC">
+                     <option value="1">JYES</option>
+                     <option value="0">JNO</option>
+              </field>
+              <field name="show_postamats" type="radio" default="1" label="COM_RADICALMART_TELEGRAM_SHOW_POSTAMATS_LABEL" description="COM_RADICALMART_TELEGRAM_SHOW_POSTAMATS_DESC">
+                     <option value="1">JYES</option>
+                     <option value="0">JNO</option>
+              </field>
+              <field name="apiship_api_key" type="password" label="ApiShip API Key" description="Ключ доступа к ApiShip. Используется для загрузки ПВЗ." default="4446add5de10615e33d5834f0c931925" class="input-xlarge"/>
+              <field name="apiship_providers" type="textarea" label="ApiShip провайдеры" description="Список провайдеров через запятую (например: yataxi,cdek,x5)." default="yataxi,cdek,x5" rows="1"/>
+              <field name="pvz_cache_enabled" type="radio" default="1" label="Кешировать выдачу ПВЗ (bbox)" description="Включить файловый кеш ответов api.pvz для уменьшения нагрузки (в пределах TTL).">
+                     <option value="1">JYES</option>
+                     <option value="0">JNO</option>
+              </field>
+              <field name="pvz_cache_ttl" type="number" default="60" min="0" label="TTL кеша ПВЗ (сек)" description="Время жизни кеша bbox‑ответов. 0 — отключить кеш."/>
+              <field name="pvz_cache_precision" type="number" default="2" min="0" max="4" label="Точность bbox для кеша (знаков после запятой)" description="Нормализация bbox для ключа кеша (2 ≈ 0.01° ≈ 1.1 км)."/>
+              <field name="yandex_maps_api_key" type="text" label="Yandex.Maps API Key" description="Ключ Yandex.Maps для отображения карты ПВЗ в WebApp" class="input-xlarge"/>
+              <field name="apiship_manual_fetch" type="note" label="Обновление базы ПВЗ" description="Нажмите для ручной выгрузки ПВЗ из ApiShip (использует текущие провайдеры).">
+                     <option value="">
+                            <![CDATA[
+                <a class="btn btn-small btn-success" target="_blank" href="index.php?option=com_radicalmart_telegram&task=api.apishipfetch">
                    Запустить обновление ПВЗ
                 </a>
                 ]]>
-            </option>
-        </field>
-    </fieldset>
+                     </option>
+              </field>
+       </fieldset>
 
-    <fieldset name="filters" label="COM_RADICALMART_TELEGRAM_FIELDSET_FILTERS">
-        <field name="filters_fields" type="subform" multiple="true"
-               label="COM_RADICALMART_TELEGRAM_FILTERS_FIELDS_LABEL"
-               description="COM_RADICALMART_TELEGRAM_FILTERS_FIELDS_DESC"
-               formsource="administrator/components/com_radicalmart_telegram/forms/filters_fields.xml"/>
-    </fieldset>
+       <fieldset name="filters" label="COM_RADICALMART_TELEGRAM_FIELDSET_FILTERS">
+              <field name="filters_fields" type="subform" multiple="true" label="COM_RADICALMART_TELEGRAM_FILTERS_FIELDS_LABEL" description="COM_RADICALMART_TELEGRAM_FILTERS_FIELDS_DESC" formsource="administrator/components/com_radicalmart_telegram/forms/filters_fields.xml"/>
+       </fieldset>
 
-    <fieldset name="security" label="COM_RADICALMART_TELEGRAM_FIELDSET_SECURITY">
-        <field name="strict_tg_init" type="radio" default="0"
-               label="COM_RADICALMART_TELEGRAM_STRICT_TG_INIT_LABEL"
-               description="COM_RADICALMART_TELEGRAM_STRICT_TG_INIT_DESC">
-            <option value="1">JYES</option>
-            <option value="0">JNO</option>
-        </field>
-        <field name="strict_nonce" type="radio" default="0"
-               label="COM_RADICALMART_TELEGRAM_STRICT_NONCE_LABEL"
-               description="COM_RADICALMART_TELEGRAM_STRICT_NONCE_DESC">
-            <option value="1">JYES</option>
-            <option value="0">JNO</option>
-        </field>
-    </fieldset>
+       <fieldset name="security" label="COM_RADICALMART_TELEGRAM_FIELDSET_SECURITY">
+              <field name="strict_tg_init" type="radio" default="0" label="COM_RADICALMART_TELEGRAM_STRICT_TG_INIT_LABEL" description="COM_RADICALMART_TELEGRAM_STRICT_TG_INIT_DESC">
+                     <option value="1">JYES</option>
+                     <option value="0">JNO</option>
+              </field>
+              <field name="strict_nonce" type="radio" default="0" label="COM_RADICALMART_TELEGRAM_STRICT_NONCE_LABEL" description="COM_RADICALMART_TELEGRAM_STRICT_NONCE_DESC">
+                     <option value="1">JYES</option>
+                     <option value="0">JNO</option>
+              </field>
+       </fieldset>
+
+       <fieldset name="webapp_filters" label="COM_RADICALMART_TELEGRAM_FIELDSET_WEBAPP_FILTERS">
+              <field name="filter_scripts_enabled" type="radio" default="1" label="COM_RADICALMART_TELEGRAM_FILTER_SCRIPTS_ENABLED_LABEL" description="COM_RADICALMART_TELEGRAM_FILTER_SCRIPTS_ENABLED_DESC">
+                     <option value="1">JYES</option>
+                     <option value="0">JNO</option>
+              </field>
+              <field name="filter_scripts_paths" type="textarea" label="COM_RADICALMART_TELEGRAM_FILTER_SCRIPTS_PATHS_LABEL" description="COM_RADICALMART_TELEGRAM_FILTER_SCRIPTS_PATHS_DESC" filter="raw" rows="6" default="/media/com_rstbox/&#10;/components/com_j_sms_registration/" />
+              <field name="filter_html_selectors" type="textarea" label="COM_RADICALMART_TELEGRAM_FILTER_HTML_SELECTORS_LABEL" description="COM_RADICALMART_TELEGRAM_FILTER_HTML_SELECTORS_DESC" filter="raw" rows="8" default="div[class*=eb-init]&#10;div[class*=eb-dialog]&#10;div[class*=eb-inst]&#10;div#jsms_vk_shtorka" />
+              <field name="filter_inline_patterns" type="textarea" label="COM_RADICALMART_TELEGRAM_FILTER_INLINE_PATTERNS_LABEL" description="COM_RADICALMART_TELEGRAM_FILTER_INLINE_PATTERNS_DESC" filter="raw" rows="6" default="var COM_J_SMS_REGISTRATION&#10;jQuery.sitogonmask" />
+              <field name="filter_radicalmicro" type="radio" default="1" label="COM_RADICALMART_TELEGRAM_FILTER_RADICALMICRO_LABEL" description="COM_RADICALMART_TELEGRAM_FILTER_RADICALMICRO_DESC">
+                     <option value="1">JYES</option>
+                     <option value="0">JNO</option>
+              </field>
+       </fieldset>
 </config>
