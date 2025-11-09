@@ -51,41 +51,64 @@ $storeTitle = isset($this->params) ? (string) $this->params->get('store_title', 
             url.searchParams.set('option','com_radicalmart_telegram');
             url.searchParams.set('task','api.'+method);
             const chat = qs('chat'); if (chat) url.searchParams.set('chat', chat);
+
+            // Add Telegram WebApp initData for validation
+            if (window.Telegram && window.Telegram.WebApp && window.Telegram.WebApp.initData) {
+                url.searchParams.set('initData', window.Telegram.WebApp.initData);
+            }
+
             for (const [k,v] of Object.entries(params)) url.searchParams.set(k, v);
+
+            console.log('API call:', method, 'URL:', url.toString());
+
             const res = await fetch(url.toString(), { credentials: 'same-origin' });
             const json = await res.json();
+
+            console.log('API response:', method, json);
+
             if (json && json.success === false) throw new Error(json.message||'API error');
             return json.data || {};
-        }
-
-        function el(html){ const t=document.createElement('template'); t.innerHTML=html.trim(); return t.content.firstChild; }
+        }        function el(html){ const t=document.createElement('template'); t.innerHTML=html.trim(); return t.content.firstChild; }
 
         async function loadCatalog(){
             try {
                 const { items } = await api('list', { limit: 12 });
                 const root = document.getElementById('catalog-list');
                 root.innerHTML = '';
+
+                if (!items || items.length === 0) {
+                    root.innerHTML = '<div class="uk-width-1-1"><p class="uk-text-center uk-text-muted">Товары не найдены</p></div>';
+                    return;
+                }
+
                 (items||[]).forEach(p => {
+                    const imageHtml = p.image
+                        ? `<img src="${p.image}" alt="${p.title||''}" uk-cover>`
+                        : '<div class="uk-height-small uk-flex uk-flex-middle uk-flex-center uk-background-muted">Нет фото</div>';
+
                     const card = el(`
                         <div>
                           <div class="uk-card uk-card-default uk-card-small">
-                            <div class="uk-card-media-top">
-                              <div class="uk-height-small uk-flex uk-flex-middle uk-flex-center uk-background-muted">Изображение</div>
+                            <div class="uk-card-media-top uk-cover-container">
+                              ${imageHtml}
                             </div>
                             <div class="uk-card-body">
-                              <div class="uk-text-small uk-text-muted">&nbsp;</div>
-                              <h5 class="uk-margin-remove">${p.title || '<?php echo JText::_('COM_RADICALMART_PRODUCT'); ?>'}</h5>
-                              <div class="uk-margin-small tg-safe-text"><strong>${p.price_final||''}</strong></div>
+                              <div class="uk-text-small uk-text-muted">${p.category||'&nbsp;'}</div>
+                              <h5 class="uk-margin-remove">${p.title || 'Товар'}</h5>
+                              <div class="uk-margin-small tg-safe-text"><strong>${p.price_final||'Цена не указана'}</strong></div>
                               <div class="uk-flex uk-flex-between">
-                                <button class="uk-button uk-button-primary" data-action="add" data-id="${p.id}">В корзину</button>
-                                <button class="uk-button uk-button-default" disabled>Подробнее</button>
+                                <button class="uk-button uk-button-primary uk-button-small" data-action="add" data-id="${p.id}">В корзину</button>
+                                <button class="uk-button uk-button-default uk-button-small" data-action="details" data-id="${p.id}">Подробнее</button>
                               </div>
                             </div>
                           </div>
                         </div>`);
                     root.appendChild(card);
                 });
-            } catch(e) { UIkit.notification(e.message, {status:'danger'}); }
+            } catch(e) {
+                console.error('Catalog load error:', e);
+                UIkit.notification(e.message || 'Ошибка загрузки каталога', {status:'danger'});
+            }
         }
 
         async function refreshCart(){
@@ -143,22 +166,9 @@ $storeTitle = isset($this->params) ? (string) $this->params->get('store_title', 
             <div class="uk-width-1-1">
                 <h3 id="catalog" class="tg-safe-text">Каталог</h3>
                 <div class="uk-child-width-1-2 uk-child-width-1-3@s" uk-grid id="catalog-list">
-                    <!-- TODO: наполнить товарами через API -->
-                    <div>
-                        <div class="uk-card uk-card-default uk-card-small">
-                            <div class="uk-card-media-top">
-                                <div class="uk-height-small uk-flex uk-flex-middle uk-flex-center uk-background-muted">Изображение</div>
-                            </div>
-                            <div class="uk-card-body">
-                                <div class="uk-text-small uk-text-muted">Категория</div>
-                                <h5 class="uk-margin-remove">Название товара</h5>
-                                <div class="uk-margin-small tg-safe-text"><strong>1 000 ₽</strong></div>
-                                <div class="uk-flex uk-flex-between">
-                                    <button class="uk-button uk-button-primary"><?php echo JText::_('COM_RADICALMART_TELEGRAM_ADD_TO_CART'); ?></button>
-                                    <button class="uk-button uk-button-default"><?php echo JText::_('COM_RADICALMART_TELEGRAM_MORE'); ?></button>
-                                </div>
-                            </div>
-                        </div>
+                    <div class="uk-width-1-1 uk-text-center">
+                        <div uk-spinner></div>
+                        <p class="uk-text-muted">Загрузка товаров...</p>
                     </div>
                 </div>
             </div>
