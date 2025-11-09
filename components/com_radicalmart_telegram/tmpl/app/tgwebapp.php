@@ -52,8 +52,14 @@ $storeTitle = isset($this->params) ? (string) $this->params->get('store_title', 
             const chat = qs('chat'); if (chat) url.searchParams.set('chat', chat);
             try { if (window.Telegram && window.Telegram.WebApp && window.Telegram.WebApp.initData) { url.searchParams.set('tg_init', window.Telegram.WebApp.initData); } } catch(e){}
             for (const [k,v] of Object.entries(params)) url.searchParams.set(k, v);
+
+            console.log('API call:', method, 'params:', params, 'URL:', url.toString());
+
             const res = await fetch(url.toString(), { credentials: 'same-origin' });
             const json = await res.json();
+
+            console.log('API response:', method, json);
+
             if (json && json.success === false) throw new Error(json.message||'API error');
             return json.data || {};
         }
@@ -99,7 +105,10 @@ $storeTitle = isset($this->params) ? (string) $this->params->get('store_title', 
                             </div>`);
                         root.appendChild(card);
                 });
-            } catch(e) { UIkit.notification(e.message, {status:'danger'}); }
+            } catch(e) {
+                console.error('Catalog load error:', e);
+                UIkit.notification(e.message || 'Ошибка загрузки каталога', {status:'danger'});
+            }
         }
         let CART_COUNT = 0;
         async function refreshCart(){
@@ -483,9 +492,10 @@ $storeTitle = isset($this->params) ? (string) $this->params->get('store_title', 
             ev.preventDefault();
             const m = document.getElementById('pvz-map'); if (m) m.scrollIntoView({behavior:'smooth', block:'center'});
         });
-        document.addEventListener('DOMContentLoaded', () => { 
-            loadCatalog(); 
-            refreshCart(); 
+        document.addEventListener('DOMContentLoaded', () => {
+            console.log('DOMContentLoaded: starting initialization...');
+            loadCatalog();
+            refreshCart();
             loadMethods().then(async () => { const sum = await api('summary'); renderBonuses(sum); await refreshSummary(); });
             // Filters listeners
             const fs = document.getElementById('filter-sort');
