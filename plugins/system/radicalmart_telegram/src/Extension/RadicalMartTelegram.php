@@ -131,6 +131,18 @@ class RadicalMartTelegram extends CMSPlugin implements SubscriberInterface
         ]);
 
         $root->addChild(new AdministratorMenuItem([
+            'title'     => 'COM_RADICALMART_TELEGRAM_MENU_SETTINGS',
+            'type'      => 'component',
+            'link'      => 'index.php?option=com_radicalmart_telegram&view=settings',
+            'element'   => 'com_radicalmart_telegram',
+            'class'     => '',
+            'ajaxbadge' => null,
+            'dashboard' => null,
+            'scope'     => 'default',
+            'params'    => new Registry(),
+        ]));
+
+        $root->addChild(new AdministratorMenuItem([
             'title'     => 'COM_RADICALMART_TELEGRAM_MENU_STATUS',
             'type'      => 'component',
             'link'      => 'index.php?option=com_radicalmart_telegram&view=status',
