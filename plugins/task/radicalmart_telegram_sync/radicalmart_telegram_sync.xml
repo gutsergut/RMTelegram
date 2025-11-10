@@ -1,0 +1,20 @@
+<?xml version="1.0" encoding="utf-8"?>
+<extension type="plugin" group="task" method="upgrade" version="5.0">
+    <name>plg_task_radicalmart_telegram_sync</name>
+    <author>Project Team</author>
+    <creationDate>2025-11</creationDate>
+    <version>0.1.0</version>
+    <description>PLG_TASK_RADICALMART_TELEGRAM_SYNC_XML_DESCRIPTION</description>
+    <namespace path="src">Joomla\Plugin\Task\RadicalMartTelegramSync</namespace>
+
+    <files>
+        <folder plugin="radicalmart_telegram_sync">services</folder>
+        <folder>src</folder>
+        <folder>language</folder>
+    </files>
+
+    <languages>
+        <language tag="ru-RU">language/ru-RU/plg_task_radicalmart_telegram_sync.ini</language>
+        <language tag="ru-RU">language/ru-RU/plg_task_radicalmart_telegram_sync.sys.ini</language>
+    </languages>
+</extension>
