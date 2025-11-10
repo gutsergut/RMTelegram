@@ -8,6 +8,7 @@ namespace Joomla\Component\RadicalMartTelegram\Site\Controller;
 \defined('_JEXEC') or die;
 
 use Joomla\CMS\Factory;
+use Joomla\CMS\Component\ComponentHelper;
 use Joomla\CMS\MVC\Controller\BaseController;
 use Joomla\Component\RadicalMart\Administrator\Helper\ParamsHelper as RMParamsHelper;
 use Joomla\Component\RadicalMartTelegram\Site\Service\TelegramClient;
@@ -23,13 +24,24 @@ class WebhookController extends BaseController
 
         // Read component params
         $params = $this->getParams();
-        $expected = (string) $params->get('webhook_secret');
 
-        // Logger setup
+        // ДИАГНОСТИКА: проверка загрузки параметров
         Log::addLogger([
             'text_file' => 'com_radicalmart_telegram.php',
             'text_entry_format' => "{DATETIME}\t{CLIENTIP}\t{MESSAGE}\t{PRIORITY}",
         ], Log::ALL, ['com_radicalmart.telegram']);
+
+        Log::add('RMParamsHelper exists: ' . (class_exists(RMParamsHelper::class) ? 'YES' : 'NO'), Log::DEBUG, 'com_radicalmart.telegram');
+        Log::add('Params object type: ' . get_class($params), Log::DEBUG, 'com_radicalmart.telegram');
+
+        // Попробуем разные ключи
+        $expected = (string) $params->get('webhook_secret');
+        $altKey = (string) $params->get('com_radicalmart_telegram.webhook_secret');
+
+        Log::add('webhook_secret value length: ' . strlen($expected), Log::DEBUG, 'com_radicalmart.telegram');
+        if (strlen($altKey) > 0) {
+            Log::add('Alternative key com_radicalmart_telegram.webhook_secret found: ' . $altKey, Log::DEBUG, 'com_radicalmart.telegram');
+        }
 
         // ДИАГНОСТИКА
         Log::add('Webhook receive: secret=' . (strlen($secret) > 0 ? 'present (' . strlen($secret) . ' chars)' : 'EMPTY'), Log::DEBUG, 'com_radicalmart.telegram');
@@ -70,11 +82,32 @@ class WebhookController extends BaseController
 
     protected function getParams()
     {
-        // Reuse RadicalMart params helper to get component params style (consistent with project)
-        if (class_exists(RMParamsHelper::class)) {
-            return RMParamsHelper::getComponentParams('com_radicalmart_telegram');
+        Log::addLogger([
+            'text_file' => 'com_radicalmart_telegram.php',
+        ], Log::ALL, ['com_radicalmart.telegram']);
+
+        // Попробуем стандартный способ Joomla 5
+        try {
+            $componentParams = ComponentHelper::getParams('com_radicalmart_telegram');
+            Log::add('ComponentHelper::getParams webhook_secret length: ' . strlen($componentParams->get('webhook_secret', '')), Log::DEBUG, 'com_radicalmart.telegram');
+
+            if (strlen($componentParams->get('webhook_secret', '')) > 0) {
+                Log::add('Using ComponentHelper (webhook_secret found)', Log::DEBUG, 'com_radicalmart.telegram');
+                return $componentParams;
+            }
+        } catch (\Exception $e) {
+            Log::add('ComponentHelper::getParams failed: ' . $e->getMessage(), Log::WARNING, 'com_radicalmart.telegram');
         }
 
-        return Factory::getApplication()->getParams('com_radicalmart_telegram');
+        // Reuse RadicalMart params helper to get component params style (consistent with project)
+        if (class_exists(RMParamsHelper::class)) {
+            $params = RMParamsHelper::getComponentParams('com_radicalmart_telegram');
+            Log::add('Params loaded via RMParamsHelper, webhook_secret length: ' . strlen($params->get('webhook_secret', '')), Log::DEBUG, 'com_radicalmart.telegram');
+            return $params;
+        }
+
+        $params = Factory::getApplication()->getParams('com_radicalmart_telegram');
+        Log::add('Params loaded via Factory, webhook_secret length: ' . strlen($params->get('webhook_secret', '')), Log::DEBUG, 'com_radicalmart.telegram');
+        return $params;
     }
 }

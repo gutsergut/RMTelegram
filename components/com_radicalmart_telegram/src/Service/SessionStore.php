@@ -23,7 +23,7 @@ class SessionStore
     {
         $db = $this->db;
         $query = $db->getQuery(true)
-            ->select(['chat_id', 'state', 'payload', 'cart_snapshot', 'expires_at', 'updated', 'last_update_id'])
+            ->select(['chat_id', 'state', 'payload', 'cart_snapshot', 'expires_at', 'updated_at', 'last_update_id'])
             ->from($db->quoteName('#__radicalmart_telegram_sessions'))
             ->where($db->quoteName('chat_id') . ' = :cid')
             ->bind(':cid', $chatId, ParameterType::INTEGER);
@@ -64,7 +64,7 @@ class SessionStore
         $query = $db->getQuery(true)
             ->update($db->quoteName('#__radicalmart_telegram_sessions'))
             ->set($db->quoteName('last_update_id') . ' = :uid')
-            ->set($db->quoteName('updated') . ' = :updated')
+            ->set($db->quoteName('updated_at') . ' = :updated')
             ->where($db->quoteName('chat_id') . ' = :cid')
             ->bind(':uid', $updateId, ParameterType::INTEGER)
             ->bind(':updated', $now)
@@ -79,7 +79,7 @@ class SessionStore
                 'payload' => null,
                 'cart_snapshot' => null,
                 'expires_at' => null,
-                'updated' => $now,
+                'updated_at' => $now,
                 'last_update_id' => $updateId,
             ];
             $db->insertObject('#__radicalmart_telegram_sessions', $obj);
@@ -98,7 +98,7 @@ class SessionStore
             ->update($db->quoteName('#__radicalmart_telegram_sessions'))
             ->set($db->quoteName('state') . ' = :state')
             ->set($db->quoteName('payload') . ' = :payload')
-            ->set($db->quoteName('updated') . ' = :updated')
+            ->set($db->quoteName('updated_at') . ' = :updated')
             ->where($db->quoteName('chat_id') . ' = :cid')
             ->bind(':state', $state)
             ->bind(':payload', $payloadJson)
@@ -114,7 +114,7 @@ class SessionStore
                 'payload' => $payloadJson,
                 'cart_snapshot' => null,
                 'expires_at' => null,
-                'updated' => $now,
+                'updated_at' => $now,
                 'last_update_id' => 0,
             ];
             $db->insertObject('#__radicalmart_telegram_sessions', $obj);

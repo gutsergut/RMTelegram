@@ -2,7 +2,7 @@
 <extension type="plugin" group="radicalmart_payment" method="upgrade" version="5.0">
     <name>plg_radicalmart_payment_telegramcards</name>
     <author>Project Team</author>
-    <version>0.1.25</version>
+    <version>0.1.0</version>
     <description>Telegram Payments (cards) via YooKassa/Robokassa — sends invoice to chat</description>
     <files>
         <filename plugin="telegramcards">telegramcards.php</filename>

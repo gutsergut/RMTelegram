@@ -12,6 +12,7 @@ use Joomla\CMS\Log\Log;
 use Joomla\CMS\Language\Text;
 use Joomla\CMS\Uri\Uri;
 use Joomla\Registry\Registry;
+use Joomla\Component\RadicalMartTelegram\Site\Helper\ConsentHelper;
 
 class UpdateHandler
 {
@@ -183,35 +184,64 @@ class UpdateHandler
         if ($text === '/start' || $text === '/help') {
             Log::add('Processing /start or /help command', Log::DEBUG, 'com_radicalmart.telegram');
 
-            $welcome  = Text::sprintf('COM_RADICALMART_TELEGRAM_WELCOME', $storeTitle);
-            $welcome .= "\n\n" . Text::sprintf('COM_RADICALMART_TELEGRAM_WELCOME_HINT', $storeTitle);
-            // Offer contact request if no mapping exists yet
-            $opts = [];
+            // Check consent first
             try {
                 $db = Factory::getContainer()->get('DatabaseDriver');
                 $q = $db->getQuery(true)
-                    ->select('phone')
+                    ->select(['consent_personal_data', 'phone'])
                     ->from($db->quoteName('#__radicalmart_telegram_users'))
                     ->where($db->quoteName('chat_id') . ' = :chat')
                     ->bind(':chat', $chatId);
-                $has = (string) $db->setQuery($q, 0, 1)->loadResult();
+                $user = $db->setQuery($q, 0, 1)->loadAssoc();
 
-                Log::add('User phone in DB: ' . ($has !== '' ? 'found' : 'NOT FOUND'), Log::DEBUG, 'com_radicalmart.telegram');
+                $hasConsent = $user && (int)$user['consent_personal_data'] === 1;
+                $hasPhone = $user && !empty($user['phone']);
 
-                if ($has === '') {
+                Log::add('User consent: ' . ($hasConsent ? 'YES' : 'NO') . ', phone: ' . ($hasPhone ? 'YES' : 'NO'), Log::DEBUG, 'com_radicalmart.telegram');
+
+                // Step 1: Request consent if not given
+                if (!$hasConsent) {
+                    // Get consent URL from component settings
+                    $consentUrl = ConsentHelper::getDocumentUrl('consent');
+
+                    // Fallback to language constant if not configured
+                    if (empty($consentUrl)) {
+                        $consentUrl = Text::_('COM_RADICALMART_TELEGRAM_CONSENT_URL');
+                    }
+
+                    $consentText = Text::sprintf('COM_RADICALMART_TELEGRAM_CONSENT_REQUEST', $consentUrl);
+                    $opts = [
+                        'parse_mode' => 'HTML',
+                        'reply_markup' => [
+                            'inline_keyboard' => [[
+                                ['text' => Text::_('COM_RADICALMART_TELEGRAM_CONSENT_BUTTON'), 'callback_data' => 'consent_accept']
+                            ]]
+                        ]
+                    ];
+                    $this->client->sendMessage($chatId, $consentText, $opts);
+                    return;
+                }
+
+                // Step 2: Welcome + request phone if consent given but no phone
+                $welcome  = Text::sprintf('COM_RADICALMART_TELEGRAM_WELCOME', $storeTitle);
+                $welcome .= "\n\n" . Text::sprintf('COM_RADICALMART_TELEGRAM_WELCOME_HINT', $storeTitle);
+                $opts = [];
+
+                if (!$hasPhone) {
                     $opts['reply_markup'] = [
                         'keyboard' => [[ [ 'text' => Text::_('COM_RADICALMART_TELEGRAM_SEND_PHONE'), 'request_contact' => true ] ]],
                         'one_time_keyboard' => true,
                         'resize_keyboard' => true,
                     ];
                 }
-            } catch (\Throwable $e) {
-                Log::add('Error checking user phone: ' . $e->getMessage(), Log::WARNING, 'com_radicalmart.telegram');
-            }
 
-            Log::add('Sending welcome message to chat ' . $chatId, Log::DEBUG, 'com_radicalmart.telegram');
-            $result = $this->client->sendMessage($chatId, $welcome, $opts);
-            Log::add('sendMessage result: ' . ($result ? 'SUCCESS' : 'FAILED'), Log::DEBUG, 'com_radicalmart.telegram');
+                Log::add('Sending welcome message to chat ' . $chatId, Log::DEBUG, 'com_radicalmart.telegram');
+                $result = $this->client->sendMessage($chatId, $welcome, $opts);
+                Log::add('sendMessage result: ' . ($result ? 'SUCCESS' : 'FAILED'), Log::DEBUG, 'com_radicalmart.telegram');
+
+            } catch (\Throwable $e) {
+                Log::add('Error in /start handler: ' . $e->getMessage(), Log::WARNING, 'com_radicalmart.telegram');
+            }
             return;
         }
 
@@ -297,6 +327,64 @@ class UpdateHandler
         }
 
         if ($chatId) {
+            // Handle consent acceptance
+            if ($data === 'consent_accept') {
+                try {
+                    $db = Factory::getContainer()->get('DatabaseDriver');
+                    $now = (new \Joomla\CMS\Date\Date())->toSql();
+
+                    // Check if user exists
+                    $q = $db->getQuery(true)
+                        ->select('id')
+                        ->from($db->quoteName('#__radicalmart_telegram_users'))
+                        ->where($db->quoteName('chat_id') . ' = :chat')
+                        ->bind(':chat', $chatId);
+                    $userId = (int) $db->setQuery($q, 0, 1)->loadResult();
+
+                    if ($userId > 0) {
+                        // Update existing user
+                        $q = $db->getQuery(true)
+                            ->update($db->quoteName('#__radicalmart_telegram_users'))
+                            ->set($db->quoteName('consent_personal_data') . ' = 1')
+                            ->set($db->quoteName('consent_personal_data_at') . ' = ' . $db->quote($now))
+                            ->where($db->quoteName('id') . ' = :id')
+                            ->bind(':id', $userId);
+                        $db->setQuery($q)->execute();
+                    } else {
+                        // Insert new user
+                        $obj = (object) [
+                            'chat_id' => $chatId,
+                            'consent_personal_data' => 1,
+                            'consent_personal_data_at' => $now,
+                            'created' => $now,
+                        ];
+                        $db->insertObject('#__radicalmart_telegram_users', $obj);
+                    }
+
+                    // Send confirmation
+                    $this->client->sendMessage($chatId, Text::_('COM_RADICALMART_TELEGRAM_CONSENT_ACCEPTED'));
+
+                    // Trigger welcome message
+                    $params = Factory::getApplication()->getParams('com_radicalmart_telegram');
+                    $storeTitle = (string) ($params->get('store_title', 'магазин Cacao.Land'));
+                    $welcome  = Text::sprintf('COM_RADICALMART_TELEGRAM_WELCOME', $storeTitle);
+                    $welcome .= "\n\n" . Text::sprintf('COM_RADICALMART_TELEGRAM_WELCOME_HINT', $storeTitle);
+                    $opts = [
+                        'reply_markup' => [
+                            'keyboard' => [[ [ 'text' => Text::_('COM_RADICALMART_TELEGRAM_SEND_PHONE'), 'request_contact' => true ] ]],
+                            'one_time_keyboard' => true,
+                            'resize_keyboard' => true,
+                        ]
+                    ];
+                    $this->client->sendMessage($chatId, $welcome, $opts);
+
+                    Log::add('Consent accepted for chat ' . $chatId, Log::INFO, 'com_radicalmart.telegram');
+                } catch (\Throwable $e) {
+                    Log::add('Error saving consent: ' . $e->getMessage(), Log::ERROR, 'com_radicalmart.telegram');
+                }
+                return;
+            }
+
             if (strpos($data, 'catalog:page:') === 0) {
                 $page = (int) substr($data, strlen('catalog:page:'));
                 if ($page < 1) { $page = 1; }

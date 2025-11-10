@@ -54,7 +54,7 @@ $storeTitle = isset($this->params) ? (string) $this->params->get('store_title', 
 
             // Add Telegram WebApp initData for validation
             if (window.Telegram && window.Telegram.WebApp && window.Telegram.WebApp.initData) {
-                url.searchParams.set('initData', window.Telegram.WebApp.initData);
+                url.searchParams.set('tg_init', window.Telegram.WebApp.initData);
             }
 
             for (const [k,v] of Object.entries(params)) url.searchParams.set(k, v);

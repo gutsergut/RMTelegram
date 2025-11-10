@@ -1,7 +1,8 @@
--- Schema update 0.1.1
 ALTER TABLE `#__radicalmart_telegram_users`
-  ADD COLUMN `tg_user_id` BIGINT NULL AFTER `chat_id`,
-  ADD KEY `idx_tg_user_id` (`tg_user_id`);
+  ADD COLUMN IF NOT EXISTS `tg_user_id` BIGINT NULL AFTER `chat_id`;
+
+CREATE INDEX IF NOT EXISTS `idx_tg_user_id`
+  ON `#__radicalmart_telegram_users` (`tg_user_id`);
 
 CREATE TABLE IF NOT EXISTS `#__radicalmart_telegram_nonces` (
   `id` INT UNSIGNED NOT NULL AUTO_INCREMENT,

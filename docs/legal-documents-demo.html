@@ -1,0 +1,260 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Демо: Настройки юридических документов</title>
+    <style>
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+            max-width: 900px;
+            margin: 40px auto;
+            padding: 0 20px;
+            background: #f5f5f5;
+        }
+        .container {
+            background: white;
+            border-radius: 8px;
+            padding: 30px;
+            box-shadow: 0 2px 8px rgba(0,0,0,0.1);
+        }
+        h1 {
+            color: #333;
+            border-bottom: 3px solid #1c7cd6;
+            padding-bottom: 10px;
+        }
+        .field-group {
+            margin: 25px 0;
+            padding: 20px;
+            background: #f8f9fa;
+            border-radius: 6px;
+            border-left: 4px solid #1c7cd6;
+        }
+        .field-label {
+            font-weight: 600;
+            color: #555;
+            margin-bottom: 8px;
+        }
+        .field-description {
+            font-size: 13px;
+            color: #666;
+            margin-bottom: 12px;
+        }
+        .select-button {
+            display: inline-flex;
+            align-items: center;
+            gap: 8px;
+            padding: 10px 16px;
+            background: #1c7cd6;
+            color: white;
+            border: none;
+            border-radius: 4px;
+            cursor: pointer;
+            font-size: 14px;
+            transition: background 0.2s;
+        }
+        .select-button:hover {
+            background: #1565c0;
+        }
+        .selected-article {
+            display: inline-flex;
+            align-items: center;
+            gap: 8px;
+            padding: 8px 12px;
+            background: #e3f2fd;
+            border: 1px solid #90caf9;
+            border-radius: 4px;
+            margin-top: 8px;
+        }
+        .clear-btn {
+            color: #d32f2f;
+            cursor: pointer;
+            font-weight: bold;
+        }
+        .info-box {
+            background: #fff3cd;
+            border: 1px solid #ffc107;
+            border-radius: 6px;
+            padding: 15px;
+            margin: 20px 0;
+        }
+        .info-box h3 {
+            margin-top: 0;
+            color: #856404;
+        }
+        .code {
+            background: #f5f5f5;
+            padding: 2px 6px;
+            border-radius: 3px;
+            font-family: monospace;
+            font-size: 13px;
+        }
+        .url-output {
+            background: #e8f5e9;
+            border: 1px solid #4caf50;
+            border-radius: 4px;
+            padding: 12px;
+            margin-top: 15px;
+            font-family: monospace;
+            word-break: break-all;
+        }
+        .icon {
+            font-size: 18px;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>⚙️ Настройки: Юридические документы</h1>
+
+        <div class="info-box">
+            <h3>📋 Как это работает</h3>
+            <p>
+                1. Выберите статью Joomla с юридическим документом<br>
+                2. Система сохранит <span class="code">ID статьи</span> в параметрах компонента<br>
+                3. При запросе согласия бот сформирует <strong>короткую SEF-ссылку</strong> через Router<br>
+                4. Пользователь получит ссылку вида: <span class="code">https://cacao.land/consent</span>
+            </p>
+        </div>
+
+        <div class="field-group">
+            <div class="field-label">
+                📄 Политика конфиденциальности
+            </div>
+            <div class="field-description">
+                Статья с текстом Политики обработки персональных данных.
+                Ссылка будет использоваться в боте при запросе согласия.
+            </div>
+            <button class="select-button" onclick="selectArticle('privacy')">
+                <span class="icon">📂</span> Select Article
+            </button>
+            <div id="selected-privacy"></div>
+        </div>
+
+        <div class="field-group">
+            <div class="field-label">
+                ✅ Согласие на обработку ПД
+            </div>
+            <div class="field-description">
+                Статья с текстом Согласия на обработку персональных данных.
+                Отправляется пользователю перед регистрацией. <strong>Обязательно для ФЗ-152!</strong>
+            </div>
+            <button class="select-button" onclick="selectArticle('consent')">
+                <span class="icon">📂</span> Select Article
+            </button>
+            <div id="selected-consent"></div>
+        </div>
+
+        <div class="field-group">
+            <div class="field-label">
+                📜 Пользовательское соглашение
+            </div>
+            <div class="field-description">
+                Статья с Условиями использования (публичная оферта).
+                Ссылка может быть добавлена в информационные сообщения бота.
+            </div>
+            <button class="select-button" onclick="selectArticle('terms')">
+                <span class="icon">📂</span> Select Article
+            </button>
+            <div id="selected-terms"></div>
+        </div>
+
+        <div class="field-group">
+            <div class="field-label">
+                📧 Согласие на рассылки
+            </div>
+            <div class="field-description">
+                Статья с согласием на получение рекламных и информационных материалов.
+                Используется при подписке на рассылки. <strong>Обязательно для ФЗ-38!</strong>
+            </div>
+            <button class="select-button" onclick="selectArticle('marketing')">
+                <span class="icon">📂</span> Select Article
+            </button>
+            <div id="selected-marketing"></div>
+        </div>
+
+        <div class="info-box" style="background: #e8f5e9; border-color: #4caf50;">
+            <h3>🔗 Формирование URL через Router</h3>
+            <p><strong>PHP код (ConsentHelper.php):</strong></p>
+            <pre style="background: #f5f5f5; padding: 12px; border-radius: 4px; overflow-x: auto;"><code>$articleId = (int) $params->get('article_consent_personal_data', 0);
+
+// Формирование короткой ссылки через Router Joomla
+$url = Route::link(
+    'site',
+    'index.php?option=com_content&view=article&id=' . $articleId,
+    false,
+    Route::TLS_IGNORE,
+    true
+);
+
+// Результат: https://cacao.land/consent (если настроен пункт меню)</code></pre>
+        </div>
+
+        <div id="url-demo"></div>
+    </div>
+
+    <script>
+        // Демо: имитация выбора статьи
+        const articles = {
+            privacy: { id: 123, title: 'Политика конфиденциальности', alias: 'privacy' },
+            consent: { id: 124, title: 'Согласие на обработку персональных данных', alias: 'consent' },
+            terms: { id: 125, title: 'Пользовательское соглашение', alias: 'terms' },
+            marketing: { id: 126, title: 'Согласие на получение рассылок', alias: 'consent-marketing' }
+        };
+
+        function selectArticle(type) {
+            const article = articles[type];
+            const container = document.getElementById(`selected-${type}`);
+
+            container.innerHTML = `
+                <div class="selected-article">
+                    <span>✓ ${article.title} (ID: ${article.id})</span>
+                    <span class="clear-btn" onclick="clearArticle('${type}')">×</span>
+                </div>
+            `;
+
+            updateUrlDemo();
+        }
+
+        function clearArticle(type) {
+            document.getElementById(`selected-${type}`).innerHTML = '';
+            updateUrlDemo();
+        }
+
+        function updateUrlDemo() {
+            const consent = articles.consent;
+            const demoDiv = document.getElementById('url-demo');
+
+            demoDiv.innerHTML = `
+                <div style="margin-top: 30px; padding: 20px; background: #f8f9fa; border-radius: 6px;">
+                    <h3 style="margin-top: 0;">🤖 Пример использования в боте</h3>
+                    <p><strong>Когда пользователь отправляет /start без согласия:</strong></p>
+                    <div style="background: white; border: 1px solid #ddd; border-radius: 4px; padding: 15px; margin: 10px 0;">
+                        <div style="color: #666; font-size: 12px; margin-bottom: 8px;">@CacaoLandBot:</div>
+                        <div>
+                            Для продолжения работы необходимо дать
+                            <a href="https://cacao.land/${consent.alias}" target="_blank">согласие на обработку персональных данных</a>.
+                        </div>
+                        <div style="margin-top: 12px;">
+                            <button style="background: #1c7cd6; color: white; border: none; padding: 10px 20px; border-radius: 4px; cursor: pointer;">
+                                ✅ Согласен и ознакомлен
+                            </button>
+                        </div>
+                    </div>
+                    <div class="url-output">
+                        <strong>Сформированный URL:</strong><br>
+                        https://cacao.land/${consent.alias}
+                        <br><br>
+                        <small style="color: #666;">
+                            💡 SEF-URL формируется автоматически через Router::link() на основе ID статьи (${consent.id})
+                        </small>
+                    </div>
+                </div>
+            `;
+        }
+
+        // Показать демо сразу
+        selectArticle('consent');
+    </script>
+</body>
+</html>
