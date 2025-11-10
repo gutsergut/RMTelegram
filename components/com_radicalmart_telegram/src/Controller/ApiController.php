@@ -35,6 +35,7 @@ class ApiController extends BaseController
         $raw = (string) $app->input->get('tg_init', '', 'raw');
         $params = $app->getParams('com_radicalmart_telegram');
         $strict = (int) $params->get('strict_tg_init', 0) === 1;
+        Log::add('guardInitData: raw=' . (strlen($raw) > 0 ? 'present (' . strlen($raw) . ' bytes)' : 'EMPTY') . ', strict=' . ($strict ? 'YES' : 'NO'), Log::DEBUG, 'com_radicalmart.telegram');
         if ($raw === '') {
             if ($strict) {
                 Log::add('Missing Telegram initData in strict mode', Log::WARNING, 'com_radicalmart.telegram');
@@ -184,11 +185,13 @@ class ApiController extends BaseController
     protected function verifyInitData(string $rawInit, string $botToken): bool
     {
         if ($rawInit === '' || $botToken === '' || strlen($rawInit) > 4096) {
+            Log::add('verifyInitData FAIL: empty or too long. raw=' . strlen($rawInit) . ', token=' . (strlen($botToken) > 0 ? 'set' : 'empty'), Log::DEBUG, 'com_radicalmart.telegram');
             return false;
         }
         $pairs = [];
         parse_str($rawInit, $pairs);
         if (empty($pairs) || !isset($pairs['hash'])) {
+            Log::add('verifyInitData FAIL: no pairs or no hash', Log::DEBUG, 'com_radicalmart.telegram');
             return false;
         }
         $receivedHash = (string) $pairs['hash'];
@@ -196,13 +199,18 @@ class ApiController extends BaseController
         ksort($pairs, SORT_STRING);
         $lines = [];
         foreach ($pairs as $k => $v) {
-            if (is_array($v)) { return false; }
+            if (is_array($v)) {
+                Log::add('verifyInitData FAIL: array value in pairs', Log::DEBUG, 'com_radicalmart.telegram');
+                return false;
+            }
             $lines[] = $k . '=' . (string) $v;
         }
         $dataCheckString = implode("\n", $lines);
         $secretKey = hash_hmac('sha256', 'WebAppData', $botToken, true);
         $calc = hash_hmac('sha256', $dataCheckString, $secretKey);
-        return hash_equals(strtolower($calc), strtolower($receivedHash));
+        $result = hash_equals(strtolower($calc), strtolower($receivedHash));
+        Log::add('verifyInitData: ' . ($result ? 'OK' : 'FAIL hash mismatch') . ', received=' . substr($receivedHash, 0, 16) . '..., calc=' . substr($calc, 0, 16) . '...', Log::DEBUG, 'com_radicalmart.telegram');
+        return $result;
     }
     protected function getChatId(): int
     {
@@ -1179,11 +1187,18 @@ class ApiController extends BaseController
                 echo new JsonResponse(['items' => []]); $app->close();
             }
             if ($items === null) {
+                $showPostamats = (int) $params->get('show_postamats', 1) === 1;
+
                 $query = $db->getQuery(true)
-                    ->select([$db->quoteName('provider'), $db->quoteName('ext_id'), $db->quoteName('title'), $db->quoteName('address'), $db->quoteName('lat'), $db->quoteName('lon')])
+                    ->select([$db->quoteName('provider'), $db->quoteName('ext_id'), $db->quoteName('title'), $db->quoteName('address'), $db->quoteName('lat'), $db->quoteName('lon'), $db->quoteName('pvz_type')])
                     ->from($db->quoteName('#__radicalmart_apiship_points'))
                     ->where($db->quoteName('operation') . ' = ' . $db->quote('giveout'))
                     ->order($db->quoteName('provider') . ' ASC');
+
+                if (!$showPostamats) {
+                    $query->where($db->quoteName('pvz_type') . ' = ' . $db->quote('1'));
+                }
+
                 if (!empty($where)) { $query->where(implode(' AND ', $where)); }
                 $db->setQuery($query, 0, $limit);
                 $rows = $db->loadAssocList();
