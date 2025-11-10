@@ -1,7 +1,7 @@
 <?xml version="1.0" encoding="utf-8"?>
 <extension type="plugin" group="task" method="upgrade" version="5.0">
     <name>plg_task_radicalmart_telegram_fetch</name>
-    <version>0.1.25</version>
+    <version>0.1.0</version>
     <creationDate>2025-10-26</creationDate>
     <author>Project Team</author>
     <license>GPL</license>
@@ -15,7 +15,10 @@
     </files>
 
     <languages>
+        <language tag="en-GB">language/en-GB/plg_task_radicalmart_telegram_fetch.ini</language>
+        <language tag="en-GB">language/en-GB/plg_task_radicalmart_telegram_fetch.sys.ini</language>
         <language tag="ru-RU">language/ru-RU/plg_task_radicalmart_telegram_fetch.ini</language>
+        <language tag="ru-RU">language/ru-RU/plg_task_radicalmart_telegram_fetch.sys.ini</language>
     </languages>
 
     <config>
