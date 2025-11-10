@@ -26,12 +26,17 @@ class UpdateHandler
 
     public function handle(string $rawBody): void
     {
+        Log::add('UpdateHandler::handle called with ' . strlen($rawBody) . ' bytes', Log::DEBUG, 'com_radicalmart.telegram');
+
         if (!$this->client->isConfigured()) {
+            Log::add('Client not configured, skipping update', Log::WARNING, 'com_radicalmart.telegram');
             return;
         }
 
         $data   = new Registry($rawBody);
         $update = $data->toArray();
+
+        Log::add('Update parsed: update_id=' . ($update['update_id'] ?? 'missing') . ', has_message=' . (isset($update['message']) ? 'YES' : 'NO'), Log::DEBUG, 'com_radicalmart.telegram');
 
         $updateId = (int) ($update['update_id'] ?? 0);
         $chatId   = 0;
@@ -41,12 +46,15 @@ class UpdateHandler
             $chatId = (int) $update['callback_query']['message']['chat']['id'];
         }
 
+        Log::add('Chat ID: ' . $chatId, Log::DEBUG, 'com_radicalmart.telegram');
+
         if ($updateId && $chatId && $this->store->isDuplicate($chatId, $updateId)) {
             Log::add('Duplicate update skipped: ' . $updateId, Log::DEBUG, 'com_radicalmart.telegram');
             return;
         }
 
         if (!empty($update['message'])) {
+            Log::add('Processing message...', Log::DEBUG, 'com_radicalmart.telegram');
             $this->onMessage($update['message']);
             if ($updateId && $chatId) {
                 $this->store->setLastUpdate($chatId, $updateId);
@@ -170,7 +178,11 @@ class UpdateHandler
         $params = Factory::getApplication()->getParams('com_radicalmart_telegram');
         $storeTitle = (string) ($params->get('store_title', 'магазин Cacao.Land'));
 
+        Log::add('Message text: "' . $text . '"', Log::DEBUG, 'com_radicalmart.telegram');
+
         if ($text === '/start' || $text === '/help') {
+            Log::add('Processing /start or /help command', Log::DEBUG, 'com_radicalmart.telegram');
+
             $welcome  = Text::sprintf('COM_RADICALMART_TELEGRAM_WELCOME', $storeTitle);
             $welcome .= "\n\n" . Text::sprintf('COM_RADICALMART_TELEGRAM_WELCOME_HINT', $storeTitle);
             // Offer contact request if no mapping exists yet
@@ -183,6 +195,9 @@ class UpdateHandler
                     ->where($db->quoteName('chat_id') . ' = :chat')
                     ->bind(':chat', $chatId);
                 $has = (string) $db->setQuery($q, 0, 1)->loadResult();
+
+                Log::add('User phone in DB: ' . ($has !== '' ? 'found' : 'NOT FOUND'), Log::DEBUG, 'com_radicalmart.telegram');
+
                 if ($has === '') {
                     $opts['reply_markup'] = [
                         'keyboard' => [[ [ 'text' => Text::_('COM_RADICALMART_TELEGRAM_SEND_PHONE'), 'request_contact' => true ] ]],
@@ -190,8 +205,13 @@ class UpdateHandler
                         'resize_keyboard' => true,
                     ];
                 }
-            } catch (\Throwable $e) {}
-            $this->client->sendMessage($chatId, $welcome, $opts);
+            } catch (\Throwable $e) {
+                Log::add('Error checking user phone: ' . $e->getMessage(), Log::WARNING, 'com_radicalmart.telegram');
+            }
+
+            Log::add('Sending welcome message to chat ' . $chatId, Log::DEBUG, 'com_radicalmart.telegram');
+            $result = $this->client->sendMessage($chatId, $welcome, $opts);
+            Log::add('sendMessage result: ' . ($result ? 'SUCCESS' : 'FAILED'), Log::DEBUG, 'com_radicalmart.telegram');
             return;
         }
 

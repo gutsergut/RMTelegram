@@ -31,12 +31,22 @@ class WebhookController extends BaseController
             'text_entry_format' => "{DATETIME}\t{CLIENTIP}\t{MESSAGE}\t{PRIORITY}",
         ], Log::ALL, ['com_radicalmart.telegram']);
 
+        // ДИАГНОСТИКА
+        Log::add('Webhook receive: secret=' . (strlen($secret) > 0 ? 'present (' . strlen($secret) . ' chars)' : 'EMPTY'), Log::DEBUG, 'com_radicalmart.telegram');
+        Log::add('Expected secret: ' . (strlen($expected) > 0 ? 'present (' . strlen($expected) . ' chars)' : 'EMPTY'), Log::DEBUG, 'com_radicalmart.telegram');
+
+        if (strlen($secret) > 0 && strlen($expected) > 0) {
+            Log::add('Secret match: ' . ($secret === $expected ? 'YES' : 'NO (first 10 chars: got=' . substr($secret, 0, 10) . ', expected=' . substr($expected, 0, 10) . ')'), Log::DEBUG, 'com_radicalmart.telegram');
+        }
+
         if (empty($expected) || $secret !== $expected) {
             $app->setHeader('Status', '403 Forbidden', true);
-            Log::add('Forbidden webhook call', Log::WARNING, 'com_radicalmart.telegram');
+            Log::add('Forbidden webhook call - secret mismatch or empty', Log::WARNING, 'com_radicalmart.telegram');
             echo 'forbidden';
             $app->close();
         }
+
+        Log::add('Webhook authorized, processing update...', Log::DEBUG, 'com_radicalmart.telegram');
 
         // Read raw body (JSON update from Telegram)
         $raw = file_get_contents('php://input') ?: '';

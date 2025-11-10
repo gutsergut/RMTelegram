@@ -10,6 +10,7 @@ namespace Joomla\Component\RadicalMartTelegram\Site\Service;
 use Joomla\CMS\Http\Http;
 use Joomla\CMS\Factory;
 use Joomla\Registry\Registry;
+use Joomla\CMS\Log\Log;
 
 class TelegramClient
 {
@@ -27,14 +28,30 @@ class TelegramClient
 
     public function api(string $method, array $params = []): Registry
     {
+        Log::add('TelegramClient::api calling ' . $method . ' with ' . count($params) . ' params', Log::DEBUG, 'com_radicalmart.telegram');
+
         $http = new Http();
         $http->setOption('transport.curl', [CURLOPT_SSL_VERIFYHOST => 0, CURLOPT_SSL_VERIFYPEER => 0]);
         $url = 'https://api.telegram.org/bot' . $this->token . '/' . $method;
-        $response = $http->post($url, $params, ['Content-Type' => 'application/x-www-form-urlencoded']);
 
-        $body = (string) $response->body;
-        $data = new Registry($body);
-        return $data;
+        try {
+            $response = $http->post($url, $params, ['Content-Type' => 'application/x-www-form-urlencoded']);
+            $body = (string) $response->body;
+            $data = new Registry($body);
+
+            $ok = $data->get('ok', false);
+            Log::add('API ' . $method . ' response: ok=' . ($ok ? 'true' : 'false') . ', code=' . $response->code, Log::DEBUG, 'com_radicalmart.telegram');
+
+            if (!$ok) {
+                $error = $data->get('description', 'Unknown error');
+                Log::add('API ' . $method . ' error: ' . $error, Log::WARNING, 'com_radicalmart.telegram');
+            }
+
+            return $data;
+        } catch (\Throwable $e) {
+            Log::add('API ' . $method . ' exception: ' . $e->getMessage(), Log::ERROR, 'com_radicalmart.telegram');
+            return new Registry(['ok' => false, 'description' => $e->getMessage()]);
+        }
     }
 
     public function sendMessage(int $chatId, string $text, array $options = []): bool
