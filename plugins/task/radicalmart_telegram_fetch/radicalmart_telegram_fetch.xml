@@ -6,7 +6,7 @@
     <author>Project Team</author>
     <license>GPL</license>
     <description>PLG_TASK_RADICALMART_TELEGRAM_FETCH_XML_DESCRIPTION</description>
-    <namespace path="src">Joomla\Plugin\Task\Radicalmart_telegram_fetch</namespace>
+    <namespace path="src">Joomla\Plugin\Task\RadicalmartTelegramFetch</namespace>
 
     <files>
         <folder plugin="radicalmart_telegram_fetch">services</folder>

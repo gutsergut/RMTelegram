@@ -4,6 +4,28 @@
 
 Формат основан на [Keep a Changelog](https://keepachangelog.com/ru/1.0.0/).
 
+## [5.0.2] - 2025-11-11
+
+### Fixed (Исправлено)
+
+#### Task плагин radicalmart_telegram_fetch
+- **Namespace исправлен**: изменён с `Radicalmart_telegram_fetch` на `RadicalmartTelegramFetch` (правильный CamelCase для Joomla 5)
+- **Логирование добавлено**:
+  - Инициализация Log для категории `com_radicalmart.telegram`
+  - Логи старта задачи с указанием провайдеров
+  - Логи для каждого провайдера (total, chunk size, offset)
+  - Логи обновления meta-таблицы
+  - Логи ошибок при отсутствии токена/провайдеров
+- **Диагностика**: добавлены детальные логи на каждом этапе загрузки ПВЗ для отладки
+- **Файлы**:
+  - `plugins/task/radicalmart_telegram_fetch/radicalmart_telegram_fetch.xml` - исправлен namespace
+  - `plugins/task/radicalmart_telegram_fetch/src/Extension/RadicalMartTelegramFetch.php` - добавлено логирование
+
+### Technical Details
+- Логи пишутся в `administrator/logs/com_radicalmart.telegram.php`
+- Уровни логирования: INFO (процесс), ERROR (ошибки)
+- Формат сообщений: `Provider {name}: {action} {details}`
+
 ## [5.0.1] - 2025-11-10
 
 ### Added (Добавлено)

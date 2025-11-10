@@ -3,7 +3,7 @@
  * @package     plg_task_radicalmart_telegram_fetch
  */
 
-namespace Joomla\Plugin\Task\Radicalmart_telegram_fetch\Extension;
+namespace Joomla\Plugin\Task\RadicalmartTelegramFetch\Extension;
 
 \defined('_JEXEC') or die;
 
@@ -43,22 +43,40 @@ final class RadicalMartTelegramFetch extends CMSPlugin implements SubscriberInte
         }
 
         $this->startRoutine($event);
+
+        // Initialize logging
+        Log::addLogger(
+            ['text_file' => 'com_radicalmart.telegram.php'],
+            Log::ALL,
+            ['com_radicalmart.telegram']
+        );
+
         $app   = Factory::getApplication();
         $db    = Factory::getContainer()->get('DatabaseDriver');
         $token = (string) $app->getParams('com_radicalmart_telegram')->get('apiship_api_key', '');
         $list  = (string) ($this->params->get('providers') ?: $app->getParams('com_radicalmart_telegram')->get('apiship_providers', 'yataxi,cdek,x5'));
         $providers = array_filter(array_map('trim', explode(',', $list)));
+
         if ($token === '' || empty($providers)) {
-            $this->logTask('Missing ApiShip token or providers', 'error');
+            $msg = 'ApiShip fetch failed: Missing token or providers';
+            Log::add($msg, Log::ERROR, 'com_radicalmart.telegram');
+            $this->logTask($msg, 'error');
             $this->endRoutine($event, Status::KNOCKOUT);
             return;
         }
 
+        Log::add('ApiShip fetch started for providers: ' . implode(', ', $providers), Log::INFO, 'com_radicalmart.telegram');
+
         $operation = ['giveout'];
         $limit = 500; $updated = 0; $totalAll = 0;
         foreach ($providers as $prov) {
+            Log::add("Fetching provider: {$prov}", Log::INFO, 'com_radicalmart.telegram');
+
             $total = ApiShipHelper::getPointsTotal($token, [$prov], $operation);
             $totalAll += $total;
+
+            Log::add("Provider {$prov}: total points = {$total}", Log::INFO, 'com_radicalmart.telegram');
+
             $offset = 0;
             $outDir = JPATH_ROOT . '/media/com_radicalmart_telegram/apiship';
             if (!\Joomla\CMS\Filesystem\Folder::exists($outDir)) { \Joomla\CMS\Filesystem\Folder::create($outDir); }
@@ -66,6 +84,10 @@ final class RadicalMartTelegramFetch extends CMSPlugin implements SubscriberInte
             while ($offset < $total) {
                 $chunk = ApiShipHelper::getPoints($token, [$prov], $operation, $offset, $limit);
                 if (!$chunk) break;
+
+                $chunkSize = count($chunk);
+                Log::add("Provider {$prov}: fetched chunk offset={$offset}, size={$chunkSize}", Log::INFO, 'com_radicalmart.telegram');
+
                 foreach ($chunk as $row) {
                     $extId   = (string) ($row['id'] ?? ($row['externalId'] ?? ''));
                     $title   = (string) ($row['title'] ?? ($row['name'] ?? ''));
@@ -112,6 +134,9 @@ final class RadicalMartTelegramFetch extends CMSPlugin implements SubscriberInte
                     $db->quoteName('last_total') . ' = VALUES(' . $db->quoteName('last_total') . ')',
                 ]);
             $db->setQuery($mq)->execute();
+
+            Log::add("Provider {$prov}: meta updated (last_fetch, last_total={$total})", Log::INFO, 'com_radicalmart.telegram');
+
             // Write JSON backup
             try {
                 $file = $outDir . '/' . $prov . '-latest.json';
