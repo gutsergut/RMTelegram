@@ -13,6 +13,7 @@
         <file type="component" id="com_radicalmart_telegram">com_radicalmart_telegram.zip</file>
         <file type="plugin" id="radicalmart_telegram" group="system">plg_system_radicalmart_telegram.zip</file>
         <file type="plugin" id="radicalmart_telegram_fetch" group="task">plg_task_radicalmart_telegram_fetch.zip</file>
+        <file type="plugin" id="radicalmart_telegram_sync" group="task">plg_task_radicalmart_telegram_sync.zip</file>
         <file type="plugin" id="telegramcards" group="radicalmart_payment">plg_radicalmart_payment_telegramcards.zip</file>
         <file type="plugin" id="telegramstars" group="radicalmart_payment">plg_radicalmart_payment_telegramstars.zip</file>
     </files>
