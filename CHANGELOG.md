@@ -10,6 +10,8 @@
 
 #### Task плагин radicalmart_telegram_fetch
 - **Namespace исправлен**: изменён с `Radicalmart_telegram_fetch` на `RadicalmartTelegramFetch` (правильный CamelCase для Joomla 5)
+  - ⚠️ **КРИТИЧНО**: исправлен в 3 файлах (XML, Extension.php, services/provider.php)
+  - Без исправления services/provider.php возникает ошибка "Class not found"
 - **Логирование добавлено**:
   - Инициализация Log для категории `com_radicalmart.telegram`
   - Логи старта задачи с указанием провайдеров
@@ -19,7 +21,8 @@
 - **Диагностика**: добавлены детальные логи на каждом этапе загрузки ПВЗ для отладки
 - **Файлы**:
   - `plugins/task/radicalmart_telegram_fetch/radicalmart_telegram_fetch.xml` - исправлен namespace
-  - `plugins/task/radicalmart_telegram_fetch/src/Extension/RadicalMartTelegramFetch.php` - добавлено логирование
+  - `plugins/task/radicalmart_telegram_fetch/src/Extension/RadicalMartTelegramFetch.php` - namespace + логирование
+  - `plugins/task/radicalmart_telegram_fetch/services/provider.php` - исправлен use statement
 
 ### Technical Details
 - Логи пишутся в `administrator/logs/com_radicalmart.telegram.php`

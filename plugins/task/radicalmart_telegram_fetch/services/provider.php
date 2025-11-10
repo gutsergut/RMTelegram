@@ -10,7 +10,7 @@ use Joomla\CMS\Factory;
 use Joomla\DI\Container;
 use Joomla\DI\ServiceProviderInterface;
 use Joomla\Event\DispatcherInterface;
-use Joomla\Plugin\Task\Radicalmart_telegram_fetch\Extension\RadicalMartTelegramFetch;
+use Joomla\Plugin\Task\RadicalmartTelegramFetch\Extension\RadicalMartTelegramFetch;
 
 return new class () implements ServiceProviderInterface {
     public function register(Container $container): void
