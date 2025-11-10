@@ -23,7 +23,7 @@ final class RadicalMartTelegramFetch extends CMSPlugin implements SubscriberInte
     protected $autoloadLanguage = true;
 
     protected const TASKS_MAP = [
-        'plg_task_radicalmart_telegram_fetch_apiship' => [
+        'radicalmart_telegram.fetch' => [
             'langConstPrefix' => 'PLG_TASK_RADICALMART_TELEGRAM_FETCH',
         ],
     ];

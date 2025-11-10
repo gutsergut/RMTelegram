@@ -4,6 +4,23 @@
 
 Формат основан на [Keep a Changelog](https://keepachangelog.com/ru/1.0.0/).
 
+## [5.0.3] - 2025-11-11
+
+### Fixed (Исправлено)
+
+#### Task плагин radicalmart_telegram_fetch - КРИТИЧЕСКОЕ ИСПРАВЛЕНИЕ
+- **Routine ID исправлен**: изменён с `plg_task_radicalmart_telegram_fetch_apiship` на `radicalmart_telegram.fetch`
+  - **ПРИЧИНА ПРОБЛЕМЫ**: неправильный format routine ID приводил к тому, что TaskPluginTrait не мог найти языковые константы
+  - **СИМПТОМЫ**: константа `PLG_TASK_RADICALMART_TELEGRAM_FETCH_TITLE` отображалась вместо текста, задача не выполнялась
+  - **РЕШЕНИЕ**: используем короткий формат как в плагине `radicalmart_telegram_sync`: `{component}.{action}`
+- **Файлы**:
+  - `plugins/task/radicalmart_telegram_fetch/src/Extension/RadicalMartTelegramFetch.php` - исправлен TASKS_MAP
+
+### Technical Details
+- Правильный формат routine ID: `{namespace}.{action}` (например: `radicalmart_telegram.fetch`)
+- НЕправильный формат: `plg_task_{plugin}_{action}` (слишком длинный, не распознаётся)
+- TaskPluginTrait ищет константы по паттерну: `{langConstPrefix}_TITLE`
+
 ## [5.0.2] - 2025-11-11
 
 ### Fixed (Исправлено)
