@@ -50,6 +50,7 @@ class ApiController extends BaseController
                 Log::add('Bot token is empty — skip initData verify', Log::WARNING, 'com_radicalmart.telegram');
                 return;
             }
+            Log::add('Bot token length: ' . strlen($botToken) . ' chars (first 10: ' . substr($botToken, 0, 10) . '...)', Log::DEBUG, 'com_radicalmart.telegram');
             if (!$this->verifyInitData($raw, $botToken)) {
                 Log::add('Invalid Telegram initData signature', Log::WARNING, 'com_radicalmart.telegram');
                 echo new JsonResponse(null, 'Invalid initData', true);
