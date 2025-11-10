@@ -624,7 +624,17 @@ $storeTitle = isset($this->params) ? (string) $this->params->get('store_title', 
                 </div>
                 <?php $filtersCfg = (array) ($this->params->get('filters_fields') ?: []); if (!empty($filtersCfg)): ?>
                 <div class="uk-grid-small uk-margin-small" uk-grid>
-                    <?php foreach ($filtersCfg as $f): if (empty($f['enabled']) || (int)$f['enabled'] !== 1) continue; $alias = trim((string)($f['alias']??'')); if ($alias==='') continue; $type = (string)($f['type']??'text'); $label = (string)($f['label']??$alias); $ph=(string)($f['placeholder']??''); $phf=(string)($f['placeholder_from']??''); $pht=(string)($f['placeholder_to']??''); ?>
+                    <?php foreach ($filtersCfg as $f):
+                        $f = (array) $f; // Convert stdClass to array
+                        if (empty($f['enabled']) || (int)$f['enabled'] !== 1) continue;
+                        $alias = trim((string)($f['alias']??''));
+                        if ($alias==='') continue;
+                        $type = (string)($f['type']??'text');
+                        $label = (string)($f['label']??$alias);
+                        $ph=(string)($f['placeholder']??'');
+                        $phf=(string)($f['placeholder_from']??'');
+                        $pht=(string)($f['placeholder_to']??'');
+                    ?>
                         <div>
                             <label class="uk-form-label"><?php echo htmlspecialchars($label, ENT_QUOTES, 'UTF-8'); ?></label>
                             <div class="uk-form-controls">
