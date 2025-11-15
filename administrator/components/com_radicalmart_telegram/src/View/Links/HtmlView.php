@@ -9,23 +9,37 @@ namespace Joomla\Component\RadicalMartTelegram\Administrator\View\Links;
 
 use Joomla\CMS\Factory;
 use Joomla\CMS\MVC\View\HtmlView as BaseHtmlView;
+use Joomla\CMS\Form\Form;
+use Joomla\CMS\Language\Text;
 
 class HtmlView extends BaseHtmlView
 {
     protected array $items = [];
     protected array $filters = [];
+    protected $filterForm;
+    protected array $activeFilters = [];
 
     public function display($tpl = null)
     {
         $app = Factory::getApplication();
         $db  = Factory::getContainer()->get('DatabaseDriver');
         try {
-            // Read filters
-            $fChat   = $app->input->getString('filter_chat', '');
-            $fTg     = $app->input->getString('filter_tg', '');
-            $fUser   = $app->input->getInt('filter_user', 0);
-            $fUname  = $app->input->getString('filter_username', '');
-            $fPhone  = $app->input->getString('filter_phone', '');
+            // Build filter form (SearchTools)
+            $form = Form::getInstance('com_radicalmart_telegram.links.filters', JPATH_ADMINISTRATOR . '/components/com_radicalmart_telegram/forms/links_filters.xml', ['control' => 'filter']);
+            // Bind current request filter values
+            $data = ['filter' => $app->input->get('filter', [], 'array')];
+            $form->bind($data);
+
+            // Read filters (with defaults)
+            $fSearch = (string) $form->getValue('search', 'filter');
+            $fChat   = (string) $form->getValue('chat_id', 'filter');
+            $fTg     = (string) $form->getValue('tg_user_id', 'filter');
+            $fUser   = (int)    $form->getValue('user_id', 'filter');
+            $fUname  = (string) $form->getValue('username', 'filter');
+            $fPhone  = (string) $form->getValue('phone', 'filter');
+            $fPD     = (string) $form->getValue('consent_personal_data', 'filter');
+            $fTerms  = (string) $form->getValue('consent_terms', 'filter');
+            $fMkt    = (string) $form->getValue('consent_marketing', 'filter');
 
             $query = $db->getQuery(true)
                 ->select([
@@ -39,7 +53,17 @@ class HtmlView extends BaseHtmlView
                 ->join('LEFT', $db->quoteName('#__users', 'ju') . ' ON ju.id = u.user_id')
                 ->order('u.created DESC');
 
-            // Apply filters if present
+            // Apply global search
+            if ($fSearch !== '') {
+                $like = '%' . $db->escape($fSearch, true) . '%';
+                $ors  = [];
+                foreach (['u.chat_id','u.tg_user_id','u.username','u.phone','ju.name','ju.username','ju.email'] as $col) {
+                    $ors[] = $db->quoteName($col) . ' LIKE ' . $db->quote($like, false);
+                }
+                $query->where('(' . implode(' OR ', $ors) . ')');
+            }
+
+            // Apply individual filters if present
             if ($fChat !== '') {
                 $query->where($db->quoteName('u.chat_id') . ' = :fchat')->bind(':fchat', (int) $fChat);
             }
@@ -57,6 +81,15 @@ class HtmlView extends BaseHtmlView
                 $like = '%' . $db->escape($fPhone, true) . '%';
                 $query->where($db->quoteName('u.phone') . ' LIKE ' . $db->quote($like, false));
             }
+            if ($fPD !== '') {
+                $query->where($db->quoteName('u.consent_personal_data') . ' = :fpd')->bind(':fpd', (int) $fPD);
+            }
+            if ($fTerms !== '') {
+                $query->where($db->quoteName('u.consent_terms') . ' = :fterms')->bind(':fterms', (int) $fTerms);
+            }
+            if ($fMkt !== '') {
+                $query->where($db->quoteName('u.consent_marketing') . ' = :fmkt')->bind(':fmkt', (int) $fMkt);
+            }
             $db->setQuery($query, 0, 500);
             $rows = $db->loadAssocList() ?: [];
         } catch (\Throwable $e) {
@@ -64,12 +97,26 @@ class HtmlView extends BaseHtmlView
         }
         $this->items = $rows;
         $this->filters = [
+            'search' => $fSearch,
             'chat' => $fChat,
             'tg'   => $fTg,
             'user' => $fUser,
             'username' => $fUname,
             'phone' => $fPhone,
+            'consent_personal_data' => $fPD,
+            'consent_terms' => $fTerms,
+            'consent_marketing' => $fMkt,
         ];
+
+        // Expose SearchTools props
+        $this->filterForm = $form ?? null;
+        $active = [];
+        foreach ($this->filters as $k => $v) {
+            if ($v !== '' && $v !== null && !(is_int($v) && $v === 0 && !in_array($k, ['user'], true))) {
+                $active[$k] = $v;
+            }
+        }
+        $this->activeFilters = $active;
         parent::display($tpl);
     }
 }
