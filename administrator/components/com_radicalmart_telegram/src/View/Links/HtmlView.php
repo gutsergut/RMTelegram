@@ -16,8 +16,8 @@ class HtmlView extends BaseHtmlView
 {
     protected array $items = [];
     protected array $filters = [];
-    protected $filterForm;
-    protected array $activeFilters = [];
+    public $filterForm;
+    public array $activeFilters = [];
 
     public function display($tpl = null)
     {
