@@ -7,23 +7,30 @@ namespace Joomla\Plugin\Task\RadicalmartTelegramFetch\Extension;
 
 \defined('_JEXEC') or die;
 
-use Joomla\CMS\Factory;
-use Joomla\CMS\Plugin\CMSPlugin;
+use Joomla\CMS\Component\ComponentHelper;
+use Joomla\CMS\Plugin\PluginHelper;
 use Joomla\CMS\Log\Log;
+use Joomla\CMS\Plugin\CMSPlugin;
 use Joomla\Component\Scheduler\Administrator\Event\ExecuteTaskEvent;
 use Joomla\Component\Scheduler\Administrator\Task\Status;
 use Joomla\Component\Scheduler\Administrator\Traits\TaskPluginTrait;
 use Joomla\Event\SubscriberInterface;
-use Joomla\Plugin\RadicalMartShipping\ApiShip\Helper\ApiShipHelper;
+use Joomla\Registry\Registry;
 
 final class RadicalMartTelegramFetch extends CMSPlugin implements SubscriberInterface
 {
-    use TaskPluginTrait;
+    use TaskPluginTrait {
+        advertiseRoutines as traitAdvertiseRoutines;
+    }
 
     protected $autoloadLanguage = true;
 
     protected const TASKS_MAP = [
         'radicalmart_telegram.fetch' => [
+            'langConstPrefix' => 'PLG_TASK_RADICALMART_TELEGRAM_FETCH',
+        ],
+        // Backward compatibility with legacy routine id (pre-refactor)
+        'plg_task_radicalmart_telegram_fetch_apiship' => [
             'langConstPrefix' => 'PLG_TASK_RADICALMART_TELEGRAM_FETCH',
         ],
     ];
@@ -36,115 +43,164 @@ final class RadicalMartTelegramFetch extends CMSPlugin implements SubscriberInte
         ];
     }
 
-    public function runFetch(ExecuteTaskEvent $event): void
+    // Ensure language is loaded before advertising routines so TITLE/DESC resolve.
+    public function advertiseRoutines($event): void
     {
-        if (!\array_key_exists($event->getRoutineId(), self::TASKS_MAP)) {
-            return;
-        }
-
-        $this->startRoutine($event);
-
-        // Initialize logging
+        // Init logger early to trace plugin load via Scheduler UI
         Log::addLogger(
             ['text_file' => 'com_radicalmart.telegram.php'],
             Log::ALL,
             ['com_radicalmart.telegram']
         );
+        Log::add('advertiseRoutines invoked (task options list)', Log::INFO, 'com_radicalmart.telegram');
+        $this->loadLanguage('plg_task_radicalmart_telegram_fetch');
+        $this->traitAdvertiseRoutines($event);
+    }
 
-        $app   = Factory::getApplication();
-        $db    = Factory::getContainer()->get('DatabaseDriver');
-        $token = (string) $app->getParams('com_radicalmart_telegram')->get('apiship_api_key', '');
-        $list  = (string) ($this->params->get('providers') ?: $app->getParams('com_radicalmart_telegram')->get('apiship_providers', 'yataxi,cdek,x5'));
-        $providers = array_filter(array_map('trim', explode(',', $list)));
+    public function runFetch(ExecuteTaskEvent $event): void
+    {
+        $routineId = $event->getRoutineId();
+        // Early trace of event firing regardless of routine match
+        Log::addLogger(
+            ['text_file' => 'com_radicalmart.telegram.php'],
+            Log::ALL,
+            ['com_radicalmart.telegram']
+        );
+        Log::add('onExecuteTask received: routineId=' . $routineId, Log::INFO, 'com_radicalmart.telegram');
+        if (!\array_key_exists($routineId, self::TASKS_MAP)) {
+            Log::add('RoutineId not in TASKS_MAP, skipping', Log::WARNING, 'com_radicalmart.telegram');
+            return;
+        }
 
-        if ($token === '' || empty($providers)) {
-            $msg = 'ApiShip fetch failed: Missing token or providers';
+        $this->startRoutine($event);
+        $this->loadLanguage(); // Defensive
+
+        // Logger already initialized above (id matched) but ensure category active
+        $startTs = microtime(true);
+        Log::add(
+            'Routine start: ' . $routineId,
+            Log::INFO,
+            'com_radicalmart.telegram'
+        );
+
+        // Use unified helper from the component
+        $helperPath = JPATH_ADMINISTRATOR . '/components/com_radicalmart_telegram/src/Helper/ApiShipFetchHelper.php';
+        if (!is_file($helperPath)) {
+            $msg = 'Helper path missing: ' . $helperPath;
+            Log::add($msg, Log::ERROR, 'com_radicalmart.telegram');
+            $this->logTask($msg, 'error');
+            $this->endRoutine($event, Status::KNOCKOUT);
+            return;
+        }
+        try {
+            require_once $helperPath;
+        } catch (\Throwable $e) {
+            $msg = 'Include failed: ' . $e->getMessage();
+            Log::add($msg, Log::ERROR, 'com_radicalmart.telegram');
+            $this->logTask($msg, 'error');
+            $this->endRoutine($event, Status::KNOCKOUT);
+            return;
+        }
+        $exists = class_exists('Joomla\\Component\\RadicalMartTelegram\\Administrator\\Helper\\ApiShipFetchHelper');
+        Log::add('Helper class exists? ' . ($exists ? 'yes' : 'no'), Log::INFO, 'com_radicalmart.telegram');
+        if (!$exists) {
+            $msg = 'Helper class not found after include';
             Log::add($msg, Log::ERROR, 'com_radicalmart.telegram');
             $this->logTask($msg, 'error');
             $this->endRoutine($event, Status::KNOCKOUT);
             return;
         }
 
-        Log::add('ApiShip fetch started for providers: ' . implode(', ', $providers), Log::INFO, 'com_radicalmart.telegram');
+        $params = ComponentHelper::getParams('com_radicalmart_telegram');
 
-        $operation = ['giveout'];
-        $limit = 500; $updated = 0; $totalAll = 0;
-        foreach ($providers as $prov) {
-            Log::add("Fetching provider: {$prov}", Log::INFO, 'com_radicalmart.telegram');
-
-            $total = ApiShipHelper::getPointsTotal($token, [$prov], $operation);
-            $totalAll += $total;
-
-            Log::add("Provider {$prov}: total points = {$total}", Log::INFO, 'com_radicalmart.telegram');
-
-            $offset = 0;
-            $outDir = JPATH_ROOT . '/media/com_radicalmart_telegram/apiship';
-            if (!\Joomla\CMS\Filesystem\Folder::exists($outDir)) { \Joomla\CMS\Filesystem\Folder::create($outDir); }
-            $backup = [];
-            while ($offset < $total) {
-                $chunk = ApiShipHelper::getPoints($token, [$prov], $operation, $offset, $limit);
-                if (!$chunk) break;
-
-                $chunkSize = count($chunk);
-                Log::add("Provider {$prov}: fetched chunk offset={$offset}, size={$chunkSize}", Log::INFO, 'com_radicalmart.telegram');
-
-                foreach ($chunk as $row) {
-                    $extId   = (string) ($row['id'] ?? ($row['externalId'] ?? ''));
-                    $title   = (string) ($row['title'] ?? ($row['name'] ?? ''));
-                    $address = (string) ($row['address'] ?? '');
-                    $lat     = isset($row['latitude']) ? (float)$row['latitude'] : (isset($row['location']['latitude']) ? (float)$row['location']['latitude'] : null);
-                    $lon     = isset($row['longitude']) ? (float)$row['longitude'] : (isset($row['location']['longitude']) ? (float)$row['location']['longitude'] : null);
-                    if ($lat === null || $lon === null || $extId === '') continue;
-                    $meta    = json_encode($row, JSON_UNESCAPED_UNICODE);
-                    $q = $db->getQuery(true)
-                        ->insert($db->quoteName('#__radicalmart_apiship_points'))
-                        ->columns([
-                            $db->quoteName('provider'), $db->quoteName('ext_id'), $db->quoteName('title'), $db->quoteName('address'),
-                            $db->quoteName('lat'), $db->quoteName('lon'), $db->quoteName('operation'), $db->quoteName('point'),
-                            $db->quoteName('meta'), $db->quoteName('updated_at')
-                        ])
-                        ->values(implode(',', [
-                            $db->quote($prov), $db->quote($extId), $db->quote($title), $db->quote($address),
-                            (string)$lat, (string)$lon, $db->quote('giveout'),
-                            "ST_GeomFromText('POINT(" . (string)$lon . " " . (string)$lat . ")', 4326)",
-                            $db->quote($meta), $db->quote((new \Joomla\CMS\Date\Date())->toSql())
-                        ]))
-                        ->onDuplicateKeyUpdate([
-                            $db->quoteName('title') . ' = VALUES(' . $db->quoteName('title') . ')',
-                            $db->quoteName('address') . ' = VALUES(' . $db->quoteName('address') . ')',
-                            $db->quoteName('lat') . ' = VALUES(' . $db->quoteName('lat') . ')',
-                            $db->quoteName('lon') . ' = VALUES(' . $db->quoteName('lon') . ')',
-                            $db->quoteName('point') . ' = VALUES(' . $db->quoteName('point') . ')',
-                            $db->quoteName('meta') . ' = VALUES(' . $db->quoteName('meta') . ')',
-                            $db->quoteName('updated_at') . ' = VALUES(' . $db->quoteName('updated_at') . ')',
-                        ]);
-                    $db->setQuery($q)->execute();
-                    $updated++;
-                    // Append to backup (minimal)
-                    $backup[] = [ 'id' => $extId, 'provider' => $prov, 'title' => $title, 'address' => $address, 'lat' => $lat, 'lon' => $lon ];
-                }
-                $offset += $limit;
-            }
-            $mq = $db->getQuery(true)
-                ->insert($db->quoteName('#__radicalmart_apiship_meta'))
-                ->columns([$db->quoteName('provider'), $db->quoteName('last_fetch'), $db->quoteName('last_total')])
-                ->values(implode(',', [ $db->quote($prov), $db->quote((new \Joomla\CMS\Date\Date())->toSql()), (string)$total ]))
-                ->onDuplicateKeyUpdate([
-                    $db->quoteName('last_fetch') . ' = VALUES(' . $db->quoteName('last_fetch') . ')',
-                    $db->quoteName('last_total') . ' = VALUES(' . $db->quoteName('last_total') . ')',
-                ]);
-            $db->setQuery($mq)->execute();
-
-            Log::add("Provider {$prov}: meta updated (last_fetch, last_total={$total})", Log::INFO, 'com_radicalmart.telegram');
-
-            // Write JSON backup
+        // Ensure plugin params registry exists in CLI context
+        $pluginParams = $this->params instanceof Registry ? $this->params : null;
+        if ($pluginParams === null) {
             try {
-                $file = $outDir . '/' . $prov . '-latest.json';
-                @file_put_contents($file, json_encode($backup, JSON_UNESCAPED_UNICODE));
-            } catch (\Throwable $e) {}
+                $plg = PluginHelper::getPlugin('task', 'radicalmart_telegram_fetch');
+                $pluginParams = new Registry($plg->params ?? '');
+            } catch (\Throwable $e) {
+                $pluginParams = new Registry();
+            }
         }
 
-        $msg = 'ApiShip weekly fetch completed: total=' . $totalAll . ', updated=' . $updated;
+        $providersParam = (string) (
+            $pluginParams->get('providers')
+            ?: $params->get('apiship_providers', 'yataxi,cdek,x5')
+        );
+        $providersList = array_filter(array_map('trim', explode(',', $providersParam)));
+        $token = (string) $params->get('apiship_api_key', '');
+        Log::add(
+            'Preflight: providers=' . implode(',', $providersList)
+            . '; tokenLen=' . strlen($token),
+            Log::INFO,
+            'com_radicalmart.telegram'
+        );
+        // Row count before
+        $db = null;
+        try {
+            $db = \Joomla\CMS\Factory::getContainer()->get('DatabaseDriver');
+        } catch (\Throwable $e) {
+            Log::add('DB driver init error: ' . $e->getMessage(), Log::WARNING, 'com_radicalmart.telegram');
+        }
+        try {
+            $before = $db
+                ? (int) $db->setQuery(
+                    'SELECT COUNT(*) FROM ' . $db->quoteName('#__radicalmart_apiship_points')
+                )->loadResult()
+                : 0;
+            if ($db) {
+                Log::add('Row count before fetch: ' . $before, Log::INFO, 'com_radicalmart.telegram');
+            }
+        } catch (\Throwable $e) {
+            Log::add('Row count pre error: ' . $e->getMessage(), Log::WARNING, 'com_radicalmart.telegram');
+            $before = 0;
+        }
+        if (empty($providersList)) {
+            $msg = 'Weekly fetch aborted: empty providers list';
+            Log::add($msg, Log::ERROR, 'com_radicalmart.telegram');
+            $this->logTask($msg, 'error');
+            $this->endRoutine($event, Status::KNOCKOUT);
+            return;
+        }
+
+        try {
+            $result = \Joomla\Component\RadicalMartTelegram\Administrator\Helper\ApiShipFetchHelper::fetchAllPoints(
+                $providersList
+            );
+        } catch (\Throwable $e) {
+            $msg = 'Fetch exception: ' . $e->getMessage();
+            Log::add($msg, Log::ERROR, 'com_radicalmart.telegram');
+            $this->logTask($msg, 'error');
+            $this->endRoutine($event, Status::KNOCKOUT);
+            return;
+        }
+
+        if (!($result['success'] ?? false)) {
+            $msg = 'Weekly fetch failed: ' . ($result['message'] ?? 'unknown error');
+            Log::add($msg, Log::ERROR, 'com_radicalmart.telegram');
+            $this->logTask($msg, 'error');
+            $this->endRoutine($event, Status::KNOCKOUT);
+            return;
+        }
+
+        // Row count after
+        try {
+            if (!$db) {
+                $db = \Joomla\CMS\Factory::getContainer()->get('DatabaseDriver');
+            }
+            $after = (int) $db->setQuery(
+                'SELECT COUNT(*) FROM ' . $db->quoteName('#__radicalmart_apiship_points')
+            )->loadResult();
+        } catch (\Throwable $e) {
+            $after = $before;
+        }
+        $delta = $after - $before;
+        $duration = round((microtime(true) - $startTs), 3);
+        $msg = 'Weekly fetch OK: total=' . ($result['total'] ?? 0)
+            . ', providers=' . count($providersList)
+            . ', delta=' . $delta
+            . ', duration=' . $duration . 's';
         Log::add($msg, Log::INFO, 'com_radicalmart.telegram');
         $this->logTask($msg);
         $this->endRoutine($event, Status::OK);

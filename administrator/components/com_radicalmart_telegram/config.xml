@@ -105,5 +105,9 @@
               <field name="article_consent_personal_data" type="ModalArticle" label="COM_RADICALMART_TELEGRAM_ARTICLE_CONSENT_LABEL" description="COM_RADICALMART_TELEGRAM_ARTICLE_CONSENT_DESC" select="true" new="true" edit="true" clear="true" filter="integer" />
               <field name="article_terms_of_service" type="ModalArticle" label="COM_RADICALMART_TELEGRAM_ARTICLE_TERMS_LABEL" description="COM_RADICALMART_TELEGRAM_ARTICLE_TERMS_DESC" select="true" new="true" edit="true" clear="true" filter="integer" />
               <field name="article_consent_marketing" type="ModalArticle" label="COM_RADICALMART_TELEGRAM_ARTICLE_MARKETING_LABEL" description="COM_RADICALMART_TELEGRAM_ARTICLE_MARKETING_DESC" select="true" new="true" edit="true" clear="true" filter="integer" />
+              <field name="marketing_prompt_enabled" type="radio" default="1" label="COM_RADICALMART_TELEGRAM_MARKETING_PROMPT_ENABLED_LABEL" description="COM_RADICALMART_TELEGRAM_MARKETING_PROMPT_ENABLED_DESC">
+                     <option value="1">JYES</option>
+                     <option value="0">JNO</option>
+              </field>
        </fieldset>
 </config>

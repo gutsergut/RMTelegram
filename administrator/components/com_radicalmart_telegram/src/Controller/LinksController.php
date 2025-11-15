@@ -45,6 +45,36 @@ class LinksController extends BaseController
         $app->redirect(Route::_('index.php?option=com_radicalmart_telegram&view=links', false));
     }
 
+    public function unlinkPhone(): void
+    {
+        $app = Factory::getApplication();
+        if (!Session::checkToken('request')) {
+            $app->enqueueMessage(Text::_('JINVALID_TOKEN'), 'error');
+            $app->redirect(Route::_('index.php?option=com_radicalmart_telegram&view=links', false));
+            return;
+        }
+        $chat = $app->input->getInt('chat_id', 0);
+        if ($chat <= 0) {
+            $app->enqueueMessage(Text::_('COM_RADICALMART_TELEGRAM_ERR_INVALID_CHAT'), 'error');
+            $app->redirect(Route::_('index.php?option=com_radicalmart_telegram&view=links', false));
+            return;
+        }
+        try {
+            $db = Factory::getContainer()->get('DatabaseDriver');
+            $q  = $db->getQuery(true)
+                ->update($db->quoteName('#__radicalmart_telegram_users'))
+                ->set($db->quoteName('phone') . ' = ""')
+                ->set($db->quoteName('user_id') . ' = 0')
+                ->where($db->quoteName('chat_id') . ' = :chat')
+                ->bind(':chat', $chat);
+            $db->setQuery($q)->execute();
+            $app->enqueueMessage(Text::_('COM_RADICALMART_TELEGRAM_UNLINK_PHONE_SUCCESS'), 'message');
+        } catch (\Throwable $e) {
+            $app->enqueueMessage(Text::sprintf('COM_RADICALMART_TELEGRAM_UNLINK_PHONE_ERROR', $e->getMessage()), 'error');
+        }
+        $app->redirect(Route::_('index.php?option=com_radicalmart_telegram&view=links', false));
+    }
+
     public function attach(): void
     {
         $app = Factory::getApplication();
@@ -123,6 +153,40 @@ class LinksController extends BaseController
             $app->enqueueMessage(Text::_('COM_RADICALMART_TELEGRAM_ATTACH_BY_PHONE_SUCCESS'), 'message');
         } catch (\Throwable $e) {
             $app->enqueueMessage(Text::sprintf('COM_RADICALMART_TELEGRAM_ATTACH_BY_PHONE_ERROR', $e->getMessage()), 'error');
+        }
+        $app->redirect(Route::_('index.php?option=com_radicalmart_telegram&view=links', false));
+    }
+
+    public function resetConsents(): void
+    {
+        $app = Factory::getApplication();
+        if (!Session::checkToken('request')) {
+            $app->enqueueMessage(Text::_('JINVALID_TOKEN'), 'error');
+            $app->redirect(Route::_('index.php?option=com_radicalmart_telegram&view=links', false));
+            return;
+        }
+        $chat = $app->input->getInt('chat_id', 0);
+        if ($chat <= 0) {
+            $app->enqueueMessage(Text::_('COM_RADICALMART_TELEGRAM_ERR_INVALID_CHAT'), 'error');
+            $app->redirect(Route::_('index.php?option=com_radicalmart_telegram&view=links', false));
+            return;
+        }
+        try {
+            $db = Factory::getContainer()->get('DatabaseDriver');
+            $q  = $db->getQuery(true)
+                ->update($db->quoteName('#__radicalmart_telegram_users'))
+                ->set($db->quoteName('consent_personal_data') . ' = 0')
+                ->set($db->quoteName('consent_personal_data_at') . ' = NULL')
+                ->set($db->quoteName('consent_terms') . ' = 0')
+                ->set($db->quoteName('consent_terms_at') . ' = NULL')
+                ->set($db->quoteName('consent_marketing') . ' = 0')
+                ->set($db->quoteName('consent_marketing_at') . ' = NULL')
+                ->where($db->quoteName('chat_id') . ' = :chat')
+                ->bind(':chat', $chat);
+            $db->setQuery($q)->execute();
+            $app->enqueueMessage(Text::_('COM_RADICALMART_TELEGRAM_RESET_CONSENTS_SUCCESS'), 'message');
+        } catch (\Throwable $e) {
+            $app->enqueueMessage(Text::sprintf('COM_RADICALMART_TELEGRAM_RESET_CONSENTS_ERROR', $e->getMessage()), 'error');
         }
         $app->redirect(Route::_('index.php?option=com_radicalmart_telegram&view=links', false));
     }

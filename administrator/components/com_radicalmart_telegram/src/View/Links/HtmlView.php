@@ -30,6 +30,9 @@ class HtmlView extends BaseHtmlView
             $query = $db->getQuery(true)
                 ->select([
                     'u.id AS link_id', 'u.chat_id', 'u.tg_user_id', 'u.username', 'u.user_id', 'u.phone', 'u.created',
+                    'u.consent_personal_data', 'u.consent_personal_data_at',
+                    'u.consent_terms', 'u.consent_terms_at',
+                    'u.consent_marketing', 'u.consent_marketing_at',
                     'ju.name AS jname', 'ju.username AS jlogin', 'ju.email AS jemail'
                 ])
                 ->from($db->quoteName('#__radicalmart_telegram_users', 'u'))

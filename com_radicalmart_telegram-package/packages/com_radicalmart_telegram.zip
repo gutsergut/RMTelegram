@@ -1,0 +1,24 @@
+<?xml version="1.0" encoding="utf-8"?>
+<extension type="package" version="3.9" client="site" method="upgrade">
+    <name>com_radicalmart_telegram</name>
+    <author>Your Name</author>
+    <version>1.0.0</version>
+    <description>Installation package for the com_radicalmart_telegram component, integrating RadicalMart with Telegram.</description>
+    <creationDate>2023-10-01</creationDate>
+    <updateDate>2023-10-01</updateDate>
+    <copyright>Copyright (C) 2023 Your Company. All rights reserved.</copyright>
+    <license>GNU General Public License version 2 or later; see LICENSE.txt</license>
+    
+    <files>
+        <filename>com_radicalmart_telegram.zip</filename>
+        <filename>plg_radicalmart_payment_telegramcards.zip</filename>
+        <filename>plg_radicalmart_payment_telegramstars.zip</filename>
+    </files>
+    
+    <administration>
+        <menu>
+            <title>RadicalMart Telegram Integration</title>
+            <link>index.php?option=com_radicalmart_telegram</link>
+        </menu>
+    </administration>
+</extension>

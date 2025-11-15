@@ -14,37 +14,217 @@ $storeTitle = isset($this->params) ? (string) $this->params->get('store_title', 
 <!DOCTYPE html>
 <html lang="ru">
 <head>
-    <meta charset="utf-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1">
-    <title><?php echo htmlspecialchars($storeTitle, ENT_QUOTES, 'UTF-8'); ?></title>
-    <link rel="stylesheet" href="<?php echo $root; ?>/templates/yootheme/css/theme.css">
-    <script src="<?php echo $root; ?>/templates/yootheme/vendor/assets/uikit/dist/js/uikit.min.js"></script>
-    <script src="<?php echo $root; ?>/templates/yootheme/vendor/assets/uikit/dist/js/uikit-icons.min.js"></script>
-    <script src="https://telegram.org/js/telegram-web-app.js"></script>
-    <?php $ymKey = isset($this->params) ? (string) $this->params->get('yandex_maps_api_key', '') : ''; ?>
-    <?php if ($ymKey): ?>
-    <script src="https://api-maps.yandex.ru/2.1/?lang=ru_RU&apikey=<?php echo htmlspecialchars($ymKey, ENT_QUOTES, 'UTF-8'); ?>"></script>
-    <?php endif; ?>
-    <?php
-    // Load local IMask via Web Asset Manager
-    try {
-        $wa = Factory::getApplication()->getDocument()->getWebAssetManager();
-        $wa->useScript('com_radicalmart_telegram.imask');
-    } catch (\Throwable $e) {}
-    ?>
-    <style>
-        html, body { height: 100%; }
-        body { background: var(--tg-theme-bg-color, #fff); color: var(--tg-theme-text-color, #222); }
-        .tg-safe-text { color: var(--tg-theme-text-color, inherit); }
-        .uk-card { background: var(--tg-theme-bg-color, #fff); }
-        .uk-navbar-container { background: var(--tg-theme-bg-color, #fff); }
-        .uk-button-primary { background-color: var(--tg-theme-button-color, #1e87f0); color: var(--tg-theme-button-text-color, #fff); }
-        .uk-section { padding-top: 16px; padding-bottom: 16px; }
-    </style>
-    <script>
-        (function(){ try{ if(window.Telegram && window.Telegram.WebApp){ const tg=window.Telegram.WebApp; tg.ready(); tg.expand(); tg.BackButton.hide(); } }catch(e){} })();
-        function qs(name){ const p=new URLSearchParams(location.search); return p.get(name); }
-        function makeNonce(){ return (Date.now().toString(36) + '-' + Math.random().toString(36).slice(2,10)); }
+        <meta charset="utf-8">
+        <meta name="viewport" content="width=device-width, initial-scale=1">
+        <title><?php echo htmlspecialchars($storeTitle, ENT_QUOTES, 'UTF-8'); ?></title>
+        <link rel="stylesheet" href="<?php echo $root; ?>/templates/yootheme/css/theme.css">
+        <script src="<?php echo $root; ?>/templates/yootheme/vendor/assets/uikit/dist/js/uikit.min.js"></script>
+        <script src="<?php echo $root; ?>/templates/yootheme/vendor/assets/uikit/dist/js/uikit-icons.min.js"></script>
+        <script src="https://telegram.org/js/telegram-web-app.js"></script>
+        <?php $ymKey = isset($this->params) ? (string) $this->params->get('yandex_maps_api_key', '') : ''; ?>
+        <?php if ($ymKey): ?>
+        <script src="https://api-maps.yandex.ru/2.1/?lang=ru_RU&apikey=<?php echo htmlspecialchars($ymKey, ENT_QUOTES, 'UTF-8'); ?>"></script>
+        <?php endif; ?>
+        <?php
+        try {
+                $wa = Factory::getApplication()->getDocument()->getWebAssetManager();
+                $wa->registerAndUseScript('com_radicalmart_telegram.app', 'media/com_radicalmart_telegram/js/app.js', ['version' => 'auto', 'defer' => true]);
+                $wa->useScript('com_radicalmart_telegram.imask');
+        } catch (\Throwable $e) {}
+        ?>
+        <style>
+            /* Fullscreen consent overlay hidden by default */
+            #consent-overlay { position: fixed; inset: 0; background: var(--tg-theme-bg-color, rgba(255,255,255,.96)); z-index: 9999; overflow: auto; display: none; }
+            body.consent-block { overflow: hidden; }
+            /* Ensure UIkit modal is above overlay */
+            .uk-modal { z-index: 10010 !important; }
+            .uk-modal.uk-open { z-index: 10010 !important; }
+            #doc-modal { z-index: 10011 !important; }
+            #doc-modal .uk-modal-dialog { z-index: 10012 !important; }
+            /* Bottom fixed navigation */
+            #app-bottom-nav { position: fixed; left: 0; right: 0; bottom: 0; z-index: 10005; }
+            /* Reserve space so content is not hidden under the bottom nav */
+            body { padding-bottom: 64px; }
+        </style>
+        <script>
+            // Переводы для внешнего JS
+            window.RMT_LANG = {
+                COM_RADICALMART_TELEGRAM_PROFILE_NO_USER: '<?php echo Text::_('COM_RADICALMART_TELEGRAM_PROFILE_NO_USER'); ?>',
+                COM_RADICALMART_TELEGRAM_EMAIL: '<?php echo Text::_('COM_RADICALMART_TELEGRAM_EMAIL'); ?>',
+                COM_RADICALMART_TELEGRAM_PHONE: '<?php echo Text::_('COM_RADICALMART_TELEGRAM_PHONE'); ?>',
+                COM_RADICALMART_TELEGRAM_PROFILE_POINTS: '<?php echo Text::_('COM_RADICALMART_TELEGRAM_PROFILE_POINTS'); ?>',
+                COM_RADICALMART_TELEGRAM_PROFILE_REFERRALS: '<?php echo Text::_('COM_RADICALMART_TELEGRAM_PROFILE_REFERRALS'); ?>',
+                COM_RADICALMART_TELEGRAM_PROFILE_PARENT: '<?php echo Text::_('COM_RADICALMART_TELEGRAM_PROFILE_PARENT'); ?>',
+                JLINK: '<?php echo Text::_('JLINK'); ?>',
+                COM_RADICALMART_TELEGRAM_PROFILE_EXPIRES_UNTIL: '<?php echo Text::_('COM_RADICALMART_TELEGRAM_PROFILE_EXPIRES_UNTIL'); ?>',
+                COM_RADICALMART_TELEGRAM_PROFILE_CODES_EMPTY: '<?php echo Text::_('COM_RADICALMART_TELEGRAM_PROFILE_CODES_EMPTY'); ?>',
+                COM_RADICALMART_TELEGRAM_PROFILE_CODE_PLACEHOLDER: '<?php echo Text::_('COM_RADICALMART_TELEGRAM_PROFILE_CODE_PLACEHOLDER'); ?>',
+                COM_RADICALMART_TELEGRAM_PROFILE_CURRENCY_PLACEHOLDER: '<?php echo Text::_('COM_RADICALMART_TELEGRAM_PROFILE_CURRENCY_PLACEHOLDER'); ?>',
+                COM_RADICALMART_TELEGRAM_PROFILE_CREATE_CODE: '<?php echo Text::_('COM_RADICALMART_TELEGRAM_PROFILE_CREATE_CODE'); ?>',
+                COM_RADICALMART_TELEGRAM_PROFILE_CODE_CREATED: '<?php echo Text::_('COM_RADICALMART_TELEGRAM_PROFILE_CODE_CREATED'); ?>',
+                COM_RADICALMART_TELEGRAM_PROFILE_CODE_ERROR: '<?php echo Text::_('COM_RADICALMART_TELEGRAM_PROFILE_CODE_ERROR'); ?>',
+                COM_RADICALMART_TELEGRAM_SEARCH_ENTER_QUERY: '<?php echo Text::_('COM_RADICALMART_TELEGRAM_SEARCH_ENTER_QUERY'); ?>',
+                COM_RADICALMART_TELEGRAM_SEARCH_NO_RESULTS: '<?php echo Text::_('COM_RADICALMART_TELEGRAM_SEARCH_NO_RESULTS'); ?>',
+                COM_RADICALMART_TELEGRAM_ADD_TO_CART: '<?php echo Text::_('COM_RADICALMART_TELEGRAM_ADD_TO_CART'); ?>',
+                COM_RADICALMART_TELEGRAM_SEARCH_ERROR: '<?php echo Text::_('COM_RADICALMART_TELEGRAM_SEARCH_ERROR'); ?>'
+            };
+
+            function qs(name){ const p=new URLSearchParams(location.search); return p.get(name); }
+            function makeNonce(){ return (Date.now().toString(36) + '-' + Math.random().toString(36).slice(2,10)); }
+            function RMT_DBG(){ try { const t=new Date().toISOString(); console.log('[RMT]', t, ...arguments); } catch(e){} }
+            function rmtDecodeHtml(s){ try { const d=document.createElement('textarea'); d.innerHTML = s; return d.value; } catch(e){ return s; } }
+
+            // Функции согласий
+            function updateConsentSubmitState(){
+                const pd = document.getElementById('consent-personal')?.checked;
+                const tm = document.getElementById('consent-terms')?.checked;
+                const btn = document.getElementById('consent-submit');
+                if (btn) btn.disabled = !(pd && tm);
+                const all = document.getElementById('consent-all');
+                if (all) {
+                    const mk = document.getElementById('consent-marketing')?.checked;
+                    all.checked = !!pd && !!tm && (!!mk || !document.getElementById('consent-marketing'));
+                }
+                RMT_DBG('consents:updateState', { pd, tm, btnEnabled: !btn?.disabled });
+            }
+            function toggleAcceptAll(ev){
+                const v = !!(ev && ev.target && ev.target.checked);
+                const ids = ['consent-personal','consent-terms','consent-marketing'];
+                ids.forEach(id => { const el=document.getElementById(id); if (el) el.checked = v; });
+                updateConsentSubmitState();
+                RMT_DBG('consents:toggleAll', { v });
+            }
+            let CURRENT_DOC_TYPE=null;
+            async function openDocModal(type){
+                try{
+                    CURRENT_DOC_TYPE = type||null;
+                    RMT_DBG('doc:open start', { type, hasAPI: !!window.RMT_API });
+                    let data = { html: '' };
+                    if (window.RMT_API) {
+                        try {
+                            data = await window.RMT_API('legal', { type });
+                        } catch(e1) {
+                            RMT_DBG('doc:api error legal', e1 && e1.message ? e1.message : e1);
+                            try {
+                                data = await window.RMT_API('dochtml', { type });
+                            } catch(e2) {
+                                RMT_DBG('doc:api error dochtml', e2 && e2.message ? e2.message : e2);
+                                data = { html: '' };
+                            }
+                        }
+                    }
+                    const rawHtml = (data && typeof data.html === 'string') ? data.html : '';
+                    RMT_DBG('doc:api result', { type, hasData: !!data, keys: Object.keys(data||{}), htmlLen: rawHtml.length });
+                    const box = document.getElementById('doc-modal-body');
+                    if (box){
+                        // Первичная вставка
+                        box.innerHTML = rawHtml;
+                        let txt = box.textContent || '';
+                        let hasEscaped = /&lt;|&gt;|&amp;lt;|&amp;gt;/.test(txt);
+                        let hasTags = /<[^>]+>/.test(box.innerHTML||'');
+                        RMT_DBG('doc:content inserted.pre', { childNodes: box.childNodes?.length||0, hasEscaped, hasTags, snippet: (txt||'').slice(0,120) });
+                        // Авто-декод, если пришёл экранированный HTML
+                        if (!hasTags && hasEscaped && rawHtml){
+                            const decoded = rmtDecodeHtml(rawHtml);
+                            box.innerHTML = decoded;
+                            txt = box.textContent || '';
+                            hasTags = /<[^>]+>/.test(box.innerHTML||'');
+                            RMT_DBG('doc:content decoded', { applied:true, newHasTags: hasTags, snippet: (txt||'').slice(0,120) });
+                        }
+                    }
+                    if (box){
+                        const txt = box.textContent || '';
+                        const hasEscaped = /&lt;|&gt;/.test(txt);
+                        const hasTags = /<[^>]+>/.test(box.innerHTML||'');
+                        RMT_DBG('doc:content inserted', { childNodes: box.childNodes?.length||0, hasEscaped, hasTags, snippet: (txt||'').slice(0,120) });
+                    }
+                    // Ensure modal element is a direct child of body to avoid stacking-context issues
+                    try {
+                        const modalEl = document.getElementById('doc-modal');
+                        if (modalEl && modalEl.parentElement !== document.body) {
+                            document.body.appendChild(modalEl);
+                            RMT_DBG('doc:modal moved-to-body');
+                        }
+                    } catch(e){ RMT_DBG('doc:move-error', e && e.message); }
+                    const modal = UIkit.modal('#doc-modal'); modal.show();
+                    try {
+                        const el = modal.$el || document.querySelector('#doc-modal');
+                        const U = UIkit.util || UIkit;
+                        if (U && el && U.on){
+                            U.on(el, 'beforeshow', () => RMT_DBG('doc:event beforeshow'));
+                            U.on(el, 'show',      () => RMT_DBG('doc:event show'));
+                            U.on(el, 'shown',     () => RMT_DBG('doc:event shown'));
+                            U.on(el, 'hide',      () => RMT_DBG('doc:event hide'));
+                            U.on(el, 'hidden',    () => RMT_DBG('doc:event hidden'));
+                        }
+                    } catch(e){ RMT_DBG('doc:events hook error', e.message); }
+                    const accept = document.getElementById('doc-accept-btn');
+                    const decline = document.getElementById('doc-decline-btn');
+                    if (accept){ accept.onclick = function(){
+                        const map={ privacy:'consent-personal', terms:'consent-terms', marketing:'consent-marketing' };
+                        const id = map[CURRENT_DOC_TYPE]||null; if (id){ const el=document.getElementById(id); if (el) el.checked = true; }
+                        updateConsentSubmitState(); modal.hide();
+                    }; }
+                    if (decline){ decline.onclick = function(){ modal.hide(); } }
+                }catch(e){ RMT_DBG('doc:open error', e && e.message ? e.message : e); UIkit.notification(e.message||'<?php echo Text::_('JERROR_AN_ERROR_HAS_OCCURRED'); ?>', {status:'danger'}); }
+            }
+        </script>
+        <script>
+        function getUserTheme(){ try { return localStorage.getItem('rmt_theme') || null; } catch(e){ return null; } }
+        function setUserTheme(m){ try { if (m) localStorage.setItem('rmt_theme', m); else localStorage.removeItem('rmt_theme'); } catch(e){} }
+        function applyTheme(mode){
+            const root = document.documentElement;
+            const tp = (window.Telegram && window.Telegram.WebApp && window.Telegram.WebApp.themeParams) ? window.Telegram.WebApp.themeParams : {};
+            const cs = (window.Telegram && window.Telegram.WebApp && window.Telegram.WebApp.colorScheme) ? window.Telegram.WebApp.colorScheme : 'light';
+            let bg, text, btn, btnText;
+            if (mode === 'tg'){
+                bg = tp.bg_color || (cs==='dark' ? '#1f1f1f' : '#ffffff');
+                text = tp.text_color || (cs==='dark' ? '#ffffff' : '#222222');
+                btn = tp.button_color || '#1e87f0';
+                btnText = tp.button_text_color || '#ffffff';
+            } else if (mode === 'dark'){
+                bg = '#1b1c1d'; text = '#ffffff'; btn = '#1e87f0'; btnText = '#ffffff';
+            } else { // light
+                bg = '#ffffff'; text = '#222222'; btn = '#1e87f0'; btnText = '#ffffff';
+            }
+            root.style.setProperty('--tg-theme-bg-color', bg);
+            root.style.setProperty('--tg-theme-text-color', text);
+            root.style.setProperty('--tg-theme-button-color', btn);
+            root.style.setProperty('--tg-theme-button-text-color', btnText);
+            const toggle = document.getElementById('theme-toggle');
+            if (toggle){
+                const titleMap = {
+                    light: '<?php echo Text::_('COM_RADICALMART_TELEGRAM_THEME_LIGHT'); ?>',
+                    dark: '<?php echo Text::_('COM_RADICALMART_TELEGRAM_THEME_DARK'); ?>',
+                    tg: '<?php echo Text::_('COM_RADICALMART_TELEGRAM_THEME_TG'); ?>'
+                };
+                const icon = (mode==='dark') ? 'sun' : (mode==='light' ? 'moon' : 'bolt');
+                toggle.setAttribute('uk-icon', icon);
+                toggle.setAttribute('title', titleMap[mode] || '');
+            }
+        }
+        function initTheme(){
+            let t=getUserTheme();
+            // По умолчанию используем режим 'tg' (следовать теме Telegram)
+            if(!t){ t = 'tg'; }
+            applyTheme(t);
+            const btn=document.getElementById('theme-toggle');
+            if(btn){ btn.addEventListener('click', (ev)=>{
+                ev.preventDefault();
+                const pref=getUserTheme()||'tg';
+                // Цикл: light -> dark -> tg -> light
+                let next='light';
+                if (pref==='light') next='dark'; else if (pref==='dark') next='tg'; else next='light';
+                setUserTheme(next);
+                applyTheme(next);
+            }); }
+            try { window.Telegram?.WebApp?.onEvent?.('themeChanged', () => {
+                const cs = window.Telegram.WebApp.colorScheme;
+                const desired = (cs === 'dark') ? 'dark' : 'light';
+                const userPref = getUserTheme();
+                if (!userPref || userPref === 'tg') { applyTheme('tg'); }
+            }); } catch(e){}
+        }
         async function api(method, params={}){
             const url = new URL(location.origin + '/index.php');
             url.searchParams.set('option','com_radicalmart_telegram');
@@ -62,6 +242,104 @@ $storeTitle = isset($this->params) ? (string) $this->params->get('store_title', 
 
             if (json && json.success === false) throw new Error(json.message||'API error');
             return json.data || {};
+        }
+        // Экспорт API для внешнего JS
+        window.RMT_API = api;
+        async function ensureConsents(){
+            try {
+                RMT_DBG('consents:check start');
+                const data = await api('consents');
+                const statuses = data.statuses || { personal_data:false, marketing:false, terms:false };
+                const need = !statuses.personal_data || !statuses.terms; // обязательные
+                RMT_DBG('consents:statuses', statuses, 'needOverlay=', need);
+                if (!need) {
+                    RMT_DBG('consents:ok no overlay');
+                    const ovx = document.getElementById('consent-overlay');
+                    if (ovx) ovx.style.display = 'none';
+                    document.body.classList.remove('consent-block');
+                    const bn = document.getElementById('app-bottom-nav'); if (bn) bn.style.display = '';
+                    return true;
+                }
+                const ov = document.getElementById('consent-overlay');
+                const list = document.getElementById('consent-docs');
+                if (list) list.innerHTML = '';
+                const cbp = document.getElementById('consent-personal'); if (cbp) cbp.checked = !!statuses.personal_data;
+                const cbt = document.getElementById('consent-terms'); if (cbt) cbt.checked = !!statuses.terms;
+                const cbm = document.getElementById('consent-marketing'); if (cbm && typeof statuses.marketing !== 'undefined') cbm.checked = !!statuses.marketing;
+                updateConsentSubmitState();
+                cbp?.addEventListener('change', updateConsentSubmitState);
+                cbt?.addEventListener('change', updateConsentSubmitState);
+                cbm?.addEventListener('change', updateConsentSubmitState);
+                if (ov) { ov.style.display = 'block'; RMT_DBG('consents:overlay shown'); }
+                document.body.classList.add('consent-block');
+                const bn = document.getElementById('app-bottom-nav'); if (bn) bn.style.display = 'none';
+                return false;
+            } catch(e){
+                RMT_DBG('consents:error', e && e.message ? e.message : e);
+                UIkit.notification(e.message||'<?php echo Text::_('JERROR_AN_ERROR_HAS_OCCURRED'); ?>',{status:'danger'});
+                return false;
+            }
+        }
+        async function submitConsents(){
+            try{
+                const pd = document.getElementById('consent-personal')?.checked;
+                const tm = document.getElementById('consent-terms')?.checked;
+                const mk = document.getElementById('consent-marketing')?.checked;
+                if (!pd || !tm) { UIkit.notification('<?php echo Text::_('COM_RADICALMART_TELEGRAM_ACCEPT_REQUIRED'); ?>', {status:'warning'}); return; }
+                await api('setconsent', { type:'personal_data', value: pd?1:0, nonce: makeNonce() });
+                await api('setconsent', { type:'terms', value: tm?1:0, nonce: makeNonce() });
+                if (typeof mk !== 'undefined') { await api('setconsent', { type:'marketing', value: mk?1:0, nonce: makeNonce() }); }
+                document.getElementById('consent-overlay').style.display='none';
+                document.body.classList.remove('consent-block');
+                // После согласия — загрузка данных
+                await initApp();
+            }catch(e){ UIkit.notification(e.message||'<?php echo Text::_('JERROR_AN_ERROR_HAS_OCCURRED'); ?>',{status:'danger'}); }
+        }
+        async function initApp(){
+            loadCatalog();
+            refreshCart();
+            if (window.loadProfile) window.loadProfile();
+            loadMethods().then(async () => { const sum = await api('summary'); renderBonuses(sum); await refreshSummary(); });
+            // Filters listeners
+            const fs = document.getElementById('filter-sort');
+            const fi = document.getElementById('filter-instock');
+            if (fs) fs.addEventListener('change', () => loadCatalog());
+            if (fi) fi.addEventListener('change', () => loadCatalog());
+            document.addEventListener('change', (ev) => { if (ev.target && ev.target.matches('[data-field-alias]')) loadCatalog(); });
+            const fr = document.getElementById('filters-reset'); if (fr) fr.addEventListener('click', () => {
+                if (fi) fi.checked = false; if (fs) fs.value = '';
+                document.querySelectorAll('[data-field-alias]').forEach(el => {
+                    const type = el.getAttribute('data-field-type')||'text';
+                    if (type === 'checkbox') el.checked = false; else el.value = '';
+                });
+                const pf = document.getElementById('price-from'); const pt = document.getElementById('price-to');
+                if (pf) pf.value=''; if (pt) pt.value='';
+                loadCatalog();
+            });
+            const fa = document.getElementById('filters-apply'); if (fa) fa.addEventListener('click', () => loadCatalog());
+            loadOrders(true);
+            // Load available points
+            api('bonuses').then(data => {
+                const el = document.getElementById('points-available');
+                const inp = document.querySelector('[name="points"]');
+                if (el && data && typeof data.points_available !== 'undefined') {
+                    el.textContent = data.points_available;
+                    if (inp) inp.setAttribute('max', data.points_available);
+                }
+            }).catch(()=>{});
+            const sh = document.querySelector('[name="shipping_id"]');
+            const pm = document.querySelector('[name="payment_id"]');
+            if (sh) sh.addEventListener('change', onShippingChange);
+            if (pm) pm.addEventListener('change', onPaymentChange);
+            const ph = document.querySelector('[name="phone"]');
+            if (ph) {
+                if (window.IMask) {
+                    IMask(ph, { mask: [{ mask: '+{7} (000) 000-00-00' },{ mask: '8 (000) 000-00-00' },{ mask: '(000) 000-00-00' },{ mask: '0000000000' }] });
+                }
+            }
+            <?php if (!empty($ymKey)): ?>
+            initMap();
+            <?php endif; ?>
         }
         function el(html){ const t=document.createElement('template'); t.innerHTML=html.trim(); return t.content.firstChild; }
         function val(name){ const el=document.querySelector(`[name="${name}"]`); return el?el.value.trim():''; }
@@ -107,7 +385,7 @@ $storeTitle = isset($this->params) ? (string) $this->params->get('store_title', 
                 });
             } catch(e) {
                 console.error('Catalog load error:', e);
-                UIkit.notification(e.message || 'Ошибка загрузки каталога', {status:'danger'});
+                UIkit.notification(e.message || '<?php echo Text::_('JERROR_AN_ERROR_HAS_OCCURRED'); ?>', {status:'danger'});
             }
         }
         let CART_COUNT = 0;
@@ -128,8 +406,15 @@ $storeTitle = isset($this->params) ? (string) $this->params->get('store_title', 
                 if (cart.total && cart.total.final_string) html += `<p><strong><?php echo Text::_('COM_RADICALMART_TELEGRAM_TOTAL'); ?>: ${cart.total.final_string}</strong></p>`;
                 box.innerHTML = html;
                 CART_COUNT = (cart.total && cart.total.quantity) ? Number(cart.total.quantity) : (i-1);
+                const badge = document.getElementById('cart-badge');
+                if (badge) {
+                    if (CART_COUNT > 0) { badge.hidden = false; badge.textContent = String(CART_COUNT); }
+                    else { badge.hidden = true; }
+                }
             } catch(e) { /* ignore */ }
         }
+        // Профиль/Поиск — вынесены во внешний JS (app.js)
+        let SEARCH_TIMER=null; let LAST_SEARCH_Q='';
         // old summary/submit removed (replaced below)
         let SELECTED_PVZ_ID = null;
         async function refreshSummary(){
@@ -492,96 +777,54 @@ $storeTitle = isset($this->params) ? (string) $this->params->get('store_title', 
             ev.preventDefault();
             const m = document.getElementById('pvz-map'); if (m) m.scrollIntoView({behavior:'smooth', block:'center'});
         });
-        document.addEventListener('DOMContentLoaded', () => {
+        document.addEventListener('DOMContentLoaded', async () => {
             console.log('DOMContentLoaded: starting initialization...');
-            loadCatalog();
-            refreshCart();
-            loadMethods().then(async () => { const sum = await api('summary'); renderBonuses(sum); await refreshSummary(); });
-            // Filters listeners
-            const fs = document.getElementById('filter-sort');
-            const fi = document.getElementById('filter-instock');
-            if (fs) fs.addEventListener('change', () => loadCatalog());
-            if (fi) fi.addEventListener('change', () => loadCatalog());
-            document.addEventListener('change', (ev) => { if (ev.target && ev.target.matches('[data-field-alias]')) loadCatalog(); });
-            const fr = document.getElementById('filters-reset'); if (fr) fr.addEventListener('click', () => {
-                if (fi) fi.checked = false; if (fs) fs.value = '';
-                document.querySelectorAll('[data-field-alias]').forEach(el => {
-                    const type = el.getAttribute('data-field-type')||'text';
-                    if (type === 'checkbox') el.checked = false; else el.value = '';
-                });
-                const pf = document.getElementById('price-from'); const pt = document.getElementById('price-to');
-                if (pf) pf.value=''; if (pt) pt.value='';
-                loadCatalog();
-            });
-            const fa = document.getElementById('filters-apply'); if (fa) fa.addEventListener('click', () => loadCatalog());
-            loadOrders(true);
-            // Load available points
-            api('bonuses').then(data => {
-                const el = document.getElementById('points-available');
-                const inp = document.querySelector('[name="points"]');
-                if (el && data && typeof data.points_available !== 'undefined') {
-                    el.textContent = data.points_available;
-                    if (inp) inp.setAttribute('max', data.points_available);
-                }
-            }).catch(()=>{});
-            const sh = document.querySelector('[name="shipping_id"]');
-            const pm = document.querySelector('[name="payment_id"]');
-            if (sh) sh.addEventListener('change', onShippingChange);
-            if (pm) pm.addEventListener('change', onPaymentChange);
-            const ph = document.querySelector('[name="phone"]');
-            if (ph) {
-                if (window.IMask) {
-                    IMask(ph, {
-                        mask: [
-                            { mask: '+{7} (000) 000-00-00' },
-                            { mask: '8 (000) 000-00-00' },
-                            { mask: '(000) 000-00-00' },
-                            { mask: '0000000000' }
-                        ],
-                        dispatch: function (appended, dynamicMasked) {
-                            const raw = (dynamicMasked.value + appended).replace(/\D/g, '');
-                            if (!raw) return dynamicMasked.compiledMasks[0];
-                            if (raw[0] === '8') return dynamicMasked.compiledMasks[1];
-                            if (raw[0] === '9' || raw.length === 10) return dynamicMasked.compiledMasks[2];
-                            if (raw.length === 10) return dynamicMasked.compiledMasks[3];
-                            return dynamicMasked.compiledMasks[0];
-                        }
-                    });
-                } else {
-                    const formatDisplay = (val) => {
-                        const digits = (val||'').replace(/\D/g, '');
-                        if (!digits) return '';
-                        let d = digits;
-                        if (d[0] === '8') d = '7' + d.slice(1);
-                        if (d[0] === '9') d = '7' + d; // assume local mobile
-                        let out = '+7 ';
-                        if (d.length > 1) {
-                            const rest = d.slice(1);
-                            const p1 = rest.slice(0,3);
-                            const p2 = rest.slice(3,6);
-                            const p3 = rest.slice(6,8);
-                            const p4 = rest.slice(8,10);
-                            if (p1) out += `(${p1}` + (p1.length===3?') ':'');
-                            if (p2) out += p2 + (p2.length===3?'-':'');
-                            if (p3) out += p3 + (p3.length===2?'-':'');
-                            if (p4) out += p4;
-                        }
-                        return out.trim();
-                    };
-                    ph.addEventListener('input', () => { ph.value = formatDisplay(ph.value); });
-                    ph.addEventListener('blur', () => { ph.value = formatDisplay(ph.value); });
-                }
-            }
-            // init map if key present
-            <?php if (!empty($ymKey)): ?>
-            initMap();
-            <?php endif; ?>
+            initTheme();
+            const ok = await ensureConsents();
+            if (ok) { await initApp(); }
         });
         document.addEventListener('click', (ev) => { const btn = ev.target.closest('#orders-more'); if (!btn) return; ev.preventDefault(); loadOrders(false); });
         document.addEventListener('change', (ev) => { const sel = ev.target.closest('#orders-status'); if (!sel) return; ev.preventDefault(); loadOrders(true); });
     </script>
 </head>
 <body>
+
+<!-- Fullscreen Document Modal (вынесен НАД оверлеем, чтобы быть поверх) -->
+<div id="doc-modal" class="uk-modal-full" uk-modal>
+    <div class="uk-modal-dialog uk-modal-body uk-height-viewport" style="z-index: 100000;">
+        <button class="uk-modal-close-full" type="button" uk-close></button>
+        <div id="doc-modal-body" class="uk-overflow-auto uk-padding-small" style="height: calc(100vh - 120px);"></div>
+        <div class="uk-margin-top uk-flex uk-flex-between">
+            <button id="doc-decline-btn" class="uk-button uk-button-default"><?php echo Text::_('COM_RADICALMART_TELEGRAM_DOC_DECLINE'); ?></button>
+            <button id="doc-accept-btn" class="uk-button uk-button-primary"><?php echo Text::_('COM_RADICALMART_TELEGRAM_DOC_ACCEPT'); ?></button>
+        </div>
+    </div>
+</div>
+
+<div id="consent-overlay">
+    <div class="consent-wrap">
+        <div id="consent-card" class="uk-card uk-card-default uk-card-body">
+            <h4 class="uk-margin-remove"><?php echo Text::_('COM_RADICALMART_TELEGRAM_CONSENT_TITLE'); ?></h4>
+            <p class="uk-text-meta"><?php echo Text::_('COM_RADICALMART_TELEGRAM_CONSENT_TEXT'); ?></p>
+            <ul id="consent-docs" class="uk-list uk-list-divider uk-margin-small"></ul>
+            <div class="uk-margin-small">
+                <label class="uk-display-block"><input id="consent-personal" class="uk-checkbox" type="checkbox" onchange="updateConsentSubmitState()"> Согласен на обработку <a href="#" onclick="openDocModal('privacy');return false;" class="uk-link uk-text-bold"><?php echo Text::_('COM_RADICALMART_TELEGRAM_LINK_PERSONAL_DATA'); ?></a></label>
+            </div>
+            <div class="uk-margin-small">
+                <label class="uk-display-block"><input id="consent-terms" class="uk-checkbox" type="checkbox" onchange="updateConsentSubmitState()"> Принимаю <a href="#" onclick="openDocModal('terms');return false;" class="uk-link uk-text-bold"><?php echo Text::_('COM_RADICALMART_TELEGRAM_LINK_TERMS'); ?></a> / оферту</label>
+            </div>
+            <div class="uk-margin-small">
+                <label class="uk-display-block"><input id="consent-marketing" class="uk-checkbox" type="checkbox"> Хочу получать <a href="#" onclick="openDocModal('marketing');return false;" class="uk-link uk-text-bold"><?php echo Text::_('COM_RADICALMART_TELEGRAM_LINK_MARKETING'); ?></a> <span class="uk-text-meta">(опционально)</span></label>
+            </div>
+            <div class="uk-margin">
+                <label><input id="consent-all" class="uk-checkbox" type="checkbox" onchange="toggleAcceptAll(event)"> <?php echo Text::_('COM_RADICALMART_TELEGRAM_ACCEPT_ALL'); ?></label>
+            </div>
+            <div class="uk-margin-top">
+                <button id="consent-submit" class="uk-button uk-button-primary" onclick="submitConsents()" disabled><?php echo Text::_('COM_RADICALMART_TELEGRAM_CONSENT_ACCEPT'); ?></button>
+            </div>
+        </div>
+    </div>
+    </div>
 
 <nav class="uk-navbar-container" uk-navbar>
     <div class="uk-navbar-left">
@@ -594,13 +837,12 @@ $storeTitle = isset($this->params) ? (string) $this->params->get('store_title', 
             <li><a href="#checkout"><?php echo Text::_('COM_RADICALMART_TELEGRAM_CHECKOUT'); ?></a></li>
             <li><a href="#orders"><?php echo Text::_('COM_RADICALMART_TELEGRAM_ORDERS'); ?></a></li>
         </ul>
+        <div class="uk-navbar-item"><a href="#" id="theme-toggle" class="uk-icon-link" uk-icon="moon" title="<?php echo Text::_('COM_RADICALMART_TELEGRAM_THEME_DARK'); ?>"></a></div>
     </div>
-
 </nav>
 
 <div class="uk-section uk-section-default">
     <div class="uk-container">
-
         <div class="uk-grid-small" uk-grid>
             <div class="uk-width-1-1">
                 <h3 id="catalog" class="tg-safe-text"><?php echo Text::_('COM_RADICALMART_TELEGRAM_CATALOG'); ?></h3>
@@ -682,32 +924,32 @@ $storeTitle = isset($this->params) ? (string) $this->params->get('store_title', 
                             <div class="uk-width-1-1 uk-width-1-3@s">
                                 <label class="uk-form-label"><?php echo Text::_('COM_RADICALMART_TELEGRAM_LAST_NAME'); ?></label>
                                 <div class="uk-form-controls">
-                                    <input class="uk-input" type="text" name="last_name" placeholder="Иванов" required>
+                                    <input class="uk-input" type="text" name="last_name" placeholder="<?php echo Text::_('COM_RADICALMART_TELEGRAM_PLACEHOLDER_LAST_NAME'); ?>" required>
                                 </div>
                             </div>
                             <div class="uk-width-1-1 uk-width-1-3@s">
                                 <label class="uk-form-label"><?php echo Text::_('COM_RADICALMART_TELEGRAM_FIRST_NAME'); ?></label>
                                 <div class="uk-form-controls">
-                                    <input class="uk-input" type="text" name="first_name" placeholder="Иван" required>
+                                    <input class="uk-input" type="text" name="first_name" placeholder="<?php echo Text::_('COM_RADICALMART_TELEGRAM_PLACEHOLDER_FIRST_NAME'); ?>" required>
                                 </div>
                             </div>
                             <div class="uk-width-1-1 uk-width-1-3@s">
                                 <label class="uk-form-label"><?php echo Text::_('COM_RADICALMART_TELEGRAM_SECOND_NAME'); ?></label>
                                 <div class="uk-form-controls">
-                                    <input class="uk-input" type="text" name="second_name" placeholder="Иванович">
+                                    <input class="uk-input" type="text" name="second_name" placeholder="<?php echo Text::_('COM_RADICALMART_TELEGRAM_PLACEHOLDER_SECOND_NAME'); ?>">
                                 </div>
                             </div>
                             <div class="uk-width-1-1 uk-width-1-3@s">
                                 <label class="uk-form-label"><?php echo Text::_('COM_RADICALMART_TELEGRAM_PHONE'); ?></label>
                                 <div class="uk-form-controls">
-                                    <input class="uk-input" type="tel" name="phone" placeholder="+7 927 123-45-67" required>
+                                    <input class="uk-input" type="tel" name="phone" placeholder="<?php echo Text::_('COM_RADICALMART_TELEGRAM_PLACEHOLDER_PHONE'); ?>" required>
                                     <div class="uk-text-meta uk-margin-small-top"><?php echo Text::_('COM_RADICALMART_TELEGRAM_PHONE_HINT'); ?></div>
                                 </div>
                             </div>
                             <div class="uk-width-1-1 uk-width-1-3@s">
                                 <label class="uk-form-label"><?php echo Text::_('COM_RADICALMART_TELEGRAM_EMAIL'); ?></label>
                                 <div class="uk-form-controls">
-                                    <input class="uk-input" type="email" name="email" placeholder="you@example.com">
+                                    <input class="uk-input" type="email" name="email" placeholder="<?php echo Text::_('COM_RADICALMART_TELEGRAM_PLACEHOLDER_EMAIL'); ?>">
                                 </div>
                             </div>
                             <div class="uk-width-1-1 uk-width-1-2@s">
@@ -728,7 +970,7 @@ $storeTitle = isset($this->params) ? (string) $this->params->get('store_title', 
                             <div class="uk-width-1-1 uk-width-1-2@s">
                                 <label class="uk-form-label"><?php echo Text::_('COM_RADICALMART_TELEGRAM_PROMO'); ?></label>
                                 <div class="uk-form-controls uk-flex">
-                                    <input class="uk-input" type="text" name="promo_code" placeholder="CODE-1234" style="max-width: 240px;">
+                                    <input class="uk-input" type="text" name="promo_code" placeholder="<?php echo Text::_('COM_RADICALMART_TELEGRAM_PLACEHOLDER_PROMO'); ?>" style="max-width: 240px;">
                                     <button type="button" class="uk-button uk-button-default uk-margin-small-left" onclick="applyPromo(event)"><?php echo Text::_('COM_RADICALMART_TELEGRAM_APPLY'); ?></button>
                                 </div>
                                 <ul class="uk-list uk-list-collapse uk-margin-small" id="applied-codes"></ul>
@@ -760,6 +1002,11 @@ $storeTitle = isset($this->params) ? (string) $this->params->get('store_title', 
                     <ul id="orders-list" class="uk-list uk-list-divider"></ul>
                     <div class="uk-margin-small"><button type="button" id="orders-more" class="uk-button uk-button-default uk-button-small"><?php echo Text::_('COM_RADICALMART_TELEGRAM_LOAD_MORE'); ?></button></div>
                 </div>
+            </div>
+
+            <div class="uk-width-1-1">
+                <h3 id="profile" class="tg-safe-text"><?php echo Text::_('COM_RADICALMART_TELEGRAM_PROFILE'); ?></h3>
+                <div id="profile-box" class="uk-card uk-card-default uk-card-body"></div>
             </div>
 
             <div class="uk-width-1-1">
@@ -796,5 +1043,28 @@ $storeTitle = isset($this->params) ? (string) $this->params->get('store_title', 
 
 </div>
 
+<!-- Bottom fixed nav -->
+<div id="app-bottom-nav" class="uk-navbar-container" uk-navbar>
+    <div class="uk-navbar-center uk-width-1-1 uk-flex uk-flex-center">
+        <ul class="uk-navbar-nav">
+            <li><a href="#" onclick="document.getElementById('catalog')?.scrollIntoView({behavior:'smooth'}); return false;" class="tg-safe-text"><span uk-icon="icon: thumbnails"></span><span class="uk-visible@s uk-margin-small-left"><?php echo Text::_('COM_RADICALMART_TELEGRAM_CATALOG'); ?></span></a></li>
+            <li><a href="#" onclick="document.getElementById('cart')?.scrollIntoView({behavior:'smooth'}); return false;" class="tg-safe-text"><span uk-icon="icon: cart"></span><span class="uk-visible@s uk-margin-small-left"><?php echo Text::_('COM_RADICALMART_TELEGRAM_CART'); ?></span> <span id="cart-badge" hidden>0</span></a></li>
+            <li><a href="#" onclick="document.getElementById('checkout')?.scrollIntoView({behavior:'smooth'}); return false;" class="tg-safe-text"><span uk-icon="icon: receiver"></span><span class="uk-visible@s uk-margin-small-left"><?php echo Text::_('COM_RADICALMART_TELEGRAM_CHECKOUT'); ?></span></a></li>
+                        <li><a href="#" onclick="document.getElementById('orders')?.scrollIntoView({behavior:'smooth'}); return false;" class="tg-safe-text"><span uk-icon="icon: album"></span><span class="uk-visible@s uk-margin-small-left"><?php echo Text::_('COM_RADICALMART_TELEGRAM_ORDERS'); ?></span></a></li>
+                        <li><a href="#" onclick="openSearch(); return false;" class="tg-safe-text"><span uk-icon="icon: search"></span><span class="uk-visible@s uk-margin-small-left"><?php echo Text::_('JSEARCH_FILTER_CLEAR_LABEL') ?: Text::_('COM_RADICALMART_TELEGRAM_SEARCH_TITLE'); ?></span></a></li>
+                        <li><a href="#" onclick="document.getElementById('profile')?.scrollIntoView({behavior:'smooth'}); return false;" class="tg-safe-text"><span uk-icon="icon: user"></span><span class="uk-visible@s uk-margin-small-left"><?php echo Text::_('COM_RADICALMART_TELEGRAM_PROFILE'); ?></span></a></li>
+        </ul>
+    </div>
+</div>
+
+<!-- Search Modal -->
+<div id="search-modal" uk-modal>
+    <div class="uk-modal-dialog uk-modal-body">
+        <button class="uk-modal-close-default" type="button" uk-close></button>
+    <h4 class="uk-margin-remove"><?php echo Text::_('COM_RADICALMART_TELEGRAM_SEARCH_TITLE'); ?></h4>
+    <input id="search-input" class="uk-input uk-margin-small" type="text" placeholder="<?php echo Text::_('COM_RADICALMART_TELEGRAM_SEARCH_INPUT_PLACEHOLDER'); ?>" oninput="onSearchInput(event)">
+        <div id="search-results" class="uk-margin-small"></div>
+    </div>
+</div>
 </body>
 </html>

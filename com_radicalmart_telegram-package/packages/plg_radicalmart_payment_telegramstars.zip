@@ -1,0 +1,12 @@
+<?xml version="1.0" encoding="utf-8"?>
+<extension type="package" version="3.9" client="site" method="upgrade">
+    <name>plg_radicalmart_payment_telegramstars</name>
+    <author>Your Name</author>
+    <version>1.0.0</version>
+    <description>Installation package for the Telegram Stars payment plugin for RadicalMart.</description>
+    <files>
+        <filename>plg_radicalmart_payment_telegramstars.php</filename>
+        <filename>index.html</filename>
+        <filename>plg_radicalmart_payment_telegramstars.xml</filename>
+    </files>
+</extension>

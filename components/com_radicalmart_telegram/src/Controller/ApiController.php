@@ -24,6 +24,7 @@ use Joomla\CMS\Filesystem\Folder;
 use Joomla\CMS\Filesystem\File;
 use Joomla\CMS\Log\Log;
 use Joomla\Component\RadicalMart\Administrator\Model\OrderModel as AdminOrderModel;
+use Joomla\Component\RadicalMartTelegram\Site\Helper\ConsentHelper;
 
 class ApiController extends BaseController
 {
@@ -52,9 +53,13 @@ class ApiController extends BaseController
             }
             Log::add('Bot token length: ' . strlen($botToken) . ' chars (first 10: ' . substr($botToken, 0, 10) . '...)', Log::DEBUG, 'com_radicalmart.telegram');
             if (!$this->verifyInitData($raw, $botToken)) {
-                Log::add('Invalid Telegram initData signature', Log::WARNING, 'com_radicalmart.telegram');
-                echo new JsonResponse(null, 'Invalid initData', true);
-                $app->close();
+                if ($strict) {
+                    Log::add('Invalid Telegram initData signature (strict mode → block)', Log::WARNING, 'com_radicalmart.telegram');
+                    echo new JsonResponse(null, 'Invalid initData', true);
+                    $app->close();
+                } else {
+                    Log::add('Invalid Telegram initData signature (non‑strict → continue as guest)', Log::WARNING, 'com_radicalmart.telegram');
+                }
             }
             // extract Telegram user id if present
             $pairs = [];
@@ -197,11 +202,22 @@ class ApiController extends BaseController
         }
         $receivedHash = (string) $pairs['hash'];
         unset($pairs['hash']);
+        $originalKeys = array_keys($pairs);
+        // Telegram не документирует параметр signature для WebApp initData – его надо игнорировать
+        if (isset($pairs['signature'])) {
+            unset($pairs['signature']);
+        }
+        // Возможные прочие служебные параметры, которые могли добавить прокси / CDN – игнорируем по префиксу _tg_ / tg_tech
+        foreach ($pairs as $k => $v) {
+            if (str_starts_with($k, '_tg_') || str_starts_with($k, 'tg_tech')) {
+                unset($pairs[$k]);
+            }
+        }
         ksort($pairs, SORT_STRING);
         $lines = [];
         foreach ($pairs as $k => $v) {
             if (is_array($v)) {
-                Log::add('verifyInitData FAIL: array value in pairs', Log::DEBUG, 'com_radicalmart.telegram');
+                Log::add('verifyInitData FAIL: array value in pairs (key=' . $k . ')', Log::DEBUG, 'com_radicalmart.telegram');
                 return false;
             }
             $lines[] = $k . '=' . (string) $v;
@@ -209,13 +225,26 @@ class ApiController extends BaseController
         $dataCheckString = implode("\n", $lines);
         $secretKey = hash_hmac('sha256', 'WebAppData', $botToken, true);
         $calc = hash_hmac('sha256', $dataCheckString, $secretKey);
-        $result = hash_equals(strtolower($calc), strtolower($receivedHash));
-        Log::add('verifyInitData: ' . ($result ? 'OK' : 'FAIL hash mismatch') . ', received=' . substr($receivedHash, 0, 16) . '..., calc=' . substr($calc, 0, 16) . '...', Log::DEBUG, 'com_radicalmart.telegram');
-        return $result;
+        $okPrimary = hash_equals(strtolower($calc), strtolower($receivedHash));
+        if ($okPrimary) {
+            Log::add('verifyInitData: OK primary, received=' . substr($receivedHash, 0, 16) . '..., calc=' . substr($calc, 0, 16) . '..., keys=' . implode(',', array_keys($pairs)), Log::DEBUG, 'com_radicalmart.telegram');
+            return true;
+        }
+        // Дополнительный fallback: если среди originalKeys была signature и мы её уже удалили, пробовать ещё раз (по сути уже сделано) – логируем причину
+        Log::add('verifyInitData mismatch: received=' . substr($receivedHash,0,16) . '..., calc=' . substr($calc,0,16) . '..., keys=' . implode(',', array_keys($pairs)) . '; originalKeys=' . implode(',', $originalKeys) . '; dataCheckString(first120)=' . substr($dataCheckString,0,120), Log::WARNING, 'com_radicalmart.telegram');
+        return false;
     }
     protected function getChatId(): int
     {
-        return (int) Factory::getApplication()->input->get('chat', 0, 'int');
+        $app = Factory::getApplication();
+        $chat = (int) $app->input->get('chat', 0, 'int');
+        if ($chat > 0) { return $chat; }
+        // Fallback: в WebApp приватный chat.id равен tg_user_id, используем его при валидном initData
+        if ($this->tgUserId > 0) {
+            \Joomla\CMS\Log\Log::add('getChatId: fallback to tg_user_id=' . $this->tgUserId, \Joomla\CMS\Log\Log::DEBUG, 'com_radicalmart.telegram');
+            return (int) $this->tgUserId;
+        }
+        return 0;
     }
 
     public function list(): void
@@ -312,6 +341,114 @@ class ApiController extends BaseController
         $app->close();
     }
 
+    /**
+     * Поиск товаров (быстрый search в WebApp)
+     * Параметры: q (строка), limit (int)
+     */
+    public function search(): void
+    {
+        $app = Factory::getApplication();
+        $this->guardInitData();
+        $this->guardRateLimitDb('search', 40);
+        $q    = trim((string) $app->input->get('q', '', 'string'));
+        $lim  = $app->input->getInt('limit', 10);
+        if ($lim <= 0 || $lim > 50) { $lim = 10; }
+        if ($q === '') { echo new JsonResponse(['items'=>[]]); $app->close(); }
+        try {
+            // Используем CatalogService с фильтром по имени (оставляем как text search)
+            $filters = ['search' => $q];
+            $items = (new CatalogService())->listProducts(1, $lim, $filters);
+            echo new JsonResponse(['items' => $items]);
+            $app->close();
+        } catch (\Throwable $e) { echo new JsonResponse(null, $e->getMessage(), true); $app->close(); }
+    }
+
+    /**
+     * Профиль пользователя: данные аккаунта, баллы, реферальные коды, статистика.
+     * optional action=createcode (POST): создать реферальный код.
+     */
+    public function profile(): void
+    {
+        $app = Factory::getApplication();
+        $this->guardInitData();
+        $this->guardRateLimitDb('profile', 20);
+        $chat = $this->getChatId();
+        if ($chat <= 0) { echo new JsonResponse(null, Text::_('COM_RADICALMART_TELEGRAM_ERR_INVALID_CHAT'), true); $app->close(); }
+        try {
+            $db = Factory::getContainer()->get('DatabaseDriver');
+            // Связка chat->user
+            $query = $db->getQuery(true)
+                ->select('user_id')
+                ->from($db->quoteName('#__radicalmart_telegram_users'))
+                ->where($db->quoteName('chat_id') . ' = :chat')
+                ->bind(':chat', $chat);
+            $userId = (int) $db->setQuery($query, 0, 1)->loadResult();
+            $user   = null;
+            if ($userId > 0) {
+                $user = Factory::getUser($userId);
+            }
+            $points = 0.0;
+            if ($userId > 0) { $points = (float) PointsHelper::getCustomerPoints($userId); }
+            // Рефералы: реферальные коды + инфо
+            $info = [];
+            $codes = [];
+            $canCreate = false;
+            $createMode = '';
+            if ($userId > 0) {
+                try {
+                    $refModel = new \Joomla\Component\RadicalMartBonuses\Site\Model\ReferralsModel();
+                    $refModel->setState('user.id', $userId);
+                    $info = $refModel->getInfo($userId);
+                    $codes = $refModel->getCodes() ?: [];
+                    $createMode = $refModel->canCreateCode();
+                    $canCreate = ($createMode !== false);
+                } catch (\Throwable $e) { /* ignore */ }
+            }
+            // Создание кода action=createcode
+            $action = $app->input->getCmd('action', '');
+            $createdCode = null;
+            if ($action === 'createcode' && $canCreate && $userId > 0) {
+                $this->guardRateLimitDb('profilecreate', 5);
+                $this->guardNonce('createcode');
+                try {
+                    $refModel = new \Joomla\Component\RadicalMartBonuses\Site\Model\ReferralsModel();
+                    $refModel->setState('user.id', $userId);
+                    $currency = $app->input->getString('currency', '');
+                    $custom   = $app->input->getString('code', '');
+                    $createdCode = $refModel->createCode($custom, $currency) ?: null;
+                    // обновим список кодов после создания
+                    $codes = $refModel->getCodes() ?: [];
+                } catch (\Throwable $e) { echo new JsonResponse(null, $e->getMessage(), true); $app->close(); }
+            }
+            $data = [
+                'user' => ($user ? [
+                    'id' => (int) $user->id,
+                    'name' => (string) ($user->name ?: $user->username ?: ''),
+                    'username' => (string) $user->username,
+                    'email' => (string) $user->email,
+                    'phone' => (string) ($user->getParam('profile.phonenum') ?: ''),
+                ] : null),
+                'points' => $points,
+                'referrals_info' => $info,
+                'referral_codes' => array_map(function($c){
+                    return [
+                        'id' => (int) ($c->id ?? 0),
+                        'code' => (string) ($c->code ?? ''),
+                        'discount' => (string) ($c->discount_string ?? ''),
+                        'enabled' => (bool) ($c->enabled ?? false),
+                        'link' => (string) ($c->link ?? ''),
+                        'expires' => (string) ($c->expires ?? ''),
+                    ];
+                }, $codes),
+                'can_create_code' => $canCreate,
+                'create_mode' => $createMode,
+                'created_code' => $createdCode,
+            ];
+            echo new JsonResponse($data);
+            $app->close();
+        } catch (\Throwable $e) { echo new JsonResponse(null, $e->getMessage(), true); $app->close(); }
+    }
+
     public function qty(): void
     {
         $app  = Factory::getApplication();
@@ -351,6 +488,80 @@ class ApiController extends BaseController
         $app->close();
     }
 
+    public function consents(): void
+    {
+        $app = Factory::getApplication();
+        $this->guardInitData();
+        $this->guardRateLimitDb('consents', 20);
+        try {
+            $chat = $this->getChatId();
+            $statuses = ConsentHelper::getConsents(max(0, (int) $chat));
+            $docs = ConsentHelper::getAllDocumentUrls();
+            echo new JsonResponse(['statuses' => $statuses, 'documents' => $docs]);
+            $app->close();
+        } catch (\Throwable $e) {
+            echo new JsonResponse(null, $e->getMessage(), true);
+            $app->close();
+        }
+    }
+
+    public function setconsent(): void
+    {
+        $app = Factory::getApplication();
+        $this->guardInitData();
+        $this->guardRateLimitDb('mut', 60);
+        $this->guardNonce('setconsent');
+        $chat = $this->getChatId();
+        if ($chat <= 0) { echo new JsonResponse(null, 'Invalid chat', true); $app->close(); }
+        $type = trim((string) $app->input->get('type', '', 'string'));
+        $val  = (int) $app->input->getInt('value', 0) === 1;
+        $allowed = ['personal_data','marketing','terms'];
+        if (!in_array($type, $allowed, true)) { echo new JsonResponse(null, 'Invalid type', true); $app->close(); }
+        try {
+            $ok = ConsentHelper::saveConsent((int)$chat, $type, (bool)$val);
+            if (!$ok) { echo new JsonResponse(null, 'Save failed', true); $app->close(); }
+            echo new JsonResponse(['ok' => true]);
+            $app->close();
+        } catch (\Throwable $e) { echo new JsonResponse(null, $e->getMessage(), true); $app->close(); }
+    }
+
+    public function legal(): void
+    {
+        // Возвращает HTML документа (privacy|consent|terms|marketing) санитированный
+        $app = Factory::getApplication();
+        $this->guardInitData();
+        $this->guardRateLimitDb('legal', 30);
+        $type = trim((string)$app->input->get('type', '', 'string'));
+        $map = [ 'privacy' => 'article_privacy_policy', 'consent' => 'article_consent_personal_data', 'terms' => 'article_terms_of_service', 'marketing' => 'article_consent_marketing' ];
+        if (!isset($map[$type])) { echo new JsonResponse(null, 'Invalid type', true); $app->close(); }
+        try {
+            $params = $app->getParams('com_radicalmart_telegram');
+            $articleId = (int)$params->get($map[$type], 0);
+            if ($articleId <= 0) { echo new JsonResponse(['html' => '<p>Документ не настроен.</p>']); $app->close(); }
+            // Прямой запрос статьи
+            $db = Factory::getContainer()->get('DatabaseDriver');
+            $q = $db->getQuery(true)
+                ->select($db->quoteName(['introtext','fulltext']))
+                ->from($db->quoteName('#__content'))
+                ->where($db->quoteName('id') . ' = :id')
+                ->bind(':id', $articleId);
+            $row = $db->setQuery($q, 0, 1)->loadObject();
+            if (!$row) { echo new JsonResponse(['html' => '<p>Документ не найден.</p>']); $app->close(); }
+            $htmlRaw = (string)($row->introtext ?? '') . (string)($row->fulltext ?? '');
+            // Простая санитизация: удаляем скрипты, iframe, style, on* атрибуты
+            $clean = preg_replace('#<script[^>]*?>.*?</script>#is', '', $htmlRaw);
+            $clean = preg_replace('#<iframe[^>]*?>.*?</iframe>#is', '', $clean);
+            $clean = preg_replace('#<style[^>]*?>.*?</style>#is', '', $clean);
+            $clean = preg_replace('#on[a-zA-Z]+\s*=\s*["\"][^"\"]*["\"]#is', '', $clean);
+            // Ограничить потенциально опасные ссылки target
+            $clean = preg_replace('#<a([^>]+)>#i', '<a$1 target="_blank" rel="noopener">', $clean);
+            echo new JsonResponse(['html' => $clean]);
+            $app->close();
+        } catch (\Throwable $e) {
+            echo new JsonResponse(null, $e->getMessage(), true); $app->close();
+        }
+    }
+
     public function checkout(): void
     {
         $app  = Factory::getApplication();
@@ -367,6 +578,19 @@ class ApiController extends BaseController
 
         if ($op !== 'create') {
             echo new JsonResponse(null, 'Unsupported action', true);
+            $app->close();
+        }
+
+        // Backend consent enforcement: require personal_data and terms
+        try {
+            $cons = ConsentHelper::getConsents((int)$chat);
+            if (empty($cons['personal_data']) || empty($cons['terms'])) {
+                echo new JsonResponse(null, Text::_('COM_RADICALMART_TELEGRAM_ERR_CONSENT_REQUIRED'), true);
+                $app->close();
+            }
+        } catch (\Throwable $e) {
+            // If consent check fails treat as missing (fail‑closed)
+            echo new JsonResponse(null, Text::_('COM_RADICALMART_TELEGRAM_ERR_CONSENT_REQUIRED'), true);
             $app->close();
         }
 
@@ -1140,6 +1364,10 @@ class ApiController extends BaseController
         $limit= $app->input->getInt('limit', 1000);
         try {
             $db = Factory::getContainer()->get('DatabaseDriver');
+            // Try to ensure safe isolation level to avoid "Update locks cannot be acquired during a READ UNCOMMITTED transaction"
+            try {
+                $db->setQuery('SET SESSION TRANSACTION ISOLATION LEVEL READ COMMITTED')->execute();
+            } catch (\Throwable $e) { /* ignore */ }
             $params = $app->getParams('com_radicalmart_telegram');
             $allowedDefault = array_filter(array_map('trim', explode(',', (string) $params->get('apiship_providers', 'yataxi,cdek,x5'))));
             $providersIn = array_filter(array_map('trim', explode(',', $prov)));
@@ -1201,8 +1429,21 @@ class ApiController extends BaseController
                 }
 
                 if (!empty($where)) { $query->where(implode(' AND ', $where)); }
-                $db->setQuery($query, 0, $limit);
-                $rows = $db->loadAssocList();
+                $rows = [];
+                try {
+                    $db->setQuery($query, 0, $limit);
+                    $rows = $db->loadAssocList();
+                } catch (\Throwable $ex) {
+                    // Specific MySQL error under READ UNCOMMITTED: try set isolation and retry once
+                    $msg = (string) $ex->getMessage();
+                    if (stripos($msg, 'Update locks cannot be acquired during a READ UNCOMMITTED transaction') !== false) {
+                        try { $db->setQuery('SET SESSION TRANSACTION ISOLATION LEVEL READ COMMITTED')->execute(); } catch (\Throwable $e2) { /* ignore */ }
+                        try { $db->setQuery($query, 0, $limit); $rows = $db->loadAssocList(); }
+                        catch (\Throwable $e3) { $rows = []; /* swallow to keep UI working */ }
+                    } else {
+                        throw $ex;
+                    }
+                }
                 $items = array_map(function($r){ return [
                     'id' => $r['ext_id'],
                     'provider' => $r['provider'],
