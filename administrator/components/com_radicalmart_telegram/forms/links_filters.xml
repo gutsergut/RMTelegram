@@ -5,29 +5,29 @@
       <field
         name="search"
         type="text"
-        label="JSEARCH_FILTER"
-        hint="JSEARCH_FILTER"
+        label="COM_RADICALMART_TELEGRAM_FILTER_SEARCH_LABEL"
+        hint="COM_RADICALMART_TELEGRAM_FILTER_SEARCH_HINT"
       />
     </fieldset>
 
     <fieldset name="links">
-      <field name="chat_id" type="text" label="COM_RADICALMART_TELEGRAM_CHAT_ID" />
-      <field name="tg_user_id" type="text" label="COM_RADICALMART_TELEGRAM_TG_USER_ID" />
-      <field name="username" type="text" label="COM_RADICALMART_TELEGRAM_TG_USERNAME" />
-      <field name="phone" type="text" label="COM_RADICALMART_TELEGRAM_PHONE" />
-      <field name="user_id" type="text" label="COM_RADICALMART_TELEGRAM_USER_ID" />
+      <field name="chat_id" type="text" label="COM_RADICALMART_TELEGRAM_FILTER_CHAT_ID_LABEL" description="COM_RADICALMART_TELEGRAM_FILTER_CHAT_ID_DESC" hint="COM_RADICALMART_TELEGRAM_FILTER_CHAT_ID_HINT" />
+      <field name="tg_user_id" type="text" label="COM_RADICALMART_TELEGRAM_FILTER_TG_USER_ID_LABEL" description="COM_RADICALMART_TELEGRAM_FILTER_TG_USER_ID_DESC" hint="COM_RADICALMART_TELEGRAM_FILTER_TG_USER_ID_HINT" />
+      <field name="username" type="text" label="COM_RADICALMART_TELEGRAM_FILTER_USERNAME_LABEL" hint="COM_RADICALMART_TELEGRAM_FILTER_USERNAME_HINT" />
+      <field name="phone" type="text" label="COM_RADICALMART_TELEGRAM_FILTER_PHONE_LABEL" description="COM_RADICALMART_TELEGRAM_FILTER_PHONE_DESC" hint="COM_RADICALMART_TELEGRAM_FILTER_PHONE_HINT" />
+      <field name="user_id" type="text" label="COM_RADICALMART_TELEGRAM_FILTER_USER_ID_LABEL" hint="COM_RADICALMART_TELEGRAM_FILTER_USER_ID_HINT" />
 
-      <field name="consent_personal_data" type="list" label="COM_RADICALMART_TELEGRAM_CONSENT_PD_SHORT" default="">
+      <field name="consent_personal_data" type="list" label="COM_RADICALMART_TELEGRAM_FILTER_PD_LABEL" description="COM_RADICALMART_TELEGRAM_FILTER_PD_DESC" default="">
         <option value="">JALL</option>
         <option value="1">JYES</option>
         <option value="0">JNO</option>
       </field>
-      <field name="consent_terms" type="list" label="COM_RADICALMART_TELEGRAM_CONSENT_TERMS_SHORT" default="">
+      <field name="consent_terms" type="list" label="COM_RADICALMART_TELEGRAM_FILTER_TERMS_LABEL" description="COM_RADICALMART_TELEGRAM_FILTER_TERMS_DESC" default="">
         <option value="">JALL</option>
         <option value="1">JYES</option>
         <option value="0">JNO</option>
       </field>
-      <field name="consent_marketing" type="list" label="COM_RADICALMART_TELEGRAM_CONSENT_MKT_SHORT" default="">
+      <field name="consent_marketing" type="list" label="COM_RADICALMART_TELEGRAM_FILTER_MKT_LABEL" description="COM_RADICALMART_TELEGRAM_FILTER_MKT_DESC" default="">
         <option value="">JALL</option>
         <option value="1">JYES</option>
         <option value="0">JNO</option>
