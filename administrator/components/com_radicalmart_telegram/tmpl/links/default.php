@@ -13,7 +13,64 @@ use Joomla\CMS\Layout\LayoutHelper;
     <p class="small text-muted"><?php echo Text::_('COM_RADICALMART_TELEGRAM_USER_LINKS_DESC'); ?></p>
 
     <form action="index.php?option=com_radicalmart_telegram&view=links" method="get" id="adminForm" name="adminForm">
-        <?php echo LayoutHelper::render('joomla.searchtools.default', ['view' => $this]); ?>
+        <div class="card card-body mb-3">
+            <div class="row g-3 align-items-end">
+                <div class="col-md-3 col-sm-6">
+                    <label class="form-label"><?php echo Text::_('COM_RADICALMART_TELEGRAM_FILTER_SEARCH_LABEL'); ?></label>
+                    <input type="text" class="form-control" name="filter[search]" placeholder="<?php echo Text::_('COM_RADICALMART_TELEGRAM_FILTER_SEARCH_HINT'); ?>" value="<?php echo htmlspecialchars($this->filters['search'] ?? '', ENT_QUOTES, 'UTF-8'); ?>">
+                </div>
+                <div class="col-md-2 col-sm-6">
+                    <label class="form-label"><?php echo Text::_('COM_RADICALMART_TELEGRAM_FILTER_CHAT_ID_LABEL'); ?></label>
+                    <input type="text" class="form-control" name="filter[chat_id]" placeholder="<?php echo Text::_('COM_RADICALMART_TELEGRAM_FILTER_CHAT_ID_HINT'); ?>" value="<?php echo htmlspecialchars($this->filters['chat'] ?? '', ENT_QUOTES, 'UTF-8'); ?>">
+                </div>
+                <div class="col-md-2 col-sm-6">
+                    <label class="form-label"><?php echo Text::_('COM_RADICALMART_TELEGRAM_FILTER_TG_USER_ID_LABEL'); ?></label>
+                    <input type="text" class="form-control" name="filter[tg_user_id]" placeholder="<?php echo Text::_('COM_RADICALMART_TELEGRAM_FILTER_TG_USER_ID_HINT'); ?>" value="<?php echo htmlspecialchars($this->filters['tg'] ?? '', ENT_QUOTES, 'UTF-8'); ?>">
+                </div>
+                <div class="col-md-2 col-sm-6">
+                    <label class="form-label"><?php echo Text::_('COM_RADICALMART_TELEGRAM_FILTER_USERNAME_LABEL'); ?></label>
+                    <input type="text" class="form-control" name="filter[username]" placeholder="<?php echo Text::_('COM_RADICALMART_TELEGRAM_FILTER_USERNAME_HINT'); ?>" value="<?php echo htmlspecialchars($this->filters['username'] ?? '', ENT_QUOTES, 'UTF-8'); ?>">
+                </div>
+                <div class="col-md-2 col-sm-6">
+                    <label class="form-label"><?php echo Text::_('COM_RADICALMART_TELEGRAM_FILTER_PHONE_LABEL'); ?></label>
+                    <input type="text" class="form-control" name="filter[phone]" placeholder="<?php echo Text::_('COM_RADICALMART_TELEGRAM_FILTER_PHONE_HINT'); ?>" value="<?php echo htmlspecialchars($this->filters['phone'] ?? '', ENT_QUOTES, 'UTF-8'); ?>">
+                </div>
+                <div class="col-md-1 col-sm-6">
+                    <label class="form-label"><?php echo Text::_('COM_RADICALMART_TELEGRAM_FILTER_USER_ID_LABEL'); ?></label>
+                    <input type="number" class="form-control" name="filter[user_id]" placeholder="<?php echo Text::_('COM_RADICALMART_TELEGRAM_FILTER_USER_ID_HINT'); ?>" value="<?php echo (int)($this->filters['user'] ?? 0); ?>">
+                </div>
+            </div>
+            <div class="row g-3 align-items-end mt-1">
+                <div class="col-md-2 col-sm-6">
+                    <label class="form-label"><?php echo Text::_('COM_RADICALMART_TELEGRAM_FILTER_PD_LABEL'); ?></label>
+                    <select class="form-select" name="filter[consent_personal_data]">
+                        <option value=""><?php echo Text::_('JALL'); ?></option>
+                        <option value="1" <?php echo ((string)($this->filters['consent_personal_data'] ?? '') === '1') ? 'selected' : ''; ?>><?php echo Text::_('JYES'); ?></option>
+                        <option value="0" <?php echo ((string)($this->filters['consent_personal_data'] ?? '') === '0') ? 'selected' : ''; ?>><?php echo Text::_('JNO'); ?></option>
+                    </select>
+                </div>
+                <div class="col-md-2 col-sm-6">
+                    <label class="form-label"><?php echo Text::_('COM_RADICALMART_TELEGRAM_FILTER_TERMS_LABEL'); ?></label>
+                    <select class="form-select" name="filter[consent_terms]">
+                        <option value=""><?php echo Text::_('JALL'); ?></option>
+                        <option value="1" <?php echo ((string)($this->filters['consent_terms'] ?? '') === '1') ? 'selected' : ''; ?>><?php echo Text::_('JYES'); ?></option>
+                        <option value="0" <?php echo ((string)($this->filters['consent_terms'] ?? '') === '0') ? 'selected' : ''; ?>><?php echo Text::_('JNO'); ?></option>
+                    </select>
+                </div>
+                <div class="col-md-2 col-sm-6">
+                    <label class="form-label"><?php echo Text::_('COM_RADICALMART_TELEGRAM_FILTER_MKT_LABEL'); ?></label>
+                    <select class="form-select" name="filter[consent_marketing]">
+                        <option value=""><?php echo Text::_('JALL'); ?></option>
+                        <option value="1" <?php echo ((string)($this->filters['consent_marketing'] ?? '') === '1') ? 'selected' : ''; ?>><?php echo Text::_('JYES'); ?></option>
+                        <option value="0" <?php echo ((string)($this->filters['consent_marketing'] ?? '') === '0') ? 'selected' : ''; ?>><?php echo Text::_('JNO'); ?></option>
+                    </select>
+                </div>
+                <div class="col-md-3 col-sm-6 ms-auto text-end">
+                    <button type="submit" class="btn btn-sm btn-primary"><?php echo Text::_('JAPPLY'); ?></button>
+                    <a href="index.php?option=com_radicalmart_telegram&view=links" class="btn btn-sm btn-secondary"><?php echo Text::_('JSEARCH_FILTER_CLEAR'); ?></a>
+                </div>
+            </div>
+        </div>
 
         <table class="table table-striped table-sm">
             <thead>
