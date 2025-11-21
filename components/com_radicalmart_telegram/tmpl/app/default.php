@@ -827,12 +827,13 @@ $storeTitle = isset($this->params) ? (string) $this->params->get('store_title', 
 
                                                 function makeBadge(ch){
                                                         if (!enabled || !badgeFields.length) return '';
-                                                        for (const bf of badgeFields){
-                                                                if (bf==='in_stock' && typeof ch.in_stock!=='undefined') return ch.in_stock?'В наличии':'Нет';
-                                                                if (bf==='discount' && ch.discount_percent) return '-' + ch.discount_percent + '%';
-                                                                if (ch[bf]) return ch[bf];
-                                                        }
-                                                        return '';
+                                                        const vals = [];
+                                                        badgeFields.forEach(bf => {
+                                                                if (bf==='in_stock' && typeof ch.in_stock!=='undefined') vals.push(ch.in_stock?'В наличии':'Нет');
+                                                                else if (bf==='discount' && ch.discount_percent) vals.push('-' + ch.discount_percent + '%');
+                                                                else if (ch[bf]) vals.push(ch[bf]);
+                                                        });
+                                                        return vals.join(' · ');
                                                 }
                                                 function makeSubtitle(ch){
                                                         if (!enabled || !subtitleFields.length) return '';
