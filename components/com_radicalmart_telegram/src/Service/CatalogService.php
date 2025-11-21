@@ -173,7 +173,7 @@ class CatalogService
 
     private function mapProductForMeta(object $it): array
     {
-        $priceFinal=''; $priceOriginal=''; $priceBase=''; $discountPercent=''; $discountValue=''; $discountEnable=false;
+        $priceFinal=''; $priceOriginal=''; $priceBase=''; $discountPercent=''; $discountValue=''; $discountString=''; $discountEnable=false;
 
         // DEBUG: логируем структуру price для первых товаров
         if((int)($it->id??0) <= 5){
@@ -197,6 +197,7 @@ class CatalogService
                 $priceBase=(string)($priceArr['base_string']??'');
                 $priceOriginal=(string)($priceArr['base_string']??$priceArr['old_string']??$priceArr['original_string']??'');
                 $discountEnable=(bool)($priceArr['discount_enable']??false);
+                $discountString=(string)($priceArr['discount_string']??'');
                 if($priceFinal && $priceOriginal){
                     $origNum=preg_replace('/[^0-9.,]/','',$priceOriginal);
                     $finalNum=preg_replace('/[^0-9.,]/','',$priceFinal);
@@ -291,7 +292,7 @@ class CatalogService
                 }
             }
         }
-        $out=['id'=>(int)($it->id??0),'title'=>(string)($it->title??''),'price_final'=>$priceFinal,'price_base'=>$priceBase,'base_string'=>$priceBase,'price_original'=>$priceOriginal,'discount_enable'=>$discountEnable,'discount_percent'=>$discountPercent,'discount_value'=>$discountValue,'image'=>$image,'category'=>$category,'in_stock'=>(bool)($it->in_stock??false)];
+        $out=['id'=>(int)($it->id??0),'title'=>(string)($it->title??''),'price_final'=>$priceFinal,'price_base'=>$priceBase,'base_string'=>$priceBase,'price_original'=>$priceOriginal,'discount_enable'=>$discountEnable,'discount_percent'=>$discountPercent,'discount_value'=>$discountValue,'discount_string'=>$discountString,'image'=>$image,'category'=>$category,'in_stock'=>(bool)($it->in_stock??false)];
         // Всегда гасим системный weight
         $out['weight']='';
 

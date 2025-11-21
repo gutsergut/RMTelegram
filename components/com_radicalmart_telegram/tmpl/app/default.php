@@ -928,8 +928,12 @@ $storeTitle = isset($this->params) ? (string) $this->params->get('store_title', 
                                                             priceBaseEl.textContent = basePrice;
 
                                                             let discountText = '';
-                                                            if (ch.discount_value) {
+                                                            if (ch.discount_string && ch.discount_value) {
+                                                                discountText = `Скидка ${ch.discount_value} (${ch.discount_string})`;
+                                                            } else if (ch.discount_value) {
                                                                 discountText = `Скидка ${ch.discount_value}`;
+                                                            } else if (ch.discount_string) {
+                                                                discountText = ch.discount_string;
                                                             } else if (ch.discount_percent) {
                                                                 discountText = `-${ch.discount_percent}%`;
                                                             }
