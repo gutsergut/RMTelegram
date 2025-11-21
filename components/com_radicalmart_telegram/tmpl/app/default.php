@@ -826,14 +826,14 @@ $storeTitle = isset($this->params) ? (string) $this->params->get('store_title', 
                                                 const priceRange = (p.price_min && p.price_max) ? `${p.price_min} – ${p.price_max}` : (p.price_min||p.price_max||'');
 
                                                 function makeBadge(ch){
-                                                        if (!enabled || !badgeFields.length) return '';
+                                                        if (!enabled || !badgeFields.length) return [];
                                                         const vals = [];
                                                         badgeFields.forEach(bf => {
                                                                 if (bf==='in_stock' && typeof ch.in_stock!=='undefined') vals.push(ch.in_stock?'В наличии':'Нет');
                                                                 else if (bf==='discount' && ch.discount_percent) vals.push('-' + ch.discount_percent + '%');
                                                                 else if (ch[bf]) vals.push(ch[bf]);
                                                         });
-                                                        return vals.join(' · ');
+                                                        return vals;
                                                 }
                                                 function makeSubtitle(ch){
                                                         if (!enabled || !subtitleFields.length) return '';
@@ -897,7 +897,7 @@ $storeTitle = isset($this->params) ? (string) $this->params->get('store_title', 
                                                                 </div>
                                                             </div>
                                                         </div>`);
-                                                const badgeEl = card.querySelector('.rmt-card-badge');
+                                                const badgesContainer = card.querySelector('.rmt-card-badges');
                                                 const subtitleEl = card.querySelector('.js-subtitle');
                                                 const priceFinalEl = card.querySelector('.js-price-final');
                                                 const priceDiscEl = card.querySelector('.js-price-discount');
@@ -908,7 +908,16 @@ $storeTitle = isset($this->params) ? (string) $this->params->get('store_title', 
                                                 function applyVariant(ch){
                                                         if (window.RMT_DEBUG) console.log('[applyVariant]', {id: ch.id, price_final: ch.price_final, price_base: ch.price_base, base_string: ch.base_string, discount_percent: ch.discount_percent, discount_value: ch.discount_value, discount_enable: ch.discount_enable, in_stock: ch.in_stock});
 
-                                                        badgeEl.textContent = makeBadge(ch) || '';
+                                                        // Обновляем badges
+                                                        const badgeValues = makeBadge(ch);
+                                                        badgesContainer.innerHTML = '';
+                                                        badgeValues.forEach(val => {
+                                                                const badge = document.createElement('div');
+                                                                badge.className = 'rmt-card-badge';
+                                                                badge.style.cssText = 'background:#f0506e;color:#fff;font-size:11px;padding:2px 6px;border-radius:4px;line-height:1;';
+                                                                badge.textContent = val;
+                                                                badgesContainer.appendChild(badge);
+                                                        });
                                                         subtitleEl.textContent = makeSubtitle(ch) || '';
 
                                                         // Обновляем цены
