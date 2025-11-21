@@ -158,15 +158,19 @@ $storeTitle = isset($this->params) ? (string) $this->params->get('store_title', 
             $ids = [];
             foreach (array_merge($badgeRaw,$subtitleRaw) as $v) { if ($v !== '' && !in_array($v,$specialTokens,true)) { $ids[] = (int)$v; } }
             $idToAlias = [];
+            $aliasToTitle = [];
             if ($ids) {
                 try {
                     $db = Factory::getContainer()->get('DatabaseDriver');
                     $q = $db->getQuery(true)
-                        ->select([$db->quoteName('id'), $db->quoteName('alias')])
+                        ->select([$db->quoteName('id'), $db->quoteName('alias'), $db->quoteName('title')])
                         ->from($db->quoteName('#__radicalmart_fields'))
                         ->where($db->quoteName('id') . ' IN (' . implode(',', array_map('intval',$ids)) . ')');
                     $rows = $db->setQuery($q)->loadAssocList();
-                    foreach ($rows as $r) { $idToAlias[(int)$r['id']] = trim((string)$r['alias']); }
+                    foreach ($rows as $r) {
+                        $idToAlias[(int)$r['id']] = trim((string)$r['alias']);
+                        $aliasToTitle[trim((string)$r['alias'])] = trim((string)$r['title']);
+                    }
                 } catch (\Throwable $e) {}
             }
             $badgeAliases = [];
@@ -178,6 +182,7 @@ $storeTitle = isset($this->params) ? (string) $this->params->get('store_title', 
                 enabled: <?php echo $cvEnabled; ?>,
                 badge_fields: '<?php echo addslashes(implode(',', $badgeAliases)); ?>',
                 subtitle_fields: '<?php echo addslashes(implode(',', $subtitleAliases)); ?>',
+                field_titles: <?php echo json_encode($aliasToTitle, JSON_UNESCAPED_UNICODE); ?>,
                 variant_show_weight: <?php echo (int)$this->params->get('card_variant_show_weight', 1); ?>,
                 variant_show_discount: <?php echo (int)$this->params->get('card_variant_show_discount', 1); ?>,
                 variant_show_final_price: <?php echo (int)$this->params->get('card_variant_show_final_price', 1); ?>
@@ -801,6 +806,7 @@ $storeTitle = isset($this->params) ? (string) $this->params->get('store_title', 
                                                 const showFinal = cfg.variant_show_final_price === 1;
                                                 const badgeFields = (cfg.badge_fields||'').split(/\s*,\s*/).filter(Boolean);
                                                 const subtitleFields = (cfg.subtitle_fields||'').split(/\s*,\s*/).filter(Boolean);
+                                                const fieldTitles = cfg.field_titles || {};
                                                 const children = Array.isArray(p.children) ? p.children : [];
                                                 const hasVariants = children.length > 0;
                                                 const first = hasVariants ? children[0] : null;
@@ -837,8 +843,20 @@ $storeTitle = isset($this->params) ? (string) $this->params->get('store_title', 
                                                 }
                                                 function makeSubtitle(ch){
                                                         if (!enabled || !subtitleFields.length) return '';
-                                                        const vals=[]; subtitleFields.forEach(sf=>{ if (sf==='discount' && ch.discount_percent) vals.push('-'+ch.discount_percent+'%'); else if (ch[sf]) vals.push(ch[sf]); });
-                                                        return vals.join(' · ');
+                                                        const lines = [];
+                                                        subtitleFields.forEach(sf => {
+                                                                let value = '';
+                                                                if (sf==='discount' && ch.discount_percent) {
+                                                                        value = '-'+ch.discount_percent+'%';
+                                                                } else if (ch[sf]) {
+                                                                        value = ch[sf];
+                                                                }
+                                                                if (value) {
+                                                                        const label = fieldTitles[sf] || sf;
+                                                                        lines.push(`${label}: ${value}`);
+                                                                }
+                                                        });
+                                                        return lines.join('<br>');
                                                 }
                                                 if (location.search.indexOf('tgdebug=1')!==-1) { window.RMT_DEBUG = true; }
 
@@ -918,7 +936,7 @@ $storeTitle = isset($this->params) ? (string) $this->params->get('store_title', 
                                                                 badge.textContent = val;
                                                                 badgesContainer.appendChild(badge);
                                                         });
-                                                        subtitleEl.textContent = makeSubtitle(ch) || '';
+                                                        subtitleEl.innerHTML = makeSubtitle(ch) || '';
 
                                                         // Обновляем цены
                                                         const finalPrice = ch.price_final || '';
