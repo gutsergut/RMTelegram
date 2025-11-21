@@ -436,8 +436,7 @@ class CatalogService
         // Скаляр
         if(is_scalar($fv)) return trim((string)$fv);
         if(!is_array($fv)) return '';
-        // Если это структура поля с текстом
-        foreach(['display','text','label','title'] as $k){ if(isset($fv[$k]) && $fv[$k] !== '') return trim((string)$fv[$k]); }
+        // ПРИОРИТЕТ: сначала значение (value/display), потом название (label/title)
         // Если есть value: он может быть скаляром или массивом
         if(array_key_exists('value',$fv)){
             $v=$fv['value']; if(is_object($v)) $v=(array)$v;
@@ -452,6 +451,10 @@ class CatalogService
                 return implode(' / ', array_filter($parts, fn($s)=>$s!==''));
             }
         }
+        // Если нет value, попробуем display/text
+        foreach(['display','text'] as $k){ if(isset($fv[$k]) && $fv[$k] !== '') return trim((string)$fv[$k]); }
+        // Fallback на название поля (label/title) — используем только если нет значения
+        foreach(['label','title'] as $k){ if(isset($fv[$k]) && $fv[$k] !== '') return trim((string)$fv[$k]); }
         // Возможно массив значений без ключей
         if(array_is_list($fv)){
             $parts=[]; foreach($fv as $item){ $parts[]=$this->extractFieldDisplay($item); }
