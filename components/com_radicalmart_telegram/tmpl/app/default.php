@@ -878,7 +878,7 @@ $storeTitle = isset($this->params) ? (string) $this->params->get('store_title', 
                                                         <div>
                                                             <div class=\"uk-card uk-card-default uk-card-small\">
                                                                 <div class=\"uk-card-media-top\" style=\"position:relative;\">${p.image?`<img src=\"${p.image}\" alt=\"\" class=\"uk-width-1-1 uk-object-cover\" style=\"height:160px\">`:`<div class=\"uk-height-small uk-flex uk-flex-middle uk-flex-center uk-background-muted\"><?php echo Text::_('COM_RADICALMART_TELEGRAM_IMAGE'); ?></div>`}
-                                                                    <div class=\"rmt-card-badge uk-position-small uk-position-top-left\" style=\"position:absolute;left:6px;top:6px;background:#f0506e;color:#fff;font-size:11px;padding:2px 6px;border-radius:4px;line-height:1;\"></div>
+                                                                    <div class=\"rmt-card-badges\" style=\"position:absolute;left:6px;top:6px;display:flex;flex-direction:column;gap:4px;align-items:flex-start;\"></div>
                                                                 </div>
                                                                 <div class=\"uk-card-body\" data-card=\"${p.id}\">
                                                                     <div class=\"uk-text-small uk-text-muted\">${p.category||'\u00A0'}</div>
