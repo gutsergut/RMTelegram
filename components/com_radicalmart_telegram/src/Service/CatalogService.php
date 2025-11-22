@@ -85,14 +85,38 @@ class CatalogService
         $hasStockFilter = !empty($filters['in_stock']);
         $hasPriceFilter = !empty($filters['price']) && is_array($filters['price']) && ((string)($filters['price']['from'] ?? '') !== '' || (string)($filters['price']['to'] ?? '') !== '');
         $hasFieldFilters = !empty($filters['fields']) && is_array($filters['fields']);
-        // Автоматически включаем фильтр "в наличии" при любых фильтрах
-        $hasAnyFilter = $hasStockFilter || $hasPriceFilter || $hasFieldFilters;
-        if ($debug) { Log::add('listMetas: hasStockFilter=' . (int)$hasStockFilter . ' hasPriceFilter=' . (int)$hasPriceFilter . ' hasFieldFilters=' . (int)$hasFieldFilters . ' hasAnyFilter=' . (int)$hasAnyFilter . ' filters=' . json_encode($filters), Log::DEBUG,'radicalmart_telegram_catalog'); }
+        $hasSort = !empty($filters['sort']) && (string)$filters['sort'] !== '';
+        // Автоматически включаем фильтр "в наличии" при любых фильтрах ИЛИ сортировке
+        $hasAnyFilter = $hasStockFilter || $hasPriceFilter || $hasFieldFilters || $hasSort;
+        if ($debug) { Log::add('listMetas: hasStockFilter=' . (int)$hasStockFilter . ' hasPriceFilter=' . (int)$hasPriceFilter . ' hasFieldFilters=' . (int)$hasFieldFilters . ' hasSort=' . (int)$hasSort . ' hasAnyFilter=' . (int)$hasAnyFilter . ' filters=' . json_encode($filters), Log::DEBUG,'radicalmart_telegram_catalog'); }
 
         $model = new MetasModel(); try { $model->populateState(); } catch (\Throwable $e) {}
         if ($limit<=0) { $model->setState('list.limit',0); $model->setState('list.start',0); } else { $model->setState('list.limit',$limit); $model->setState('list.start',($page-1)*$limit); }
         $model->setState('list.select',[ 'm.id','m.title','m.alias','m.code','m.type','m.category','m.categories','m.introtext','m.products','m.prices','m.state','m.media','m.params','m.ordering','m.plugins','m.language' ]);
-        $orderingState=(string)$model->getState('list.ordering'); if(str_starts_with($orderingState,'p.')||$orderingState==='') $orderingState='m.ordering'; $model->setState('list.ordering',$orderingState); $model->setState('list.direction','asc');
+        
+        // Применяем сортировку к мета-товарам
+        if (!empty($filters['sort'])) {
+            $sort = (string)$filters['sort'];
+            if ($sort === 'price_asc') {
+                $model->setState('list.ordering', 'm.ordering_price');
+                $model->setState('list.direction', 'asc');
+            } elseif ($sort === 'price_desc') {
+                $model->setState('list.ordering', 'm.ordering_price');
+                $model->setState('list.direction', 'desc');
+            } elseif ($sort === 'new') {
+                $model->setState('list.ordering', 'm.created');
+                $model->setState('list.direction', 'desc');
+            } else {
+                // По умолчанию
+                $model->setState('list.ordering', 'm.ordering');
+                $model->setState('list.direction', 'asc');
+            }
+        } else {
+            $orderingState=(string)$model->getState('list.ordering'); 
+            if(str_starts_with($orderingState,'p.')||$orderingState==='') $orderingState='m.ordering'; 
+            $model->setState('list.ordering',$orderingState); 
+            $model->setState('list.direction','asc');
+        }
         $model->setState('products.ordering', null);
         $model->setState('filter.published',1);
         // Языковой режим из настроек компонента: all (0) или current (тег языка)
