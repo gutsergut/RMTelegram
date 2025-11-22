@@ -789,8 +789,12 @@ $storeTitle = isset($this->params) ? (string) $this->params->get('store_title', 
                     } else {
                         val = (el.value||'').trim();
                     }
-                    if (alias && val) params['field_'+alias] = val;
+                    if (alias && val) {
+                        params['field_'+alias] = val;
+                        console.log('[FILTER] field:', alias, 'type:', type, 'value:', val);
+                    }
                 });
+                console.log('[FILTER] Final params:', params);
                                 const { items } = await api('list', params);
                                 if (window.RMT_DEBUG) {
                                     console.log('[FILTER] in_stock param:', params.in_stock, 'items count:', items ? items.length : 0);

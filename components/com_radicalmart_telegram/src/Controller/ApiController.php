@@ -268,9 +268,14 @@ class ApiController extends BaseController
             $params = $app->getParams('com_radicalmart_telegram');
             $cfg = $params->get('filters_fields');
             $fields = [];
+            // DEBUG: вывод всех параметров запроса
+            $allInput = $app->input->getArray();
+            \Joomla\CMS\Log\Log::add('ApiController.list: ALL INPUT PARAMS=' . json_encode($allInput, JSON_UNESCAPED_UNICODE), \Joomla\CMS\Log\Log::DEBUG, 'radicalmart_telegram_catalog');
+            
             // Сначала загружаем aliases из БД по field_id
             $fieldIdToAlias = [];
             if (!empty($cfg) && is_array($cfg)) {
+                \Joomla\CMS\Log\Log::add('ApiController.list: filters_fields config=' . json_encode($cfg, JSON_UNESCAPED_UNICODE), \Joomla\CMS\Log\Log::DEBUG, 'radicalmart_telegram_catalog');
                 $fieldIds = [];
                 foreach ($cfg as $row) {
                     if (is_object($row)) { $row = get_object_vars($row); }
@@ -278,6 +283,7 @@ class ApiController extends BaseController
                     if (empty($row['enabled']) || (int)$row['enabled'] !== 1) continue;
                     if (!empty($row['field_id'])) { $fieldIds[] = (int)$row['field_id']; }
                 }
+                \Joomla\CMS\Log\Log::add('ApiController.list: field_ids to load=' . json_encode($fieldIds), \Joomla\CMS\Log\Log::DEBUG, 'radicalmart_telegram_catalog');
                 if (!empty($fieldIds)) {
                     $db = Factory::getContainer()->get('DatabaseDriver');
                     $q = $db->getQuery(true)
@@ -288,6 +294,7 @@ class ApiController extends BaseController
                         ->whereIn($db->quoteName('id'), $fieldIds);
                     $rows = (array) $db->setQuery($q)->loadObjectList();
                     foreach ($rows as $r) { $fieldIdToAlias[(int)$r->id] = (string)$r->alias; }
+                    \Joomla\CMS\Log\Log::add('ApiController.list: fieldIdToAlias map=' . json_encode($fieldIdToAlias, JSON_UNESCAPED_UNICODE), \Joomla\CMS\Log\Log::DEBUG, 'radicalmart_telegram_catalog');
                 }
             }
             // Теперь читаем значения из запроса по alias
@@ -301,6 +308,7 @@ class ApiController extends BaseController
                     $alias = $fieldIdToAlias[$fieldId];
                     if ($alias === '') continue;
                     $type = isset($row['type']) ? (string) $row['type'] : 'text';
+                    \Joomla\CMS\Log\Log::add('ApiController.list: checking field alias=' . $alias . ' type=' . $type, \Joomla\CMS\Log\Log::DEBUG, 'radicalmart_telegram_catalog');
                     if ($type === 'range') {
                         $from = $app->input->getString('field_' . $alias . '_from', '');
                         $to   = $app->input->getString('field_' . $alias . '_to', '');
@@ -312,6 +320,7 @@ class ApiController extends BaseController
                             $arr = $app->input->get('field', [], 'array');
                             if (isset($arr[$alias])) { $val = (string) $arr[$alias]; }
                         }
+                        \Joomla\CMS\Log\Log::add('ApiController.list: field_' . $alias . ' value=' . json_encode($val), \Joomla\CMS\Log\Log::DEBUG, 'radicalmart_telegram_catalog');
                         if ($val !== null && $val !== '') {
                             $parts = array_filter(array_map('trim', explode(',', (string)$val)), fn($x)=>$x!=='');
                             if (count($parts) > 1) { $fields[$alias] = $parts; }
@@ -320,8 +329,13 @@ class ApiController extends BaseController
                     }
                 }
             }
-            if (!empty($fields)) { $filters['fields'] = $fields; }
-        } catch (\Throwable $e) { /* ignore */ }
+            if (!empty($fields)) { 
+                $filters['fields'] = $fields; 
+                \Joomla\CMS\Log\Log::add('ApiController.list: FINAL filters[fields]=' . json_encode($fields, JSON_UNESCAPED_UNICODE), \Joomla\CMS\Log\Log::DEBUG, 'radicalmart_telegram_catalog');
+            }
+        } catch (\Throwable $e) { 
+            \Joomla\CMS\Log\Log::add('ApiController.list: EXCEPTION in field filters: ' . $e->getMessage(), \Joomla\CMS\Log\Log::ERROR, 'radicalmart_telegram_catalog');
+        }
 
         // Debug logging (native Joomla Log) - temporarily enabled by default
         $debug = true;
