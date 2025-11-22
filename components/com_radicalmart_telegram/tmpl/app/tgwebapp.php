@@ -1879,135 +1879,6 @@ $storeTitle = isset($this->params) ? (string) $this->params->get('store_title', 
                 <div class="uk-child-width-1-1 uk-child-width-1-2@s uk-child-width-1-3@m" uk-grid id="catalog-list"></div>
             </div>
 
-            <div class="uk-width-1-1">
-                <h3 id="cart" class="tg-safe-text"><?php echo Text::_('COM_RADICALMART_TELEGRAM_CART'); ?></h3>
-                <div id="cart-box" class="uk-card uk-card-default uk-card-body">
-                    <p class="uk-margin-remove"><?php echo Text::_('COM_RADICALMART_TELEGRAM_CART_EMPTY'); ?></p>
-                </div>
-            </div>
-
-            <div class="uk-width-1-1">
-                <h3 id="checkout" class="tg-safe-text"><?php echo Text::_('COM_RADICALMART_TELEGRAM_CHECKOUT'); ?></h3>
-                <div class="uk-card uk-card-default uk-card-body">
-                    <div id="summary-box" class="uk-margin uk-text-small"></div>
-                    <form class="uk-form-stacked" onsubmit="submitCheckout(event)">
-                        <div class="uk-grid-small" uk-grid>
-                            <div class="uk-width-1-1 uk-width-1-3@s">
-                                <label class="uk-form-label"><?php echo Text::_('COM_RADICALMART_TELEGRAM_LAST_NAME'); ?></label>
-                                <div class="uk-form-controls">
-                                    <input class="uk-input" type="text" name="last_name" placeholder="<?php echo Text::_('COM_RADICALMART_TELEGRAM_PLACEHOLDER_LAST_NAME'); ?>" required>
-                                </div>
-                            </div>
-                            <div class="uk-width-1-1 uk-width-1-3@s">
-                                <label class="uk-form-label"><?php echo Text::_('COM_RADICALMART_TELEGRAM_FIRST_NAME'); ?></label>
-                                <div class="uk-form-controls">
-                                    <input class="uk-input" type="text" name="first_name" placeholder="<?php echo Text::_('COM_RADICALMART_TELEGRAM_PLACEHOLDER_FIRST_NAME'); ?>" required>
-                                </div>
-                            </div>
-                            <div class="uk-width-1-1 uk-width-1-3@s">
-                                <label class="uk-form-label"><?php echo Text::_('COM_RADICALMART_TELEGRAM_SECOND_NAME'); ?></label>
-                                <div class="uk-form-controls">
-                                    <input class="uk-input" type="text" name="second_name" placeholder="<?php echo Text::_('COM_RADICALMART_TELEGRAM_PLACEHOLDER_SECOND_NAME'); ?>">
-                                </div>
-                            </div>
-                            <div class="uk-width-1-1 uk-width-1-3@s">
-                                <label class="uk-form-label"><?php echo Text::_('COM_RADICALMART_TELEGRAM_PHONE'); ?></label>
-                                <div class="uk-form-controls">
-                                    <input class="uk-input" type="tel" name="phone" placeholder="<?php echo Text::_('COM_RADICALMART_TELEGRAM_PLACEHOLDER_PHONE'); ?>" required>
-                                    <div class="uk-text-meta uk-margin-small-top"><?php echo Text::_('COM_RADICALMART_TELEGRAM_PHONE_HINT'); ?></div>
-                                </div>
-                            </div>
-                            <div class="uk-width-1-1 uk-width-1-3@s">
-                                <label class="uk-form-label"><?php echo Text::_('COM_RADICALMART_TELEGRAM_EMAIL'); ?></label>
-                                <div class="uk-form-controls">
-                                    <input class="uk-input" type="email" name="email" placeholder="<?php echo Text::_('COM_RADICALMART_TELEGRAM_PLACEHOLDER_EMAIL'); ?>">
-                                </div>
-                            </div>
-                            <div class="uk-width-1-1 uk-width-1-2@s">
-                                <label class="uk-form-label"><?php echo Text::_('COM_RADICALMART_TELEGRAM_DELIVERY'); ?></label>
-                                <div class="uk-form-controls">
-                                    <select class="uk-select" name="shipping_id"></select>
-                                </div>
-                            </div>
-                            <div class="uk-width-1-1 uk-width-1-2@s">
-                                <label class="uk-form-label"><?php echo Text::_('COM_RADICALMART_TELEGRAM_PAYMENT'); ?></label>
-                                <div class="uk-form-controls">
-                                    <select class="uk-select" name="payment_id"></select>
-            <div class="uk-width-1-1 uk-width-1-2@s">
-                <div id="telegram-pay-hint" class="uk-alert uk-alert-primary" hidden></div>
-            </div>
-                                </div>
-                            </div>
-                            <div class="uk-width-1-1 uk-width-1-2@s">
-                                <label class="uk-form-label"><?php echo Text::_('COM_RADICALMART_TELEGRAM_PROMO'); ?></label>
-                                <div class="uk-form-controls uk-flex">
-                                    <input class="uk-input" type="text" name="promo_code" placeholder="<?php echo Text::_('COM_RADICALMART_TELEGRAM_PLACEHOLDER_PROMO'); ?>" style="max-width: 240px;">
-                                    <button type="button" class="uk-button uk-button-default uk-margin-small-left" onclick="applyPromo(event)"><?php echo Text::_('COM_RADICALMART_TELEGRAM_APPLY'); ?></button>
-                                </div>
-                                <ul class="uk-list uk-list-collapse uk-margin-small" id="applied-codes"></ul>
-                            </div>
-                            <div class="uk-width-1-1 uk-width-1-2@s">
-                                <label class="uk-form-label"><?php echo Text::_('COM_RADICALMART_TELEGRAM_POINTS'); ?></label>
-                                <div class="uk-form-controls uk-flex">
-                                    <input class="uk-input" type="number" min="0" step="1" name="points" placeholder="0" style="max-width: 160px;">
-                                    <button type="button" class="uk-button uk-button-default uk-margin-small-left" onclick="applyPoints(event)"><?php echo Text::_('COM_RADICALMART_TELEGRAM_APPLY_POINTS'); ?></button>
-                                </div>
-                                <div class="uk-text-meta uk-margin-small-top"><?php echo Text::_('COM_RADICALMART_TELEGRAM_POINTS_APPLIED'); ?>: <span id="applied-points">0</span></div>
-                                <div class="uk-text-meta uk-margin-small-top"><?php echo Text::_('COM_RADICALMART_TELEGRAM_POINTS_AVAILABLE'); ?>: <span id="points-available">0</span></div>
-                            </div>
-                            <div class="uk-width-1-1">
-                                <button type="submit" class="uk-button uk-button-primary"><?php echo Text::_('COM_RADICALMART_TELEGRAM_CREATE_AND_PAY'); ?></button>
-                            </div>
-                        </div>
-                    </form>
-                </div>
-            </div>
-
-            <div class="uk-width-1-1">
-                <h3 id="orders" class="tg-safe-text"><?php echo Text::_('COM_RADICALMART_TELEGRAM_ORDERS'); ?></h3>
-                <div class="uk-card uk-card-default uk-card-body">
-                    <div class="uk-margin-small">
-                        <label class="uk-form-label"><?php echo Text::_('COM_RADICALMART_TELEGRAM_ORDERS_STATUS'); ?></label>
-                        <div class="uk-form-controls"><select id="orders-status" class="uk-select" style="max-width:220px"></select></div>
-                    </div>
-                    <ul id="orders-list" class="uk-list uk-list-divider"></ul>
-                    <div class="uk-margin-small"><button type="button" id="orders-more" class="uk-button uk-button-default uk-button-small"><?php echo Text::_('COM_RADICALMART_TELEGRAM_LOAD_MORE'); ?></button></div>
-                </div>
-            </div>
-
-            <div class="uk-width-1-1">
-                <h3 id="profile" class="tg-safe-text"><?php echo Text::_('COM_RADICALMART_TELEGRAM_PROFILE'); ?></h3>
-                <div id="profile-box" class="uk-card uk-card-default uk-card-body"></div>
-            </div>
-
-            <div class="uk-width-1-1">
-                <h3 class="tg-safe-text"><?php echo Text::_('COM_RADICALMART_TELEGRAM_PVZ_MAP'); ?></h3>
-                <div class="uk-card uk-card-default uk-card-body">
-                    <p class="uk-text-meta"><?php echo Text::_('COM_RADICALMART_TELEGRAM_MAP_HINT'); ?></p>
-                    <div class="uk-grid-small" uk-grid>
-                        <div class="uk-width-1-1 uk-width-1-3@s">
-                            <label class="uk-form-label"><?php echo Text::_('COM_RADICALMART_TELEGRAM_PROVIDERS'); ?></label>
-                            <div class="uk-form-controls">
-                                <?php $prov = isset($this->params)?(string)$this->params->get('apiship_providers','yataxi,cdek,x5'):'yataxi,cdek,x5'; $provList = array_filter(array_map('trim', explode(',', $prov))); ?>
-                                <?php foreach ($provList as $p): ?>
-                                    <label class="uk-display-block"><input class="uk-checkbox" type="checkbox" data-pvz-provider value="<?php echo htmlspecialchars($p, ENT_QUOTES, 'UTF-8'); ?>" checked> <?php echo htmlspecialchars($p, ENT_QUOTES, 'UTF-8'); ?></label>
-                                <?php endforeach; ?>
-                                <div id="pvz-selected" class="uk-text-meta uk-margin-small-top"></div>
-                                <div class="uk-text-meta uk-margin-small-top"><?php echo Text::_('COM_RADICALMART_TELEGRAM_PVZ_SHORT'); ?>: <span id="pvz-count">0</span></div>
-                            </div>
-                        </div>
-                        <div class="uk-width-1-1 uk-width-2-3@s">
-                            <div id="pvz-map" style="height: 360px;" class="uk-background-muted"></div>
-                            <div id="pvz-loading" class="uk-text-meta uk-margin-small" hidden><span uk-spinner></span> <?php echo Text::_('COM_RADICALMART_TELEGRAM_LOADING'); ?></div>
-                            <div id="pvz-error" class="uk-alert uk-alert-danger uk-margin-small" hidden></div>
-                        </div>
-                        <div class="uk-width-1-1">
-                            <ul id="pvz-list" class="uk-list uk-list-divider"></ul>
-                        </div>
-                    </div>
-                </div>
-            </div>
-
         </div>
 
     </div>
@@ -2018,16 +1889,30 @@ $storeTitle = isset($this->params) ? (string) $this->params->get('store_title', 
 <div id="app-bottom-nav" class="uk-navbar-container" uk-navbar>
     <div class="uk-navbar-center uk-width-1-1 uk-flex uk-flex-center">
         <ul class="uk-navbar-nav">
-            <li>
-                <a href="#" onclick="document.getElementById('catalog')?.scrollIntoView({behavior:'smooth'}); return false;" class="tg-safe-text">
+            <li class="uk-active">
+                <a href="index.php?option=com_radicalmart_telegram&view=app" class="tg-safe-text">
                     <span class="bottom-tab"><span uk-icon="icon: thumbnails"></span><span class="caption tg-safe-text"><?php echo Text::_('COM_RADICALMART_TELEGRAM_CATALOG'); ?></span></span>
                 </a>
             </li>
             <li>
-                <a href="#" onclick="document.getElementById('cart')?.scrollIntoView({behavior:'smooth'}); return false;" class="tg-safe-text">
+                <a href="index.php?option=com_radicalmart_telegram&view=cart" class="tg-safe-text">
                     <span class="bottom-tab"><span uk-icon="icon: cart"></span><span class="caption tg-safe-text"><?php echo Text::_('COM_RADICALMART_TELEGRAM_CART'); ?></span></span>
                     <span id="cart-badge" hidden>0</span>
                 </a>
+            </li>
+            <li>
+                <a href="index.php?option=com_radicalmart_telegram&view=orders" class="tg-safe-text">
+                    <span class="bottom-tab"><span uk-icon="icon: list"></span><span class="caption tg-safe-text"><?php echo Text::_('COM_RADICALMART_TELEGRAM_ORDERS'); ?></span></span>
+                </a>
+            </li>
+            <li>
+                <a href="index.php?option=com_radicalmart_telegram&view=profile" class="tg-safe-text">
+                    <span class="bottom-tab"><span uk-icon="icon: user"></span><span class="caption tg-safe-text"><?php echo Text::_('COM_RADICALMART_TELEGRAM_PROFILE'); ?></span></span>
+                </a>
+            </li>
+        </ul>
+    </div>
+</div>
             </li>
             <li>
                 <a href="#" onclick="document.getElementById('checkout')?.scrollIntoView({behavior:'smooth'}); return false;" class="tg-safe-text">
