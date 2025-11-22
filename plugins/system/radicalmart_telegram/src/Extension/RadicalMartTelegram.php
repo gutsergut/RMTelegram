@@ -79,13 +79,17 @@ class RadicalMartTelegram extends CMSPlugin implements SubscriberInterface
                 foreach ($dispatcher->getListeners('onAfterRender') as $listener) {
                     if (is_array($listener) && isset($listener[0])) {
                         $plugin = $listener[0];
-                        if ($plugin instanceof \PlgSystemRstBox && property_exists($plugin, 'html')) {
-                            // Use reflection to access private property
-                            $reflection = new \ReflectionClass($plugin);
-                            if ($reflection->hasProperty('html')) {
-                                $property = $reflection->getProperty('html');
-                                $property->setAccessible(true);
-                                $property->setValue($plugin, '');
+                        if ($plugin instanceof \PlgSystemRstBox) {
+                            // Use reflection to access private property 'html'
+                            try {
+                                $reflection = new \ReflectionClass($plugin);
+                                if ($reflection->hasProperty('html')) {
+                                    $property = $reflection->getProperty('html');
+                                    $property->setAccessible(true);
+                                    $property->setValue($plugin, '');
+                                }
+                            } catch (\Throwable $e) {
+                                // Silently fail if reflection doesn't work
                             }
                         }
                     }
@@ -356,19 +360,11 @@ class RadicalMartTelegram extends CMSPlugin implements SubscriberInterface
         // Remove any element with data-attributes from EngageBox
         $body = preg_replace('/<[^>]*data-ebox[^>]*>.*?<\/[^>]+>/is', '', $body);
 
-        // Remove EngageBox overlay/backdrop (more aggressive - match any nesting level)
-        $body = preg_replace('/<div[^>]*class="[^"]*rstbox[^"]*"[^>]*>[\s\S]*?<\/div>/i', '', $body);
-        
-        // Remove blocks containing "Всё самое интересное" text (from rstbox)
-        $body = preg_replace('/<div[^>]*>[\s\S]*?Всё самое интересное[\s\S]*?<\/div>/iu', '', $body);
-        
-        // Remove blocks with Telegram subscription links from rstbox
-        $body = preg_replace('/<div[^>]*>[\s\S]*?t\.me\/cacaoland[\s\S]*?<\/div>/i', '', $body);
+        // Remove EngageBox overlay/backdrop with rstbox class (non-greedy, single line)
+        $body = preg_replace('/<div[^>]*class="[^"]*rstbox[^"]*"[^>]*>.*?<\/div>/s', '', $body);
 
         // Remove SMS registration elements
-        $body = preg_replace('/<div[^>]*id="jsms_[^"]*"[^>]*>.*?<\/div>/is', '', $body);
-
-        // Remove RadicalMicro blocks if enabled
+        $body = preg_replace('/<div[^>]*id="jsms_[^"]*"[^>]*>.*?<\/div>/is', '', $body);        // Remove RadicalMicro blocks if enabled
         if ((int) $params->get('filter_radicalmicro', 1)) {
             // Remove RadicalMicro comment blocks
             $body = preg_replace('/<!-- RadicalMicro: start -->.*?<!-- RadicalMicro: end -->/is', '', $body);
