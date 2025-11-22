@@ -29,7 +29,6 @@ class RadicalMartTelegram extends CMSPlugin implements SubscriberInterface
             'onRadicalMartPreprocessSubmenu' => 'onRadicalMartPreprocessSubmenu',
             'onPreprocessMenuItems' => 'onPreprocessMenuItems',
             'onAfterDispatch' => 'onAfterDispatch',
-            'onBeforeRender' => 'onBeforeRender',
             'onAfterRender' => 'onAfterRender',
         ];
     }
