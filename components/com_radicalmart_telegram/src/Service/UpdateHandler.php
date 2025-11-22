@@ -256,18 +256,31 @@ class UpdateHandler
 
                 // Step 2: Welcome + request phone if consent given but no phone
                 $welcome  = Text::sprintf('COM_RADICALMART_TELEGRAM_WELCOME', $storeTitle);
-                $welcome .= "\n\n" . Text::sprintf('COM_RADICALMART_TELEGRAM_WELCOME_HINT', $storeTitle);
-                $opts = [];
-
-                if (!$hasPhone) {
-                    $opts['reply_markup'] = [
-                        'keyboard' => [[ [ 'text' => Text::_('COM_RADICALMART_TELEGRAM_SEND_PHONE'), 'request_contact' => true ] ]],
-                        'one_time_keyboard' => true,
-                        'resize_keyboard' => true,
-                    ];
+                if ($hasPhone) {
+                    $welcome .= "\n\n" . Text::sprintf('COM_RADICALMART_TELEGRAM_WELCOME_HINT_LINKED', $storeTitle);
+                } else {
+                    $welcome .= "\n\n" . Text::sprintf('COM_RADICALMART_TELEGRAM_WELCOME_HINT', $storeTitle);
                 }
 
-                Log::add('Sending welcome message to chat ' . $chatId, Log::DEBUG, 'com_radicalmart.telegram');
+                $webAppBase = rtrim(Uri::root(), '/') . '/index.php?option=com_radicalmart_telegram&view=app';
+                $webAppUrl  = $webAppBase . '&chat=' . $chatId;
+
+                // Reply keyboard can include both request_contact and web_app button (Bot API >= 6.0)
+                $keyboardRows = [];
+                if (!$hasPhone) {
+                    $keyboardRows[] = [ [ 'text' => Text::_('COM_RADICALMART_TELEGRAM_SEND_PHONE'), 'request_contact' => true ] ];
+                }
+                $keyboardRows[] = [ [ 'text' => Text::sprintf('COM_RADICALMART_TELEGRAM_OPEN_STORE', $storeTitle), 'web_app' => [ 'url' => $webAppUrl ] ] ];
+
+                $opts = [
+                    'reply_markup' => [
+                        'keyboard' => $keyboardRows,
+                        'one_time_keyboard' => false,
+                        'resize_keyboard' => true,
+                    ]
+                ];
+
+                Log::add('Sending welcome message to chat ' . $chatId . ' (hasPhone=' . ($hasPhone?'YES':'NO') . ')', Log::DEBUG, 'com_radicalmart.telegram');
                 $result = $this->client->sendMessage($chatId, $welcome, $opts);
                 Log::add('sendMessage result: ' . ($result ? 'SUCCESS' : 'FAILED'), Log::DEBUG, 'com_radicalmart.telegram');
 
@@ -288,7 +301,7 @@ class UpdateHandler
         }
 
         $cmd = mb_strtolower($text, 'UTF-8');
-        $webAppBase = rtrim(Uri::root(), '/') . '/index.php?option=com_radicalmart_telegram&view=app&layout=tgwebapp';
+        $webAppBase = rtrim(Uri::root(), '/') . '/index.php?option=com_radicalmart_telegram&view=app';
         $webAppUrl  = $webAppBase . '&chat=' . $chatId;
         $webAppButton = [
             'inline_keyboard' => [[
@@ -411,14 +424,26 @@ class UpdateHandler
                         $params = Factory::getApplication()->getParams('com_radicalmart_telegram');
                         $storeTitle = (string) ($params->get('store_title', 'магазин Cacao.Land'));
                         $welcome  = Text::sprintf('COM_RADICALMART_TELEGRAM_WELCOME', $storeTitle);
-                        $welcome .= "\n\n" . Text::sprintf('COM_RADICALMART_TELEGRAM_WELCOME_HINT', $storeTitle);
-                        $opts = [
-                            'reply_markup' => [
-                                'keyboard' => [[ [ 'text' => Text::_('COM_RADICALMART_TELEGRAM_SEND_PHONE'), 'request_contact' => true ] ]],
-                                'one_time_keyboard' => true,
-                                'resize_keyboard' => true,
-                            ]
-                        ];
+                        // Проверим наличие телефона повторно
+                        $db2 = Factory::getContainer()->get('DatabaseDriver');
+                        $q2 = $db2->getQuery(true)
+                            ->select('phone')
+                            ->from($db2->quoteName('#__radicalmart_telegram_users'))
+                            ->where($db2->quoteName('chat_id') . ' = :chat')
+                            ->bind(':chat', $chatId);
+                        $phoneRow = $db2->setQuery($q2, 0, 1)->loadAssoc();
+                        $hasPhoneNow = $phoneRow && !empty($phoneRow['phone']);
+                        if ($hasPhoneNow) {
+                            $welcome .= "\n\n" . Text::sprintf('COM_RADICALMART_TELEGRAM_WELCOME_HINT_LINKED', $storeTitle);
+                        } else {
+                            $welcome .= "\n\n" . Text::sprintf('COM_RADICALMART_TELEGRAM_WELCOME_HINT', $storeTitle);
+                        }
+                        $webAppBase = rtrim(Uri::root(), '/') . '/index.php?option=com_radicalmart_telegram&view=app';
+                        $webAppUrl  = $webAppBase . '&chat=' . $chatId;
+                        $rows = [];
+                        if (!$hasPhoneNow) { $rows[] = [ [ 'text' => Text::_('COM_RADICALMART_TELEGRAM_SEND_PHONE'), 'request_contact' => true ] ]; }
+                        $rows[] = [ [ 'text' => Text::sprintf('COM_RADICALMART_TELEGRAM_OPEN_STORE', $storeTitle), 'web_app' => [ 'url' => $webAppUrl ] ] ];
+                        $opts = [ 'reply_markup' => [ 'keyboard' => $rows, 'resize_keyboard' => true ] ];
                         $this->client->sendMessage($chatId, $welcome, $opts);
                         // Предложим подписку на маркетинг, если ещё не принята и включено в настройках
                         $params2 = Factory::getApplication()->getParams('com_radicalmart_telegram');
@@ -450,14 +475,26 @@ class UpdateHandler
                 $params = Factory::getApplication()->getParams('com_radicalmart_telegram');
                 $storeTitle = (string) ($params->get('store_title', 'магазин Cacao.Land'));
                 $welcome  = Text::sprintf('COM_RADICALMART_TELEGRAM_WELCOME', $storeTitle);
-                $welcome .= "\n\n" . Text::sprintf('COM_RADICALMART_TELEGRAM_WELCOME_HINT', $storeTitle);
-                $opts = [
-                    'reply_markup' => [
-                        'keyboard' => [[ [ 'text' => Text::_('COM_RADICALMART_TELEGRAM_SEND_PHONE'), 'request_contact' => true ] ]],
-                        'one_time_keyboard' => true,
-                        'resize_keyboard' => true,
-                    ]
-                ];
+                // Проверим наличие телефона
+                $db3 = Factory::getContainer()->get('DatabaseDriver');
+                $q3 = $db3->getQuery(true)
+                    ->select('phone')
+                    ->from($db3->quoteName('#__radicalmart_telegram_users'))
+                    ->where($db3->quoteName('chat_id') . ' = :chat')
+                    ->bind(':chat', $chatId);
+                $phoneRow3 = $db3->setQuery($q3, 0, 1)->loadAssoc();
+                $hasPhone3 = $phoneRow3 && !empty($phoneRow3['phone']);
+                if ($hasPhone3) {
+                    $welcome .= "\n\n" . Text::sprintf('COM_RADICALMART_TELEGRAM_WELCOME_HINT_LINKED', $storeTitle);
+                } else {
+                    $welcome .= "\n\n" . Text::sprintf('COM_RADICALMART_TELEGRAM_WELCOME_HINT', $storeTitle);
+                }
+                $webAppBase = rtrim(Uri::root(), '/') . '/index.php?option=com_radicalmart_telegram&view=app';
+                $webAppUrl  = $webAppBase . '&chat=' . $chatId;
+                $rows3 = [];
+                if (!$hasPhone3) { $rows3[] = [ [ 'text' => Text::_('COM_RADICALMART_TELEGRAM_SEND_PHONE'), 'request_contact' => true ] ]; }
+                $rows3[] = [ [ 'text' => Text::sprintf('COM_RADICALMART_TELEGRAM_OPEN_STORE', $storeTitle), 'web_app' => [ 'url' => $webAppUrl ] ] ];
+                $opts = [ 'reply_markup' => [ 'keyboard' => $rows3, 'resize_keyboard' => true ] ];
                 $this->client->sendMessage($chatId, $welcome, $opts);
                 // Все согласия приняты; отдельное приглашение не нужно, но если маркетинг был отключён в конфиге — ничего не отправляем
                 return;
@@ -511,14 +548,25 @@ class UpdateHandler
                 $params = Factory::getApplication()->getParams('com_radicalmart_telegram');
                 $storeTitle = (string) ($params->get('store_title', 'магазин Cacao.Land'));
                 $welcome  = Text::sprintf('COM_RADICALMART_TELEGRAM_WELCOME', $storeTitle);
-                $welcome .= "\n\n" . Text::sprintf('COM_RADICALMART_TELEGRAM_WELCOME_HINT', $storeTitle);
-                $opts = [
-                    'reply_markup' => [
-                        'keyboard' => [[ [ 'text' => Text::_('COM_RADICALMART_TELEGRAM_SEND_PHONE'), 'request_contact' => true ] ]],
-                        'one_time_keyboard' => true,
-                        'resize_keyboard' => true,
-                    ]
-                ];
+                $db4 = Factory::getContainer()->get('DatabaseDriver');
+                $q4 = $db4->getQuery(true)
+                    ->select('phone')
+                    ->from($db4->quoteName('#__radicalmart_telegram_users'))
+                    ->where($db4->quoteName('chat_id') . ' = :chat')
+                    ->bind(':chat', $chatId);
+                $phoneRow4 = $db4->setQuery($q4, 0, 1)->loadAssoc();
+                $hasPhone4 = $phoneRow4 && !empty($phoneRow4['phone']);
+                if ($hasPhone4) {
+                    $welcome .= "\n\n" . Text::sprintf('COM_RADICALMART_TELEGRAM_WELCOME_HINT_LINKED', $storeTitle);
+                } else {
+                    $welcome .= "\n\n" . Text::sprintf('COM_RADICALMART_TELEGRAM_WELCOME_HINT', $storeTitle);
+                }
+                $webAppBase = rtrim(Uri::root(), '/') . '/index.php?option=com_radicalmart_telegram&view=app';
+                $webAppUrl  = $webAppBase . '&chat=' . $chatId;
+                $rows4 = [];
+                if (!$hasPhone4) { $rows4[] = [ [ 'text' => Text::_('COM_RADICALMART_TELEGRAM_SEND_PHONE'), 'request_contact' => true ] ]; }
+                $rows4[] = [ [ 'text' => Text::sprintf('COM_RADICALMART_TELEGRAM_OPEN_STORE', $storeTitle), 'web_app' => [ 'url' => $webAppUrl ] ] ];
+                $opts = [ 'reply_markup' => [ 'keyboard' => $rows4, 'resize_keyboard' => true ] ];
                 $this->client->sendMessage($chatId, $welcome, $opts);
                 // После общего принятия можно отдельно не предлагать, если не требуется
                 return;
@@ -591,7 +639,7 @@ class UpdateHandler
                 }
                 $cart = $res['cart'] ?? null;
                 $text = $svc->renderCartMessage($cart);
-                $keyboard = $svc->getKeyboard($cart, rtrim(Uri::root(), '/') . '/index.php?option=com_radicalmart_telegram&view=app&layout=tgwebapp&chat=' . $chatId);
+                $keyboard = $svc->getKeyboard($cart, rtrim(Uri::root(), '/') . '/index.php?option=com_radicalmart_telegram&view=app&chat=' . $chatId);
                 if ($messageId) {
                     $this->client->editMessageText($chatId, $messageId, $text, [ 'reply_markup' => $keyboard ]);
                 } else {
@@ -624,7 +672,7 @@ class UpdateHandler
                 if ($res === false) { $this->client->answerCallbackQuery($id, Text::_('COM_RADICALMART_TELEGRAM_CART_UPDATE_ERROR'), true); return; }
                 $cart = $res['cart'] ?? null;
                 $text = $svc->renderCartMessage($cart);
-                $keyboard = $svc->getKeyboard($cart, rtrim(Uri::root(), '/') . '/index.php?option=com_radicalmart_telegram&view=app&layout=tgwebapp&chat=' . $chatId);
+                $keyboard = $svc->getKeyboard($cart, rtrim(Uri::root(), '/') . '/index.php?option=com_radicalmart_telegram&view=app&chat=' . $chatId);
                 if ($messageId) {
                     $this->client->editMessageText($chatId, $messageId, $text, [ 'reply_markup' => $keyboard ]);
                 } else {
