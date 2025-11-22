@@ -356,8 +356,14 @@ class RadicalMartTelegram extends CMSPlugin implements SubscriberInterface
         // Remove any element with data-attributes from EngageBox
         $body = preg_replace('/<[^>]*data-ebox[^>]*>.*?<\/[^>]+>/is', '', $body);
 
-        // Remove EngageBox overlay/backdrop
-        $body = preg_replace('/<div[^>]*class="[^"]*rstbox[^"]*"[^>]*>.*?<\/div>/is', '', $body);
+        // Remove EngageBox overlay/backdrop (more aggressive - match any nesting level)
+        $body = preg_replace('/<div[^>]*class="[^"]*rstbox[^"]*"[^>]*>[\s\S]*?<\/div>/i', '', $body);
+        
+        // Remove blocks containing "Всё самое интересное" text (from rstbox)
+        $body = preg_replace('/<div[^>]*>[\s\S]*?Всё самое интересное[\s\S]*?<\/div>/iu', '', $body);
+        
+        // Remove blocks with Telegram subscription links from rstbox
+        $body = preg_replace('/<div[^>]*>[\s\S]*?t\.me\/cacaoland[\s\S]*?<\/div>/i', '', $body);
 
         // Remove SMS registration elements
         $body = preg_replace('/<div[^>]*id="jsms_[^"]*"[^>]*>.*?<\/div>/is', '', $body);
