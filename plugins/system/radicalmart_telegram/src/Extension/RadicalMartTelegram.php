@@ -46,7 +46,7 @@ class RadicalMartTelegram extends CMSPlugin implements SubscriberInterface
         }
 
         $input = $app->input;
-        if ($input->get('option') === 'com_radicalmart_telegram' && $input->get('view') === 'app') {
+        if ($input->get('option') === 'com_radicalmart_telegram') {
             // Set flag to prevent EngageBox rendering
             define('RADICALMART_TELEGRAM_WEBAPP', true);
 
@@ -57,27 +57,12 @@ class RadicalMartTelegram extends CMSPlugin implements SubscriberInterface
             if (!defined('NR_DISABLE')) {
                 define('NR_DISABLE', true);
             }
-        }
-    }
 
-    /**
-     * Before render - try to clear EngageBox HTML if it was set
-     */
-    public function onBeforeRender(): void
-    {
-        $app = Factory::getApplication();
-
-        if (!$app->isClient('site')) {
-            return;
-        }
-
-        $input = $app->input;
-        // Apply to ALL views of com_radicalmart_telegram component
-        if ($input->get('option') === 'com_radicalmart_telegram') {
-            // Try to access EngageBox plugin and clear its HTML
+            // Try to access EngageBox plugin and clear its HTML AFTER it was generated
             $dispatcher = $app->getDispatcher();
             if ($dispatcher && method_exists($dispatcher, 'getListeners')) {
-                foreach ($dispatcher->getListeners('onAfterRender') as $listener) {
+                // Get listeners for onAfterDispatch event (RstBox generates HTML here)
+                foreach ($dispatcher->getListeners('onAfterDispatch') as $listener) {
                     if (is_array($listener) && isset($listener[0])) {
                         $plugin = $listener[0];
                         if ($plugin instanceof \PlgSystemRstBox) {
@@ -97,9 +82,7 @@ class RadicalMartTelegram extends CMSPlugin implements SubscriberInterface
                 }
             }
         }
-    }
-
-    public function onRadicalMartPreprocessSubmenu(array &$results, AdministratorMenuItem $parent, Registry $params): void
+    }    public function onRadicalMartPreprocessSubmenu(array &$results, AdministratorMenuItem $parent, Registry $params): void
     {
         $app = Factory::getApplication();
 
@@ -357,7 +340,7 @@ class RadicalMartTelegram extends CMSPlugin implements SubscriberInterface
         // Additional cleanup: remove all remaining EngageBox/SMS elements by patterns
         // Remove any <div> or <button> with class containing 'eb-' (EngageBox elements and close buttons)
         $body = preg_replace('/<(div|button|a)[^>]*class="[^"]*\beb-[^"]*"[^>]*>.*?<\/\1>/is', '', $body);
-        
+
         // Remove standalone EngageBox close buttons (they can be outside the box div)
         $body = preg_replace('/<[^>]*class="[^"]*eb-close[^"]*"[^>]*>/i', '', $body);
 
