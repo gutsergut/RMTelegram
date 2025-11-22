@@ -72,7 +72,8 @@ class RadicalMartTelegram extends CMSPlugin implements SubscriberInterface
         }
 
         $input = $app->input;
-        if ($input->get('option') === 'com_radicalmart_telegram' && $input->get('view') === 'app') {
+        // Apply to ALL views of com_radicalmart_telegram component
+        if ($input->get('option') === 'com_radicalmart_telegram') {
             // Try to access EngageBox plugin and clear its HTML
             $dispatcher = $app->getDispatcher();
             if ($dispatcher && method_exists($dispatcher, 'getListeners')) {
@@ -354,8 +355,11 @@ class RadicalMartTelegram extends CMSPlugin implements SubscriberInterface
         }
 
         // Additional cleanup: remove all remaining EngageBox/SMS elements by patterns
-        // Remove any <div> with class containing 'eb-' (EngageBox)
-        $body = preg_replace('/<div[^>]*class="[^"]*\beb-[^"]*"[^>]*>.*?<\/div>/is', '', $body);
+        // Remove any <div> or <button> with class containing 'eb-' (EngageBox elements and close buttons)
+        $body = preg_replace('/<(div|button|a)[^>]*class="[^"]*\beb-[^"]*"[^>]*>.*?<\/\1>/is', '', $body);
+        
+        // Remove standalone EngageBox close buttons (they can be outside the box div)
+        $body = preg_replace('/<[^>]*class="[^"]*eb-close[^"]*"[^>]*>/i', '', $body);
 
         // Remove any element with data-attributes from EngageBox
         $body = preg_replace('/<[^>]*data-ebox[^>]*>.*?<\/[^>]+>/is', '', $body);
