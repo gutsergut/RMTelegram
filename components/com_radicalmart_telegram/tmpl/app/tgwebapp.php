@@ -734,7 +734,10 @@ $storeTitle = isset($this->params) ? (string) $this->params->get('store_title', 
                 if (pf) pf.value=''; if (pt) pt.value='';
                 loadCatalog();
             });
-            const fa = document.getElementById('filters-apply'); if (fa) fa.addEventListener('click', () => loadCatalog());
+            const fa = document.getElementById('filters-apply'); if (fa) fa.addEventListener('click', () => {
+                try { UIkit.modal('#filters-modal').hide(); } catch(e){}
+                loadCatalog();
+            });
             loadOrders(true);
             // Load available points
             api('bonuses').then(data => {
@@ -1127,6 +1130,13 @@ $storeTitle = isset($this->params) ? (string) $this->params->get('store_title', 
                 Object.keys(cfg||{}).forEach(k => btn.setAttribute('data-'+k, cfg[k]));
                 btn.innerHTML = `<span>${label}</span> <span uk-icon="close"></span>`;
                 cont.appendChild(btn);
+                // Инициализируем иконку UIkit
+                try {
+                    const iconEl = btn.querySelector('[uk-icon]');
+                    if (iconEl && window.UIkit && UIkit.icon) {
+                        UIkit.icon(iconEl);
+                    }
+                } catch(e){}
             };
             const params = Object.assign({}, baseParams||{});
             if (params.in_stock === 1 || params.in_stock === '1') {
