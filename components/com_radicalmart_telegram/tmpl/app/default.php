@@ -792,10 +792,13 @@ $storeTitle = isset($this->params) ? (string) $this->params->get('store_title', 
                     if (alias && val) params['field_'+alias] = val;
                 });
                                 const { items } = await api('list', params);
-                                if (window.RMT_DEBUG && items && items.length > 0) {
-                                    console.log('[API] First item from server:', items[0]);
-                                    if (items[0].children && items[0].children.length > 0) {
-                                        console.log('[API] First child:', items[0].children[0]);
+                                if (window.RMT_DEBUG) {
+                                    console.log('[FILTER] in_stock param:', params.in_stock, 'items count:', items ? items.length : 0);
+                                    if (items && items.length > 0) {
+                                        console.log('[API] First item from server:', items[0]);
+                                        if (items[0].children && items[0].children.length > 0) {
+                                            console.log('[API] First child:', items[0].children[0]);
+                                        }
                                     }
                                 }
                                 const root = document.getElementById('catalog-list');
