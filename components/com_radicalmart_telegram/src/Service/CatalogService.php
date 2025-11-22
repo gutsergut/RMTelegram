@@ -93,28 +93,18 @@ class CatalogService
         $model = new MetasModel(); try { $model->populateState(); } catch (\Throwable $e) {}
         if ($limit<=0) { $model->setState('list.limit',0); $model->setState('list.start',0); } else { $model->setState('list.limit',$limit); $model->setState('list.start',($page-1)*$limit); }
         $model->setState('list.select',[ 'm.id','m.title','m.alias','m.code','m.type','m.category','m.categories','m.introtext','m.products','m.prices','m.state','m.media','m.params','m.ordering','m.plugins','m.language' ]);
-        
-        // Применяем сортировку к мета-товарам
-        if (!empty($filters['sort'])) {
-            $sort = (string)$filters['sort'];
-            if ($sort === 'price_asc') {
-                $model->setState('list.ordering', 'm.ordering_price');
-                $model->setState('list.direction', 'asc');
-            } elseif ($sort === 'price_desc') {
-                $model->setState('list.ordering', 'm.ordering_price');
-                $model->setState('list.direction', 'desc');
-            } elseif ($sort === 'new') {
-                $model->setState('list.ordering', 'm.created');
-                $model->setState('list.direction', 'desc');
-            } else {
-                // По умолчанию
-                $model->setState('list.ordering', 'm.ordering');
-                $model->setState('list.direction', 'asc');
-            }
+
+        // Сортировка будет применена позже к массиву $out после фильтрации детей и вычисления цен
+        // Для новинок применяем к запросу, для цены - вычислим минимум из детей
+        $sortType = !empty($filters['sort']) ? (string)$filters['sort'] : 'default';
+        if ($sortType === 'new') {
+            $model->setState('list.ordering', 'm.created');
+            $model->setState('list.direction', 'desc');
         } else {
-            $orderingState=(string)$model->getState('list.ordering'); 
-            if(str_starts_with($orderingState,'p.')||$orderingState==='') $orderingState='m.ordering'; 
-            $model->setState('list.ordering',$orderingState); 
+            // Загружаем без сортировки по цене, отсортируем позже по вычисленной минимальной
+            $orderingState=(string)$model->getState('list.ordering');
+            if(str_starts_with($orderingState,'p.')||$orderingState==='') $orderingState='m.ordering';
+            $model->setState('list.ordering',$orderingState);
             $model->setState('list.direction','asc');
         }
         $model->setState('products.ordering', null);
@@ -231,7 +221,35 @@ class CatalogService
             }
 
             if(empty($children)) $metasWithout++; else { $metasWith++; $childrenTotal+=count($children); }
-            $out[]=['id'=>(int)($m->id??0),'title'=>(string)($m->title??''),'type'=>(string)($m->type??''),'image'=>$image,'category'=>$category,'price_min'=>$priceMin,'price_max'=>$priceMax,'price_final'=>$priceMin,'children'=>$children,'is_meta'=>true]; }
+            
+            // Вычисляем реальную минимальную цену из отфильтрованных детей для сортировки
+            $minPriceRaw = null;
+            foreach ($children as $child) {
+                if (isset($child['price_final_raw']) && $child['price_final_raw'] > 0) {
+                    if ($minPriceRaw === null || $child['price_final_raw'] < $minPriceRaw) {
+                        $minPriceRaw = $child['price_final_raw'];
+                    }
+                }
+            }
+            
+            $out[]=['id'=>(int)($m->id??0),'title'=>(string)($m->title??''),'type'=>(string)($m->type??''),'image'=>$image,'category'=>$category,'price_min'=>$priceMin,'price_max'=>$priceMax,'price_final'=>$priceMin,'min_price_raw'=>$minPriceRaw,'children'=>$children,'is_meta'=>true]; }
+        
+        // Применяем сортировку к массиву $out после фильтрации детей
+        if ($sortType === 'price_asc') {
+            usort($out, function($a, $b) {
+                $priceA = $a['min_price_raw'] ?? PHP_FLOAT_MAX;
+                $priceB = $b['min_price_raw'] ?? PHP_FLOAT_MAX;
+                return $priceA <=> $priceB;
+            });
+        } elseif ($sortType === 'price_desc') {
+            usort($out, function($a, $b) {
+                $priceA = $a['min_price_raw'] ?? 0;
+                $priceB = $b['min_price_raw'] ?? 0;
+                return $priceB <=> $priceA;
+            });
+        }
+        // Для 'new' сортировка уже применена к MetasModel, для 'default' тоже
+        
         if($debug){ Log::add('listMetas: metas_count=' . count($out) . ' with_children=' . $metasWith . ' without_children=' . $metasWithout . ' children_total=' . $childrenTotal . ' skipped_by_stock=' . $skippedByStock, Log::DEBUG,'radicalmart_telegram_catalog'); Log::add('[catalog] metas_count=' . count($out) . ' with_children=' . $metasWith . ' without_children=' . $metasWithout, Log::DEBUG,'com_radicalmart.telegram'); }
         return $out;
     }
@@ -357,7 +375,17 @@ class CatalogService
                 }
             }
         }
-        $out=['id'=>(int)($it->id??0),'title'=>(string)($it->title??''),'price_final'=>$priceFinal,'price_base'=>$priceBase,'base_string'=>$priceBase,'price_original'=>$priceOriginal,'discount_enable'=>$discountEnable,'discount_percent'=>$discountPercent,'discount_value'=>$discountValue,'discount_string'=>$discountString,'image'=>$image,'category'=>$category,'in_stock'=>(bool)($it->in_stock??false)];
+        // Извлекаем числовое значение финальной цены для сортировки
+        $priceFinalRaw = 0.0;
+        if ($priceFinal !== '') {
+            $numStr = preg_replace('/[^0-9.,]/', '', $priceFinal);
+            $numStr = str_replace(',', '.', $numStr);
+            if (is_numeric($numStr)) {
+                $priceFinalRaw = (float)$numStr;
+            }
+        }
+        
+        $out=['id'=>(int)($it->id??0),'title'=>(string)($it->title??''),'price_final'=>$priceFinal,'price_final_raw'=>$priceFinalRaw,'price_base'=>$priceBase,'base_string'=>$priceBase,'price_original'=>$priceOriginal,'discount_enable'=>$discountEnable,'discount_percent'=>$discountPercent,'discount_value'=>$discountValue,'discount_string'=>$discountString,'image'=>$image,'category'=>$category,'in_stock'=>(bool)($it->in_stock??false)];
         // Всегда гасим системный weight
         $out['weight']='';
 
