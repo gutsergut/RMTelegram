@@ -1,23 +1,20 @@
 <?xml version="1.0" encoding="utf-8"?>
 <form>
-  <fields name="">
-    <fieldset name="filter">
-      <field name="field_id" type="RadicalMartField" label="COM_RADICALMART_TELEGRAM_FILTER_FIELD_ID" description="COM_RADICALMART_TELEGRAM_FILTER_FIELD_ID_DESC" required="true" addfieldprefix="Joomla\Component\RadicalMartTelegram\Administrator\Field" />
-      <field name="type" type="list" default="auto" label="COM_RADICALMART_TELEGRAM_FILTER_FIELD_TYPE" description="COM_RADICALMART_TELEGRAM_FILTER_FIELD_TYPE_DESC">
-        <option value="auto">Auto (из поля)</option>
-        <option value="text">Text</option>
-        <option value="number">Number</option>
-        <option value="select">Select</option>
-        <option value="checkbox">Checkbox</option>
-        <option value="range">Range</option>
-      </field>
-      <field name="placeholder" type="text" label="COM_RADICALMART_TELEGRAM_FILTER_FIELD_PLACEHOLDER" description="COM_RADICALMART_TELEGRAM_FILTER_FIELD_PLACEHOLDER_DESC" />
-      <field name="placeholder_from" type="text" label="COM_RADICALMART_TELEGRAM_FILTER_FIELD_PLACEHOLDER_FROM" description="COM_RADICALMART_TELEGRAM_FILTER_FIELD_PLACEHOLDER_FROM_DESC" />
-      <field name="placeholder_to" type="text" label="COM_RADICALMART_TELEGRAM_FILTER_FIELD_PLACEHOLDER_TO" description="COM_RADICALMART_TELEGRAM_FILTER_FIELD_PLACEHOLDER_TO_DESC" />
-      <field name="enabled" type="radio" default="1" label="JENABLED">
-        <option value="1">JYES</option>
-        <option value="0">JNO</option>
-      </field>
-    </fieldset>
-  </fields>
+  <field name="field_id" type="RadicalMartField" label="COM_RADICALMART_TELEGRAM_FILTER_FIELD_ID" description="COM_RADICALMART_TELEGRAM_FILTER_FIELD_ID_DESC" required="true" addfieldprefix="Joomla\Component\RadicalMartTelegram\Administrator\Field" />
+  <field name="type" type="list" default="auto" label="COM_RADICALMART_TELEGRAM_FILTER_FIELD_TYPE" description="COM_RADICALMART_TELEGRAM_FILTER_FIELD_TYPE_DESC">
+    <option value="auto">Auto (из поля)</option>
+    <option value="text">Text</option>
+    <option value="number">Number</option>
+    <option value="select">Select</option>
+    <option value="checkbox">Checkbox</option>
+    <option value="range">Range</option>
+  </field>
+  <field name="options" type="textarea" label="Опции для Select (val|label)" description="Список опций для Select, по одной в строке. Формат: value|label. Если не задано — попытаемся подставить опции из настроек поля RadicalMart." filter="raw" rows="5" showon="type:select"/>
+  <field name="placeholder" type="text" label="COM_RADICALMART_TELEGRAM_FILTER_FIELD_PLACEHOLDER" description="COM_RADICALMART_TELEGRAM_FILTER_FIELD_PLACEHOLDER_DESC" />
+  <field name="placeholder_from" type="text" label="COM_RADICALMART_TELEGRAM_FILTER_FIELD_PLACEHOLDER_FROM" description="COM_RADICALMART_TELEGRAM_FILTER_FIELD_PLACEHOLDER_FROM_DESC" />
+  <field name="placeholder_to" type="text" label="COM_RADICALMART_TELEGRAM_FILTER_FIELD_PLACEHOLDER_TO" description="COM_RADICALMART_TELEGRAM_FILTER_FIELD_PLACEHOLDER_TO_DESC" />
+  <field name="enabled" type="radio" default="1" label="JENABLED">
+    <option value="1">JYES</option>
+    <option value="0">JNO</option>
+  </field>
 </form>
