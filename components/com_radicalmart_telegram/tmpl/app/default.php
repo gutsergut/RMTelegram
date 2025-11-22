@@ -810,6 +810,9 @@ $storeTitle = isset($this->params) ? (string) $this->params->get('store_title', 
                                                 const children = Array.isArray(p.children) ? p.children : [];
                                                 const hasVariants = children.length > 0;
                                                 const first = hasVariants ? children[0] : null;
+                                                // Проверяем, есть ли хоть один вариант в наличии
+                                                const allOutOfStock = hasVariants && children.every(ch => !ch.in_stock);
+                                                
                                                 if (!hasVariants) {
                                                     // Пустая карточка мета без вариантов — показываем заглушку
                                                     const emptyCard = el(`
@@ -828,6 +831,27 @@ $storeTitle = isset($this->params) ? (string) $this->params->get('store_title', 
                                                     root.appendChild(emptyCard);
                                                     return;
                                                 }
+                                                
+                                                // Если все варианты не в наличии - показываем карточку "Нет в наличии"
+                                                if (allOutOfStock) {
+                                                    const outOfStockCard = el(`
+                                                        <div>
+                                                            <div class="uk-card uk-card-default uk-card-small">
+                                                                <div class="uk-card-media-top" style="position:relative;">${p.image?`<img src="${p.image}" alt="" class="uk-width-1-1 uk-object-cover" style="height:160px">`:`<div class="uk-height-small uk-flex uk-flex-middle uk-flex-center uk-background-muted"><?php echo Text::_('COM_RADICALMART_TELEGRAM_IMAGE'); ?></div>`}</div>
+                                                                <div class="uk-card-body" data-card="${p.id}">
+                                                                    <div class="uk-text-small uk-text-muted">${p.category||'\u00A0'}</div>
+                                                                    <h5 class="uk-margin-remove">${p.title || '<?php echo Text::_('COM_RADICALMART_TELEGRAM_PRODUCT'); ?>'}</h5>
+                                                                    <div class="uk-text-meta uk-margin-xsmall-top js-subtitle"></div>
+                                                                    <div class="uk-margin-small uk-text-danger uk-text-center">
+                                                                        <strong><?php echo Text::_('COM_RADICALMART_NOT_IN_STOCK'); ?></strong>
+                                                                    </div>
+                                                                </div>
+                                                            </div>
+                                                        </div>`);
+                                                    root.appendChild(outOfStockCard);
+                                                    return;
+                                                }
+                                                
                                                 // first уже определён выше
                                                 const priceRange = (p.price_min && p.price_max) ? `${p.price_min} – ${p.price_max}` : (p.price_min||p.price_max||'');
 
