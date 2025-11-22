@@ -915,6 +915,7 @@ $storeTitle = isset($this->params) ? (string) $this->params->get('store_title', 
                                                     if (window.RMT_DEBUG) console.log('[variantLabel]', {id: ch.id, field_weight: ch.field_weight, title: ch.title, resolved: label});
                                                     return label;
                                                 }
+                                                // Создаём кнопки только для детей из списка (уже отфильтрованных по цене/наличию)
                                                 const variantBtns = children.map(ch=>`<button class=\"uk-button uk-button-default uk-button-small rmt-variant\" data-vid=\"${ch.id}\" title=\"${(ch.title||'').replace(/\"/g,'&quot;')}\">${variantLabel(ch)}</button>`).join(' ');
 
                                                 if (window.RMT_DEBUG && p.id === 2) {
@@ -1147,7 +1148,10 @@ $storeTitle = isset($this->params) ? (string) $this->params->get('store_title', 
             }
             if (params.price_from || params.price_to) {
                 const from = params.price_from||''; const to = params.price_to||'';
-                const lab = 'Цена: ' + (from||'–') + '–' + (to||'–');
+                let lab = 'Цена: ';
+                if (from && to) lab += from + '–' + to;
+                else if (from) lab += 'от ' + from;
+                else if (to) lab += 'до ' + to;
                 addTag(lab, {type:'price'});
             }
             // Fields

@@ -184,18 +184,12 @@ class CatalogService
                     if($debug) Log::add('listMetas: skipped meta='.(int)$m->id.' (no children at all)', Log::DEBUG,'radicalmart_telegram_catalog');
                     continue;
                 }
-                // Проверяем наличие хотя бы одного подходящего варианта
+                // Фильтруем children по наличию (убираем недоступные из списка)
                 if($hasStockFilter){
-                    $hasAvailable = false;
-                    foreach($children as $ch){
-                        if(!empty($ch['in_stock'])){
-                            $hasAvailable = true;
-                            break;
-                        }
-                    }
-                    if(!$hasAvailable){
+                    $children = array_values(array_filter($children, function($ch){ return !empty($ch['in_stock']); }));
+                    if(empty($children)){
                         $skippedByStock++;
-                        if($debug) Log::add('listMetas: skipped meta='.(int)$m->id.' (no variants in stock)', Log::DEBUG,'radicalmart_telegram_catalog');
+                        if($debug) Log::add('listMetas: skipped meta='.(int)$m->id.' (no variants in stock after filter)', Log::DEBUG,'radicalmart_telegram_catalog');
                         continue; // Пропускаем этот мета-товар
                     }
                 }
