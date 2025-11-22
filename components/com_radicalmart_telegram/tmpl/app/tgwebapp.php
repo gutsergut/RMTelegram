@@ -1074,11 +1074,13 @@ $storeTitle = isset($this->params) ? (string) $this->params->get('store_title', 
                 const params = Object.assign({}, baseParams||{});
                 const data = await api('facets', params);
                 const facets = (data && data.facets) ? data.facets : {};
+                console.log('[FACETS] Received facets:', facets);
                 if (!facets || typeof facets !== 'object') return;
                 // Обновляем select и buttons по каждому alias
                 Object.keys(facets).forEach(alias => {
                     const list = facets[alias] || [];
                     const allowed = new Set(list.map(o => String(o.value)));
+                    console.log('[FACETS] alias:', alias, 'allowed values:', Array.from(allowed));
                     // Selects
                     document.querySelectorAll(`select[data-field-alias="${alias}"]`).forEach(sel => {
                         let selectedVal = sel.value;
@@ -1098,22 +1100,15 @@ $storeTitle = isset($this->params) ? (string) $this->params->get('store_title', 
                         group.querySelectorAll('button').forEach(btn => {
                             const v = (btn.getAttribute('data-value')||'').trim();
                             if (btn.classList.contains('rmt-filter-btn-all')) { // "All" pseudo option
-                                btn.disabled = false; btn.classList.remove('uk-disabled'); return;
+                                btn.classList.remove('uk-disabled'); return;
                             }
                             const ok = allowed.has(String(v));
-                            btn.disabled = !ok;
+                            // НЕ делаем кнопку disabled, только визуально показываем
                             btn.classList.toggle('uk-disabled', !ok);
-                            // If value was selected but now not allowed -> deselect
-                            if (!ok && currentArr.includes(v)) {
-                                currentArr = currentArr.filter(x => x!==v);
-                                btn.classList.remove('uk-button-primary');
-                                btn.setAttribute('aria-pressed','false');
-                            }
+                            // If value was selected but now not allowed -> НЕ сбрасываем автоматически
+                            // Пользователь сам решает, какие фильтры комбинировать
                         });
-                        // Update data-value after pruning
-                        const newVal = currentArr.join(',');
-                        group.setAttribute('data-value', newVal);
-                        // Sync active classes (in case allowed set changed)
+                        // Sync active classes based on current selection
                         group.querySelectorAll('.rmt-filter-btn').forEach(btn => {
                             const v = (btn.getAttribute('data-value')||'').trim();
                             if (currentArr.includes(v)) { btn.classList.add('uk-button-primary'); btn.setAttribute('aria-pressed','true'); }
