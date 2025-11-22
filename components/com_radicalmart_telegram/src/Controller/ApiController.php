@@ -289,6 +289,12 @@ class ApiController extends BaseController
             // DEBUG: проверка конфигурации фильтров
             \Joomla\CMS\Log\Log::add('ApiController.list: filters_fields RAW cfg=' . json_encode($cfg, JSON_UNESCAPED_UNICODE) . ' type=' . gettype($cfg) . ' empty=' . (empty($cfg) ? 'YES' : 'NO') . ' isArray=' . (is_array($cfg) ? 'YES' : 'NO'), \Joomla\CMS\Log\Log::DEBUG, 'radicalmart_telegram_catalog');
 
+            // Конвертируем объект в массив (Joomla subform возвращает stdClass)
+            if (is_object($cfg)) {
+                $cfg = get_object_vars($cfg);
+                \Joomla\CMS\Log\Log::add('ApiController.list: Converted object to array, new type=' . gettype($cfg), \Joomla\CMS\Log\Log::DEBUG, 'radicalmart_telegram_catalog');
+            }
+
             // Сначала загружаем aliases из БД по field_id
             $fieldIdToAlias = [];
             if (!empty($cfg) && is_array($cfg)) {
