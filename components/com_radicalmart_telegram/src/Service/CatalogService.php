@@ -165,6 +165,22 @@ class CatalogService
         $out=[]; $metasWithout=0; $metasWith=0; $childrenTotal=0;
         foreach($items as $m){ $image=''; if(!empty($m->image)&&is_string($m->image)) $image=$m->image; elseif(!empty($m->media)){ try { $media=is_string($m->media)? new \Joomla\Registry\Registry($m->media): new \Joomla\Registry\Registry((array)$m->media); $img=(string)$media->get('image',''); if($img!=='') $image=$img; } catch(\Throwable $e){} } $category=''; if(!empty($m->category)&&is_object($m->category)&&!empty($m->category->title)) $category=(string)$m->category->title; $priceMin=''; $priceMax=''; if(!empty($m->price)&&is_array($m->price)){ $priceMin=(string)($m->price['min_string']??($m->price['min']['final_string']??'')); $priceMax=(string)($m->price['max_string']??($m->price['max']['final_string']??'')); }
             $children=[]; foreach($metaProductsMap[(int)$m->id] as $pid){ if(!empty($childrenById[$pid])) $children[]=$childrenById[$pid]; elseif($debug) $children[]=['id'=>$pid,'title'=>'(ID '.$pid.')','price_final'=>'','image'=>'','category'=>'','in_stock'=>false,'missing'=>true]; }
+            
+            // Фильтрация по наличию: если включен фильтр in_stock, пропускаем мета-товары без доступных вариантов
+            if($hasStockFilter && !empty($children)){
+                $hasAvailable = false;
+                foreach($children as $ch){
+                    if(!empty($ch['in_stock'])){
+                        $hasAvailable = true;
+                        break;
+                    }
+                }
+                if(!$hasAvailable){
+                    if($debug) Log::add('listMetas: skipped meta='.(int)$m->id.' (no variants in stock)', Log::DEBUG,'radicalmart_telegram_catalog');
+                    continue; // Пропускаем этот мета-товар
+                }
+            }
+            
             if(empty($children)) $metasWithout++; else { $metasWith++; $childrenTotal+=count($children); }
             $out[]=['id'=>(int)($m->id??0),'title'=>(string)($m->title??''),'type'=>(string)($m->type??''),'image'=>$image,'category'=>$category,'price_min'=>$priceMin,'price_max'=>$priceMax,'price_final'=>$priceMin,'children'=>$children,'is_meta'=>true]; }
         if($debug){ Log::add('listMetas: metas_count=' . count($out) . ' with_children=' . $metasWith . ' without_children=' . $metasWithout . ' children_total=' . $childrenTotal, Log::DEBUG,'radicalmart_telegram_catalog'); Log::add('[catalog] metas_count=' . count($out) . ' with_children=' . $metasWith . ' without_children=' . $metasWithout, Log::DEBUG,'com_radicalmart.telegram'); }

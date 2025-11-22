@@ -812,7 +812,7 @@ $storeTitle = isset($this->params) ? (string) $this->params->get('store_title', 
                                                 const first = hasVariants ? children[0] : null;
                                                 // Проверяем, есть ли хоть один вариант в наличии
                                                 const allOutOfStock = hasVariants && children.every(ch => !ch.in_stock);
-                                                
+
                                                 if (!hasVariants) {
                                                     // Пустая карточка мета без вариантов — показываем заглушку
                                                     const emptyCard = el(`
@@ -831,7 +831,7 @@ $storeTitle = isset($this->params) ? (string) $this->params->get('store_title', 
                                                     root.appendChild(emptyCard);
                                                     return;
                                                 }
-                                                
+
                                                 // Если все варианты не в наличии - показываем карточку "Нет в наличии"
                                                 if (allOutOfStock) {
                                                     const outOfStockCard = el(`
@@ -851,7 +851,7 @@ $storeTitle = isset($this->params) ? (string) $this->params->get('store_title', 
                                                     root.appendChild(outOfStockCard);
                                                     return;
                                                 }
-                                                
+
                                                 // first уже определён выше
                                                 const priceRange = (p.price_min && p.price_max) ? `${p.price_min} – ${p.price_max}` : (p.price_min||p.price_max||'');
 
