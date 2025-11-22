@@ -84,7 +84,10 @@ class CatalogService
         // Определяем фильтры из переданных параметров
         $hasStockFilter = !empty($filters['in_stock']);
         $hasPriceFilter = !empty($filters['price']) && is_array($filters['price']) && ((string)($filters['price']['from'] ?? '') !== '' || (string)($filters['price']['to'] ?? '') !== '');
-        if ($debug) { Log::add('listMetas: hasStockFilter=' . (int)$hasStockFilter . ' hasPriceFilter=' . (int)$hasPriceFilter . ' filters=' . json_encode($filters), Log::DEBUG,'radicalmart_telegram_catalog'); }
+        $hasFieldFilters = !empty($filters['fields']) && is_array($filters['fields']);
+        // Автоматически включаем фильтр "в наличии" при любых фильтрах
+        $hasAnyFilter = $hasStockFilter || $hasPriceFilter || $hasFieldFilters;
+        if ($debug) { Log::add('listMetas: hasStockFilter=' . (int)$hasStockFilter . ' hasPriceFilter=' . (int)$hasPriceFilter . ' hasFieldFilters=' . (int)$hasFieldFilters . ' hasAnyFilter=' . (int)$hasAnyFilter . ' filters=' . json_encode($filters), Log::DEBUG,'radicalmart_telegram_catalog'); }
 
         $model = new MetasModel(); try { $model->populateState(); } catch (\Throwable $e) {}
         if ($limit<=0) { $model->setState('list.limit',0); $model->setState('list.start',0); } else { $model->setState('list.limit',$limit); $model->setState('list.start',($page-1)*$limit); }
@@ -147,6 +150,10 @@ class CatalogService
                 if ($hasPriceFilter) {
                     $productsModel->setState('filter.price', ['from'=>$filters['price']['from']??'', 'to'=>$filters['price']['to']??'']);
                 }
+                // Применяем фильтры по полям
+                if ($hasFieldFilters) {
+                    $productsModel->setState('filter.fields', $filters['fields']);
+                }
 
                 $rows = $productsModel->getItems();
 
@@ -181,8 +188,8 @@ class CatalogService
                 if(!empty($missing)) Log::add('listMetas: meta='.(int)$m->id.' missing_children='.json_encode($missing), Log::DEBUG,'radicalmart_telegram_catalog');
             }
 
-            // Фильтрация по наличию и цене
-            if($hasStockFilter || $hasPriceFilter){
+            // Фильтрация по наличию при любых активных фильтрах
+            if($hasAnyFilter){
                 // Если нет детей вообще — пропускаем
                 if(empty($children)){
                     $skippedByStock++;
@@ -196,7 +203,7 @@ class CatalogService
                     if($debug) Log::add('listMetas: skipped meta='.(int)$m->id.' (no variants in stock after filter)', Log::DEBUG,'radicalmart_telegram_catalog');
                     continue; // Пропускаем этот мета-товар
                 }
-                // Примечание: фильтр цены уже применён в ProductsModel, поэтому $children содержит только подходящие варианты
+                // Примечание: фильтры цены и полей уже применены в ProductsModel, поэтому $children содержит только подходящие варианты
             }
 
             if(empty($children)) $metasWithout++; else { $metasWith++; $childrenTotal+=count($children); }

@@ -263,15 +263,42 @@ class ApiController extends BaseController
         if ($inStock) { $filters['in_stock'] = 1; }
         if ($sort !== '') { $filters['sort'] = $sort; }
         if ($priceFrom !== '' || $priceTo !== '') { $filters['price'] = ['from'=>$priceFrom, 'to'=>$priceTo]; }
-        // Field filters: read configured aliases and pick values from request
+        // Field filters: read configured field_ids, load aliases from DB, pick values from request
         try {
             $params = $app->getParams('com_radicalmart_telegram');
             $cfg = $params->get('filters_fields');
             $fields = [];
+            // Сначала загружаем aliases из БД по field_id
+            $fieldIdToAlias = [];
+            if (!empty($cfg) && is_array($cfg)) {
+                $fieldIds = [];
+                foreach ($cfg as $row) {
+                    if (is_object($row)) { $row = get_object_vars($row); }
+                    if (!is_array($row)) { continue; }
+                    if (empty($row['enabled']) || (int)$row['enabled'] !== 1) continue;
+                    if (!empty($row['field_id'])) { $fieldIds[] = (int)$row['field_id']; }
+                }
+                if (!empty($fieldIds)) {
+                    $db = Factory::getContainer()->get('DatabaseDriver');
+                    $q = $db->getQuery(true)
+                        ->select($db->quoteName(['id','alias']))
+                        ->from($db->quoteName('#__radicalmart_fields'))
+                        ->where($db->quoteName('state') . ' = 1')
+                        ->where($db->quoteName('area') . ' = ' . $db->quote('products'))
+                        ->whereIn($db->quoteName('id'), $fieldIds);
+                    $rows = (array) $db->setQuery($q)->loadObjectList();
+                    foreach ($rows as $r) { $fieldIdToAlias[(int)$r->id] = (string)$r->alias; }
+                }
+            }
+            // Теперь читаем значения из запроса по alias
             if (!empty($cfg) && is_array($cfg)) {
                 foreach ($cfg as $row) {
+                    if (is_object($row)) { $row = get_object_vars($row); }
+                    if (!is_array($row)) { continue; }
                     if (empty($row['enabled']) || (int)$row['enabled'] !== 1) continue;
-                    $alias = isset($row['alias']) ? trim((string)$row['alias']) : '';
+                    $fieldId = !empty($row['field_id']) ? (int)$row['field_id'] : 0;
+                    if ($fieldId <= 0 || !isset($fieldIdToAlias[$fieldId])) continue;
+                    $alias = $fieldIdToAlias[$fieldId];
                     if ($alias === '') continue;
                     $type = isset($row['type']) ? (string) $row['type'] : 'text';
                     if ($type === 'range') {
@@ -279,21 +306,262 @@ class ApiController extends BaseController
                         $to   = $app->input->getString('field_' . $alias . '_to', '');
                         if ($from !== '' || $to !== '') { $fields[$alias] = ['from' => $from, 'to' => $to]; }
                     } else {
-                        // Accept both field_alias and field[alias]
+                        // Accept both field_alias and field[alias]; support multi (comma separated)
                         $val = $app->input->getString('field_' . $alias, null);
                         if ($val === null) {
                             $arr = $app->input->get('field', [], 'array');
                             if (isset($arr[$alias])) { $val = (string) $arr[$alias]; }
                         }
-                        if ($val !== null && $val !== '') { $fields[$alias] = $val; }
+                        if ($val !== null && $val !== '') {
+                            $parts = array_filter(array_map('trim', explode(',', (string)$val)), fn($x)=>$x!=='');
+                            if (count($parts) > 1) { $fields[$alias] = $parts; }
+                            else { $fields[$alias] = $parts ? $parts[0] : $val; }
+                        }
                     }
                 }
             }
             if (!empty($fields)) { $filters['fields'] = $fields; }
         } catch (\Throwable $e) { /* ignore */ }
 
+        // Debug logging (native Joomla Log) - temporarily enabled by default
+        $debug = true;
+        try {
+            static $loggerReady = false;
+            if ($debug && !$loggerReady) {
+                \Joomla\CMS\Log\Log::addLogger([
+                    'text_file' => 'com_radicalmart.telegram.catalog.php',
+                    'extension' => 'com_radicalmart_telegram'
+                ], \Joomla\CMS\Log\Log::ALL, ['radicalmart_telegram_catalog']);
+                $loggerReady = true;
+            }
+            if ($debug) {
+                \Joomla\CMS\Log\Log::add('ApiController.list: page=' . $page . ' limit=' . $lim . ' filters=' . json_encode($filters, JSON_UNESCAPED_UNICODE), \Joomla\CMS\Log\Log::DEBUG, 'radicalmart_telegram_catalog');
+            }
+        } catch (\Throwable $e) {}
+
         $items = (new CatalogService())->listProducts($page, $lim, $filters);
+        try {
+            if (!empty($items)) {
+                $metaCount = 0; $simpleCount = 0;
+                foreach ($items as $it) { if (!empty($it['is_meta'])) $metaCount++; else $simpleCount++; }
+                if (!empty($debug)) {
+                    \Joomla\CMS\Log\Log::add('ApiController.list: items total=' . count($items) . ' meta=' . $metaCount . ' simple=' . $simpleCount, \Joomla\CMS\Log\Log::DEBUG, 'radicalmart_telegram_catalog');
+                    // Duplicate concise summary to common channel for visibility
+                    \Joomla\CMS\Log\Log::add('[catalog] list totals: total=' . count($items) . ', meta=' . $metaCount . ', simple=' . $simpleCount, \Joomla\CMS\Log\Log::DEBUG, 'com_radicalmart.telegram');
+                }
+            } else if (!empty($debug)) {
+                \Joomla\CMS\Log\Log::add('ApiController.list: items empty', \Joomla\CMS\Log\Log::INFO, 'radicalmart_telegram_catalog');
+                \Joomla\CMS\Log\Log::add('[catalog] list: items empty', \Joomla\CMS\Log\Log::INFO, 'com_radicalmart.telegram');
+            }
+        } catch (\Throwable $e) {}
         echo new JsonResponse(['items' => $items]);
+        $app->close();
+    }
+
+    /**
+     * Возвращает динамические опции фильтров (facets) на основе текущих фильтров и наличия товаров.
+     * Формат ответа: { facets: { <alias>: [ { value, label, count } ] } }
+     */
+    public function facets(): void
+    {
+        $app  = Factory::getApplication();
+        $this->guardInitData();
+        $this->guardRateLimitDb('facets', 60);
+
+        try {
+            $inStock   = $app->input->getInt('in_stock', 0) === 1;
+            $priceFrom = trim((string) $app->input->get('price_from', '', 'string'));
+            $priceTo   = trim((string) $app->input->get('price_to', '', 'string'));
+
+            // Собираем выбранные фильтры по полям
+            $selectedFields = [];
+            try {
+                $params = $app->getParams('com_radicalmart_telegram');
+                $cfg = $params->get('filters_fields');
+                if (!empty($cfg) && is_array($cfg)) {
+                    foreach ($cfg as $row) {
+                        if (is_object($row)) { $row = get_object_vars($row); }
+                        if (!is_array($row)) { continue; }
+                        if (empty($row['enabled']) || (int)$row['enabled'] !== 1) continue;
+                        $alias = isset($row['alias']) ? trim((string)$row['alias']) : '';
+                        if ($alias === '') continue;
+                        $type = isset($row['type']) ? (string)$row['type'] : 'text';
+                        if ($type === 'range') {
+                            $from = $app->input->getString('field_' . $alias . '_from', '');
+                            $to   = $app->input->getString('field_' . $alias . '_to', '');
+                            if ($from !== '' || $to !== '') { $selectedFields[$alias] = ['from' => $from, 'to' => $to]; }
+                        } else {
+                            $val = $app->input->getString('field_' . $alias, null);
+                            if ($val === null) {
+                                $arr = $app->input->get('field', [], 'array');
+                                if (isset($arr[$alias])) { $val = (string) $arr[$alias]; }
+                            }
+                            if ($val !== null && $val !== '') {
+                                $parts = array_filter(array_map('trim', explode(',', (string)$val)), fn($x)=>$x!=='');
+                                if (count($parts) > 1) { $selectedFields[$alias] = $parts; }
+                                else { $selectedFields[$alias] = $parts ? $parts[0] : $val; }
+                            }
+                        }
+                    }
+                }
+            } catch (\Throwable $e) { /* ignore */ }
+
+            // Загружаем метаданные полей (alias, options)
+            $db = Factory::getContainer()->get('DatabaseDriver');
+            $params = $app->getParams('com_radicalmart_telegram');
+            $cfg = (array) ($params->get('filters_fields') ?: []);
+            $fieldIds = [];
+            foreach ($cfg as $row) {
+                if (is_object($row)) { $row = get_object_vars($row); }
+                if (!is_array($row)) { continue; }
+                if (!empty($row['enabled']) && (int)$row['enabled']===1 && !empty($row['field_id'])) $fieldIds[] = (int)$row['field_id'];
+            }
+            $fieldsMeta = [];
+            if (!empty($fieldIds)) {
+                $q = $db->getQuery(true)
+                    ->select($db->quoteName(['id','title','alias','plugin','params','options']))
+                    ->from($db->quoteName('#__radicalmart_fields'))
+                    ->where($db->quoteName('state') . ' = 1')
+                    ->where($db->quoteName('area') . ' = ' . $db->quote('products'))
+                    ->whereIn($db->quoteName('id'), $fieldIds);
+                $rows = (array) $db->setQuery($q)->loadObjectList();
+                foreach ($rows as $r) {
+                    $opts = [];
+                    try {
+                        $pp = json_decode((string)$r->params, true) ?: [];
+                        if (isset($pp['options']) && is_array($pp['options'])) { $opts = $pp['options']; }
+                        elseif (isset($pp['values']) && is_array($pp['values'])) { $opts = $pp['values']; }
+                        elseif (isset($pp['choices']) && is_array($pp['choices'])) { $opts = $pp['choices']; }
+                        elseif (isset($pp['variations']) && is_array($pp['variations'])) { $opts = $pp['variations']; }
+                        $colOpts = json_decode((string)$r->options, true);
+                        if (is_array($colOpts) && !empty($colOpts)) { $opts = $colOpts; }
+                    } catch (\Throwable $e) {}
+                    // Нормализуем опции к массиву [ [value=>..., label=>...] ]
+                    $norm = [];
+                    foreach ($opts as $k => $v) {
+                        if (is_array($v)) {
+                            $val = (string) ($v['value'] ?? $v['val'] ?? $v['id'] ?? $k);
+                            $lab = (string) ($v['label'] ?? $v['text'] ?? $v['title'] ?? $val);
+                        } elseif (is_object($v)) {
+                            $val = (string) ($v->value ?? $v->val ?? $v->id ?? $k);
+                            $lab = (string) ($v->label ?? $v->text ?? $v->title ?? $val);
+                        } else {
+                            $val = is_int($k) ? (string)$v : (string)$k; $lab = (string)$v;
+                        }
+                        if ($val !== '') { $norm[] = ['value' => $val, 'label' => $lab]; }
+                    }
+                    $fieldsMeta[(int)$r->id] = [ 'alias' => (string)$r->alias, 'title' => (string)$r->title, 'options' => $norm ];
+                }
+            }
+
+            // Также учитываем напрямую присланные field_<alias> из запроса (если такие alias известны)
+            if (!empty($fieldsMeta)) {
+                foreach ($fieldsMeta as $meta) {
+                    $a = $meta['alias'] ?? '';
+                    if ($a === '') continue;
+                    $v = $app->input->getString('field_' . $a, null);
+                    if ($v !== null && $v !== '') {
+                        $parts = array_filter(array_map('trim', explode(',', (string)$v)), fn($x)=>$x!=='');
+                        if (count($parts) > 1) { $selectedFields[$a] = $parts; }
+                        else { $selectedFields[$a] = $parts ? $parts[0] : $v; }
+                    }
+                }
+            }
+
+            // Построим базовые условия для выборки товаров
+            $langTag = Factory::getApplication()->getLanguage()->getTag();
+            $where = [];
+            $binds = [];
+            $where[] = 'p.state = 1';
+            // Язык: текущий или *
+            $where[] = 'p.language IN (' . $db->quote($langTag) . ', ' . $db->quote('*') . ')';
+            // Всегда считаем фасеты только по товарам в наличии
+            $where[] = 'p.in_stock = 1';
+
+            // Фильтр по цене
+            if ($priceFrom !== '' || $priceTo !== '') {
+                $currency = \Joomla\Component\RadicalMart\Administrator\Helper\PriceHelper::getCurrency(null);
+                $group = $currency['group'];
+                $priceExpr = 'CAST(JSON_VALUE(p.prices, ' . $db->quote('$."' . $group . '".final') . ') as double)';
+                if ($priceFrom !== '') { $where[] = $priceExpr . ' >= :pf'; $binds[':pf'] = (float) $priceFrom; }
+                if ($priceTo   !== '') { $where[] = $priceExpr . ' <= :pt'; $binds[':pt'] = (float) $priceTo; }
+            }
+
+            // Наложим выбранные фильтры по другим полям
+            foreach ($selectedFields as $alias => $val) {
+                $path = '$."' . $alias . '"';
+                if (is_array($val)) {
+                    // Диапазон или мульти-значения
+                    if (isset($val['from']) || isset($val['to'])) {
+                        if (isset($val['from']) && $val['from'] !== '') { $where[] = 'CAST(JSON_VALUE(p.fields, ' . $db->quote($path) . ') as double) >= :f_' . md5($alias . 'from'); $binds[':f_' . md5($alias . 'from')] = (float) $val['from']; }
+                        if (isset($val['to'])   && $val['to']   !== '') { $where[] = 'CAST(JSON_VALUE(p.fields, ' . $db->quote($path) . ') as double) <= :t_' . md5($alias . 'to');   $binds[':t_' . md5($alias . 'to')]   = (float) $val['to']; }
+                    } else {
+                        $orParts = [];
+                        foreach ($val as $mv) {
+                            $mv = trim((string)$mv); if ($mv==='') continue;
+                            $orParts[] = '('
+                                . 'JSON_VALUE(p.fields, ' . $db->quote($path) . ') = ' . $db->quote($mv)
+                                . ' OR JSON_CONTAINS(p.fields, ' . $db->quote('"' . $db->escape($mv, true) . '"') . ', ' . $db->quote($path) . ')
+                            )';
+                        }
+                        if ($orParts) { $where[] = '(' . implode(' OR ', $orParts) . ')'; }
+                    }
+                } else {
+                    $v = trim((string)$val); if ($v==='') continue;
+                    $where[] = '('
+                        . 'JSON_VALUE(p.fields, ' . $db->quote($path) . ') = :sv_' . md5($alias)
+                        . ' OR JSON_CONTAINS(p.fields, :js_' . md5($alias) . ', ' . $db->quote($path) . ')
+                    )';
+                    $binds[':sv_' . md5($alias)] = $v;
+                    $binds[':js_' . md5($alias)] = '"' . $db->escape($v, true) . '"';
+                }
+            }
+
+            // Для каждого поля собираем counts по значениям из options
+            $facets = [];
+            foreach ($cfg as $row) {
+                if (is_object($row)) { $row = get_object_vars($row); }
+                if (!is_array($row)) { continue; }
+                if (empty($row['enabled']) || (int)$row['enabled'] !== 1) continue;
+                $fid = (int) ($row['field_id'] ?? 0);
+                if ($fid <= 0 || empty($fieldsMeta[$fid]['alias'])) continue;
+                $alias = $fieldsMeta[$fid]['alias'];
+                $options = $fieldsMeta[$fid]['options'] ?? [];
+                if (empty($options)) { continue; }
+
+                $list = [];
+                foreach ($options as $op) {
+                    $val = (string) ($op['value'] ?? '');
+                    if ($val === '') continue;
+                    $label = (string) ($op['label'] ?? $val);
+
+                    // Строим COUNT(*) с учётом всех where и текущего значения поля
+                    $q = $db->getQuery(true)
+                        ->select('COUNT(*)')
+                        ->from($db->quoteName('#__radicalmart_products', 'p'));
+                    if (!empty($where)) { $q->where(implode(' AND ', $where)); }
+                    $path = '$."' . $alias . '"';
+                    $cond = '('
+                        . 'JSON_VALUE(p.fields, ' . $db->quote($path) . ') = :cv_' . md5($alias . $val)
+                        . ' OR JSON_CONTAINS(p.fields, :cj_' . md5($alias . $val) . ', ' . $db->quote($path) . ')
+                    )';
+                    $q->where($cond);
+                    // Привязки к запросу
+                    foreach ($binds as $k => $bv) { $q->bind($k, $bv); }
+                    $q->bind(':cv_' . md5($alias . $val), $val);
+                    $jsonVal = '"' . $db->escape($val, true) . '"';
+                    $q->bind(':cj_' . md5($alias . $val), $jsonVal);
+
+                    $cnt = (int) $db->setQuery($q)->loadResult();
+                    if ($cnt > 0) { $list[] = ['value' => $val, 'label' => $label, 'count' => $cnt]; }
+                }
+                $facets[$alias] = $list;
+            }
+
+            echo new JsonResponse(['facets' => $facets]);
+        } catch (\Throwable $e) {
+            echo new JsonResponse(null, $e->getMessage(), true);
+        }
         $app->close();
     }
 
