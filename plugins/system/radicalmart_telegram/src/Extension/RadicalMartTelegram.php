@@ -9,7 +9,6 @@ namespace Joomla\Plugin\System\Radicalmart_telegram\Extension;
 
 use Joomla\CMS\Plugin\CMSPlugin;
 use Joomla\Event\SubscriberInterface;
-use Joomla\CMS\Http\Http;
 use Joomla\CMS\Factory;
 use Joomla\Registry\Registry;
 use Joomla\CMS\Language\Text;
@@ -28,38 +27,11 @@ class RadicalMartTelegram extends CMSPlugin implements SubscriberInterface
             'onRadicalMartAfterChangeOrderStatus' => 'onAfterChangeOrderStatus',
             'onRadicalMartPreprocessSubmenu' => 'onRadicalMartPreprocessSubmenu',
             'onPreprocessMenuItems' => 'onPreprocessMenuItems',
-            'onAfterDispatch' => 'onAfterDispatch',
             'onAfterRender' => 'onAfterRender',
         ];
     }
 
-    /**
-     * Early check to prevent EngageBox from rendering in WebApp
-     */
-    public function onAfterDispatch(): void
-    {
-        $app = Factory::getApplication();
-
-        if (!$app->isClient('site')) {
-            return;
-        }
-
-        $input = $app->input;
-        if ($input->get('option') === 'com_radicalmart_telegram') {
-            // Set flags to prevent EngageBox rendering
-            if (!defined('RADICALMART_TELEGRAM_WEBAPP')) {
-                define('RADICALMART_TELEGRAM_WEBAPP', true);
-            }
-
-            // Hack: disable EngageBox rendering by overriding component state
-            $app->set('engagebox.disable', true);
-
-            // Set global flag that EngageBox checks (if it exists)
-            if (!defined('NR_DISABLE')) {
-                define('NR_DISABLE', true);
-            }
-        }
-    }    public function onRadicalMartPreprocessSubmenu(array &$results, AdministratorMenuItem $parent, Registry $params): void
+    public function onRadicalMartPreprocessSubmenu(array &$results, AdministratorMenuItem $parent, Registry $params): void
     {
         $app = Factory::getApplication();
 
