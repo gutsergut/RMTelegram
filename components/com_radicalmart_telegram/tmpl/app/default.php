@@ -2018,32 +2018,27 @@ $storeTitle = isset($this->params) ? (string) $this->params->get('store_title', 
 <div id="app-bottom-nav" class="uk-navbar-container" uk-navbar>
     <div class="uk-navbar-center uk-width-1-1 uk-flex uk-flex-center">
         <ul class="uk-navbar-nav">
-            <li>
-                <a href="#" onclick="document.getElementById('catalog')?.scrollIntoView({behavior:'smooth'}); return false;" class="tg-safe-text">
+            <li class="uk-active">
+                <a href="index.php?option=com_radicalmart_telegram&view=app" class="tg-safe-text">
                     <span class="bottom-tab"><span uk-icon="icon: thumbnails"></span><span class="caption tg-safe-text"><?php echo Text::_('COM_RADICALMART_TELEGRAM_CATALOG'); ?></span></span>
                 </a>
             </li>
             <li>
-                <a href="#" onclick="document.getElementById('cart')?.scrollIntoView({behavior:'smooth'}); return false;" class="tg-safe-text">
+                <a href="index.php?option=com_radicalmart_telegram&view=cart" class="tg-safe-text">
                     <span class="bottom-tab"><span uk-icon="icon: cart"></span><span class="caption tg-safe-text"><?php echo Text::_('COM_RADICALMART_TELEGRAM_CART'); ?></span></span>
                     <span id="cart-badge" hidden>0</span>
                 </a>
             </li>
             <li>
-                <a href="#" onclick="document.getElementById('checkout')?.scrollIntoView({behavior:'smooth'}); return false;" class="tg-safe-text">
-                    <span class="bottom-tab"><span uk-icon="icon: credit-card"></span><span class="caption tg-safe-text"><?php echo Text::_('COM_RADICALMART_TELEGRAM_CHECKOUT'); ?></span></span>
-                </a>
-            </li>
-            <li>
-                <a href="#" onclick="document.getElementById('orders')?.scrollIntoView({behavior:'smooth'}); return false;" class="tg-safe-text">
+                <a href="index.php?option=com_radicalmart_telegram&view=orders" class="tg-safe-text">
                     <span class="bottom-tab"><span uk-icon="icon: list"></span><span class="caption tg-safe-text"><?php echo Text::_('COM_RADICALMART_TELEGRAM_ORDERS'); ?></span></span>
                 </a>
             </li>
-            <!--<li>
-                <a href="#" onclick="openSearch(); return false;" class="tg-safe-text">
-                    <span class="bottom-tab"><span uk-icon="icon: search"></span><span class="caption tg-safe-text"><?php echo Text::_('JSEARCH_FILTER_CLEAR_LABEL') ?: Text::_('COM_RADICALMART_TELEGRAM_SEARCH_TITLE'); ?></span></span>
+            <li>
+                <a href="index.php?option=com_radicalmart_telegram&view=profile" class="tg-safe-text">
+                    <span class="bottom-tab"><span uk-icon="icon: user"></span><span class="caption tg-safe-text"><?php echo Text::_('COM_RADICALMART_TELEGRAM_PROFILE'); ?></span></span>
                 </a>
-            </li>-->
+            </li>
         </ul>
     </div>
 </div>
