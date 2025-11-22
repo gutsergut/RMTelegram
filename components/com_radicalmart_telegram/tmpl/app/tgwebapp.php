@@ -1718,6 +1718,9 @@ $storeTitle = isset($this->params) ? (string) $this->params->get('store_title', 
                             <div class="uk-width-1-1">
                                 <label><input id="filter-instock" class="uk-checkbox" type="checkbox"> <?php echo Text::_('COM_RADICALMART_TELEGRAM_ONLY_IN_STOCK'); ?></label>
                             </div>
+                            <div class="uk-width-1-1">
+                                <label class="uk-text-small uk-text-muted"><?php echo Text::_('COM_RADICALMART_TELEGRAM_PRICE'); ?></label>
+                            </div>
                             <div class="uk-flex uk-flex-middle uk-width-1-1" style="gap:6px">
                                 <input id="price-from" class="uk-input" type="number" min="0" step="0.01" placeholder="<?php echo Text::_('COM_RADICALMART_TELEGRAM_FROM'); ?>" style="max-width:140px">
                                 <input id="price-to" class="uk-input" type="number" min="0" step="0.01" placeholder="<?php echo Text::_('COM_RADICALMART_TELEGRAM_TO'); ?>" style="max-width:140px">

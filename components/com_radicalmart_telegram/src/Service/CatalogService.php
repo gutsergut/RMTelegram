@@ -80,11 +80,12 @@ class CatalogService
         $app = Factory::getApplication();
         $debug=false; try { $debug = (bool) ($app->input->getInt('debug_catalog',0)===1 || (int)$app->getParams('com_radicalmart_telegram')->get('debug_catalog',0)===1); } catch (\Throwable $e) {}
         if ($debug) { static $loggerReady=false; if(!$loggerReady){ Log::addLogger(['text_file'=>'com_radicalmart.telegram.catalog.php','extension'=>'com_radicalmart_telegram'], Log::ALL,['radicalmart_telegram_catalog']); $loggerReady=true; } }
-        
-        // Определяем hasStockFilter из переданных фильтров
+
+        // Определяем фильтры из переданных параметров
         $hasStockFilter = !empty($filters['in_stock']);
-        if ($debug) { Log::add('listMetas: hasStockFilter=' . (int)$hasStockFilter . ' filters=' . json_encode($filters), Log::DEBUG,'radicalmart_telegram_catalog'); }
-        
+        $hasPriceFilter = !empty($filters['price']) && is_array($filters['price']) && ((string)($filters['price']['from'] ?? '') !== '' || (string)($filters['price']['to'] ?? '') !== '');
+        if ($debug) { Log::add('listMetas: hasStockFilter=' . (int)$hasStockFilter . ' hasPriceFilter=' . (int)$hasPriceFilter . ' filters=' . json_encode($filters), Log::DEBUG,'radicalmart_telegram_catalog'); }
+
         $model = new MetasModel(); try { $model->populateState(); } catch (\Throwable $e) {}
         if ($limit<=0) { $model->setState('list.limit',0); $model->setState('list.start',0); } else { $model->setState('list.limit',$limit); $model->setState('list.start',($page-1)*$limit); }
         $model->setState('list.select',[ 'm.id','m.title','m.alias','m.code','m.type','m.category','m.categories','m.introtext','m.products','m.prices','m.state','m.media','m.params','m.ordering','m.plugins','m.language' ]);
@@ -142,6 +143,10 @@ class CatalogService
                 $productsModel->setState('filter.language', 0);
                 // Отключаем фильтрацию по мета
                 $productsModel->setState('products.metas', 0);
+                // Применяем фильтр цены если указан
+                if ($hasPriceFilter) {
+                    $productsModel->setState('filter.price', ['from'=>$filters['price']['from']??'', 'to'=>$filters['price']['to']??'']);
+                }
 
                 $rows = $productsModel->getItems();
 
@@ -171,27 +176,30 @@ class CatalogService
         foreach($items as $m){ $image=''; if(!empty($m->image)&&is_string($m->image)) $image=$m->image; elseif(!empty($m->media)){ try { $media=is_string($m->media)? new \Joomla\Registry\Registry($m->media): new \Joomla\Registry\Registry((array)$m->media); $img=(string)$media->get('image',''); if($img!=='') $image=$img; } catch(\Throwable $e){} } $category=''; if(!empty($m->category)&&is_object($m->category)&&!empty($m->category->title)) $category=(string)$m->category->title; $priceMin=''; $priceMax=''; if(!empty($m->price)&&is_array($m->price)){ $priceMin=(string)($m->price['min_string']??($m->price['min']['final_string']??'')); $priceMax=(string)($m->price['max_string']??($m->price['max']['final_string']??'')); }
             $children=[]; foreach($metaProductsMap[(int)$m->id] as $pid){ if(!empty($childrenById[$pid])) $children[]=$childrenById[$pid]; elseif($debug) $children[]=['id'=>$pid,'title'=>'(ID '.$pid.')','price_final'=>'','image'=>'','category'=>'','in_stock'=>false,'missing'=>true]; }
 
-            // Фильтрация по наличию: если включен фильтр in_stock, пропускаем мета-товары без доступных вариантов
-            if($hasStockFilter){
+            // Фильтрация по наличию и цене
+            if($hasStockFilter || $hasPriceFilter){
                 // Если нет детей вообще — пропускаем
                 if(empty($children)){
                     $skippedByStock++;
                     if($debug) Log::add('listMetas: skipped meta='.(int)$m->id.' (no children at all)', Log::DEBUG,'radicalmart_telegram_catalog');
                     continue;
                 }
-                // Проверяем наличие хотя бы одного доступного варианта
-                $hasAvailable = false;
-                foreach($children as $ch){
-                    if(!empty($ch['in_stock'])){
-                        $hasAvailable = true;
-                        break;
+                // Проверяем наличие хотя бы одного подходящего варианта
+                if($hasStockFilter){
+                    $hasAvailable = false;
+                    foreach($children as $ch){
+                        if(!empty($ch['in_stock'])){
+                            $hasAvailable = true;
+                            break;
+                        }
+                    }
+                    if(!$hasAvailable){
+                        $skippedByStock++;
+                        if($debug) Log::add('listMetas: skipped meta='.(int)$m->id.' (no variants in stock)', Log::DEBUG,'radicalmart_telegram_catalog');
+                        continue; // Пропускаем этот мета-товар
                     }
                 }
-                if(!$hasAvailable){
-                    $skippedByStock++;
-                    if($debug) Log::add('listMetas: skipped meta='.(int)$m->id.' (no variants in stock)', Log::DEBUG,'radicalmart_telegram_catalog');
-                    continue; // Пропускаем этот мета-товар
-                }
+                // Примечание: фильтр цены уже применён в ProductsModel, поэтому $children содержит только подходящие варианты
             }
 
             if(empty($children)) $metasWithout++; else { $metasWith++; $childrenTotal+=count($children); }
