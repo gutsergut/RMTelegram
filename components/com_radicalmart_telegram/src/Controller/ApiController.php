@@ -252,7 +252,7 @@ class ApiController extends BaseController
         $app  = Factory::getApplication();
         $this->guardInitData();
         $this->guardRateLimitDb('list', 60);
-        
+
         // Инициализация логгера в самом начале для отладки фильтров
         $debug = true;
         try {
@@ -265,7 +265,7 @@ class ApiController extends BaseController
                 $loggerReady = true;
             }
         } catch (\Throwable $e) {}
-        
+
         $page = $app->input->getInt('page', 1);
         $lim  = $app->input->getInt('limit', 12);
         $inStock = $app->input->getInt('in_stock', 0) === 1;
@@ -285,6 +285,9 @@ class ApiController extends BaseController
             // DEBUG: вывод всех параметров запроса
             $allInput = $app->input->getArray();
             \Joomla\CMS\Log\Log::add('ApiController.list: ALL INPUT PARAMS=' . json_encode($allInput, JSON_UNESCAPED_UNICODE), \Joomla\CMS\Log\Log::DEBUG, 'radicalmart_telegram_catalog');
+
+            // DEBUG: проверка конфигурации фильтров
+            \Joomla\CMS\Log\Log::add('ApiController.list: filters_fields RAW cfg=' . json_encode($cfg, JSON_UNESCAPED_UNICODE) . ' type=' . gettype($cfg) . ' empty=' . (empty($cfg) ? 'YES' : 'NO') . ' isArray=' . (is_array($cfg) ? 'YES' : 'NO'), \Joomla\CMS\Log\Log::DEBUG, 'radicalmart_telegram_catalog');
 
             // Сначала загружаем aliases из БД по field_id
             $fieldIdToAlias = [];
