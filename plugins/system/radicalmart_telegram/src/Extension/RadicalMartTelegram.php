@@ -209,29 +209,39 @@ class RadicalMartTelegram extends CMSPlugin implements SubscriberInterface
         $removedCount = 0;
         $debugInfo = [];
 
-        // Strategy 1: Remove all EngageBox/RstBox blocks by data-id or class
-        // Use PCRE_DOTALL modifier (s flag) to match newlines with dot
-        $pattern1 = '/<div[^>]*class="[^"]*eb-inst[^"]*".*?>/is';
+        // Strategy 1: Remove EngageBox blocks - handle multiline attributes
+        // Key: use \s to match whitespace including newlines, not [^>]
+        $pattern1 = '/<div(?:\s+[^>]*?)?\s+class="[^"]*eb-inst[^"]*"[^>]*>/is';
         $body = preg_replace_callback($pattern1, function($m) use (&$removedCount, &$debugInfo) {
             $removedCount++;
             $debugInfo[] = substr($m[0], 0, 80);
             return '<!-- EngageBox removed -->';
         }, $body);
 
-        // Strategy 2: Also try removing by data-id attribute (EngageBox specific)
-        $pattern1b = '/<div[^>]*data-id="\d+"[^>]*class="[^"]*eb-inst[^"]*".*?>/is';
+        // Strategy 2: Remove by data-id first (more specific, handles attributes before class)
+        $pattern1b = '/<div\s+data-id="\d+"(?:\s+[^>]*?)?\s+class="[^"]*eb-inst[^"]*"[^>]*>/is';
+        $before = $body;
         $body = preg_replace_callback($pattern1b, function($m) use (&$removedCount, &$debugInfo) {
             $removedCount++;
-            $debugInfo[] = "data-id: " . substr($m[0], 0, 80);
+            $debugInfo[] = "data-id: " . substr($m[0], 0, 60);
             return '<!-- EngageBox removed -->';
         }, $body);
+        if ($before === $body) {
+            // Fallback: try with any whitespace between div and data-id
+            $pattern1c = '/<div[\s\r\n]+data-id="1"[\s\S]*?>/is';
+            $body = preg_replace_callback($pattern1c, function($m) use (&$removedCount, &$debugInfo) {
+                $removedCount++;
+                $debugInfo[] = "fallback: " . substr($m[0], 0, 60);
+                return '<!-- EngageBox removed -->';
+            }, $body);
+        }
 
         // Strategy 3: Remove eb-close buttons
-        $pattern2 = '/<button[^>]*class="[^"]*eb-close[^"]*".*?>.*?<\/button>/is';
+        $pattern2 = '/<button(?:\s+[^>]*?)?\s+class="[^"]*eb-close[^"]*"[^>]*>.*?<\/button>/is';
         $body = preg_replace($pattern2, '', $body);
 
-        // Strategy 4: Remove eb-dialog, eb-container, eb-content divs with content
-        $pattern3 = '/<div[^>]*class="[^"]*eb-(?:dialog|container|content)[^"]*".*?>.*?<\/div>/is';
+        // Strategy 4: Remove eb-dialog, eb-container, eb-content divs
+        $pattern3 = '/<div(?:\s+[^>]*?)?\s+class="[^"]*eb-(?:dialog|container|content)[^"]*"[^>]*>.*?<\/div>/is';
         $body = preg_replace($pattern3, '', $body);
 
         // Remove rstbox scripts and styles
