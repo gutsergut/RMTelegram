@@ -221,7 +221,7 @@ class CatalogService
             }
 
             if(empty($children)) $metasWithout++; else { $metasWith++; $childrenTotal+=count($children); }
-            
+
             // Вычисляем реальную минимальную цену из отфильтрованных детей для сортировки
             $minPriceRaw = null;
             foreach ($children as $child) {
@@ -231,9 +231,9 @@ class CatalogService
                     }
                 }
             }
-            
+
             $out[]=['id'=>(int)($m->id??0),'title'=>(string)($m->title??''),'type'=>(string)($m->type??''),'image'=>$image,'category'=>$category,'price_min'=>$priceMin,'price_max'=>$priceMax,'price_final'=>$priceMin,'min_price_raw'=>$minPriceRaw,'children'=>$children,'is_meta'=>true]; }
-        
+
         // Применяем сортировку к массиву $out после фильтрации детей
         if ($sortType === 'price_asc') {
             usort($out, function($a, $b) {
@@ -249,7 +249,7 @@ class CatalogService
             });
         }
         // Для 'new' сортировка уже применена к MetasModel, для 'default' тоже
-        
+
         if($debug){ Log::add('listMetas: metas_count=' . count($out) . ' with_children=' . $metasWith . ' without_children=' . $metasWithout . ' children_total=' . $childrenTotal . ' skipped_by_stock=' . $skippedByStock, Log::DEBUG,'radicalmart_telegram_catalog'); Log::add('[catalog] metas_count=' . count($out) . ' with_children=' . $metasWith . ' without_children=' . $metasWithout, Log::DEBUG,'com_radicalmart.telegram'); }
         return $out;
     }
@@ -384,7 +384,7 @@ class CatalogService
                 $priceFinalRaw = (float)$numStr;
             }
         }
-        
+
         $out=['id'=>(int)($it->id??0),'title'=>(string)($it->title??''),'price_final'=>$priceFinal,'price_final_raw'=>$priceFinalRaw,'price_base'=>$priceBase,'base_string'=>$priceBase,'price_original'=>$priceOriginal,'discount_enable'=>$discountEnable,'discount_percent'=>$discountPercent,'discount_value'=>$discountValue,'discount_string'=>$discountString,'image'=>$image,'category'=>$category,'in_stock'=>(bool)($it->in_stock??false)];
         // Всегда гасим системный weight
         $out['weight']='';

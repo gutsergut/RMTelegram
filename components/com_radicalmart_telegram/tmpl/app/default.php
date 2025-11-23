@@ -82,11 +82,13 @@ $storeTitle = isset($this->params) ? (string) $this->params->get('store_title', 
             #cookie-banner { position: fixed; left: 8px; right: 8px; bottom: 72px; z-index: 10006; display: none; }
             #cookie-settings-btn { position: fixed; right: 10px; bottom: 120px; z-index: 10006; display: none; }
             /* Bottom tabs: compact icon + caption */
-            #app-bottom-nav .uk-navbar-nav > li > a { padding: 4px 8px; line-height: 1.05; min-height: 50px; }
+            #app-bottom-nav .uk-navbar-nav > li > a { padding: 4px 8px; line-height: 1.05; min-height: 50px; position: relative; }
             #app-bottom-nav .tg-safe-text {  display: inline-flex; align-items: center; }
             #app-bottom-nav .bottom-tab { display: flex; flex-direction: column; align-items: center; justify-content: center; font-size: 10px; }
             #app-bottom-nav .bottom-tab .caption { display: block; margin-top: 1px; font-size: 10px; }
             #app-bottom-nav .uk-icon > svg { width: 18px; height: 18px; }
+            /* Cart badge */
+            #cart-badge { position: absolute; top: 2px; right: 6px; background: #f0506e; color: white; border-radius: 10px; padding: 2px 6px; font-size: 10px; font-weight: bold; min-width: 18px; text-align: center; }
         </style>
         <script>
             // Переводы для внешнего JS
@@ -1038,7 +1040,16 @@ $storeTitle = isset($this->params) ? (string) $this->params->get('store_title', 
                                                 });
                                                 addBtn.addEventListener('click', async ()=>{
                                                         const vid = addBtn.dataset.vid;
-                                                        try { await api('cartAdd', { product_id: vid, qty: 1 }); UIkit.notification('Добавлено в корзину', {status:'success'}); refreshCart(); } catch(e){ UIkit.notification(e.message||'Ошибка', {status:'danger'}); }
+                                                        addBtn.disabled = true;
+                                                        try { 
+                                                            await api('cartAdd', { product_id: vid, qty: 1 }); 
+                                                            await refreshCart();
+                                                            showAddedToCartModal(p.title || 'Товар');
+                                                        } catch(e){ 
+                                                            UIkit.notification(e.message||'Ошибка', {status:'danger'}); 
+                                                        } finally {
+                                                            addBtn.disabled = false;
+                                                        }
                                                 });
                                                 root.appendChild(card);
                                                 return;
@@ -1526,10 +1537,28 @@ $storeTitle = isset($this->params) ? (string) $this->params->get('store_title', 
             if (!btn) return;
             ev.preventDefault();
             btn.disabled = true;
-            try { await api('add', { id: btn.dataset.id, qty: 1, nonce: makeNonce() }); await refreshCart(); UIkit.notification('<?php echo Text::_('COM_RADICALMART_TELEGRAM_ADDED_TO_CART'); ?>'); }
+            try { 
+                await api('add', { id: btn.dataset.id, qty: 1, nonce: makeNonce() }); 
+                await refreshCart(); 
+                const productTitle = btn.closest('.uk-card-body')?.querySelector('h5')?.textContent || '<?php echo Text::_('COM_RADICALMART_TELEGRAM_PRODUCT'); ?>';
+                showAddedToCartModal(productTitle);
+            }
             catch(e){ UIkit.notification(e.message, {status:'danger'}); }
             finally { btn.disabled = false; }
         });
+
+        function showAddedToCartModal(productTitle) {
+            const infoEl = document.getElementById('added-product-info');
+            if (infoEl) {
+                infoEl.textContent = productTitle;
+            }
+            try {
+                UIkit.modal('#added-to-cart-modal').show();
+            } catch(e) {
+                // Fallback to notification
+                UIkit.notification('<?php echo Text::_('COM_RADICALMART_TELEGRAM_ADDED_TO_CART'); ?>: ' + productTitle, {status:'success'});
+            }
+        }
         document.addEventListener('click', (ev) => {
             const a = ev.target.closest('[data-remove-code]');
             if (!a) return;
@@ -1958,6 +1987,20 @@ $storeTitle = isset($this->params) ? (string) $this->params->get('store_title', 
     <h4 class="uk-margin-remove"><?php echo Text::_('COM_RADICALMART_TELEGRAM_SEARCH_TITLE'); ?></h4>
     <input id="search-input" class="uk-input uk-margin-small" type="text" placeholder="<?php echo Text::_('COM_RADICALMART_TELEGRAM_SEARCH_INPUT_PLACEHOLDER'); ?>" oninput="onSearchInput(event)">
         <div id="search-results" class="uk-margin-small"></div>
+    </div>
+</div>
+
+<!-- Added to Cart Modal -->
+<div id="added-to-cart-modal" uk-modal>
+    <div class="uk-modal-dialog uk-modal-body uk-text-center">
+        <button class="uk-modal-close-default" type="button" uk-close></button>
+        <div uk-icon="icon: check; ratio: 3" class="uk-text-success"></div>
+        <h3 class="uk-margin-small-top"><?php echo Text::_('COM_RADICALMART_TELEGRAM_ADDED_TO_CART'); ?></h3>
+        <p id="added-product-info" class="uk-text-meta"></p>
+        <div class="uk-margin uk-flex uk-flex-center" style="gap: 8px;">
+            <button type="button" class="uk-button uk-button-default uk-modal-close"><?php echo Text::_('COM_RADICALMART_TELEGRAM_CONTINUE_SHOPPING'); ?></button>
+            <a href="index.php?option=com_radicalmart_telegram&view=cart" class="uk-button uk-button-primary"><?php echo Text::_('COM_RADICALMART_TELEGRAM_GO_TO_CART'); ?></a>
+        </div>
     </div>
 </div>
 </body>
