@@ -208,22 +208,35 @@ class RadicalMartTelegram extends CMSPlugin implements SubscriberInterface
         if (class_exists('DOMDocument')) {
             libxml_use_internal_errors(true);
             $dom = new \DOMDocument();
-            $dom->loadHTML($body, LIBXML_HTML_NOIMPLIED | LIBXML_HTML_NODEFDTD);
+            // Load HTML in UTF-8 with proper encoding handling
+            $dom->loadHTML('<?xml encoding="UTF-8">' . $body, LIBXML_HTML_NOIMPLIED | LIBXML_HTML_NODEFDTD);
+            // Remove the XML declaration added above
+            foreach ($dom->childNodes as $item) {
+                if ($item->nodeType == XML_PI_NODE) {
+                    $dom->removeChild($item);
+                }
+            }
+            $dom->encoding = 'UTF-8';
+            
             $xpath = new \DOMXPath($dom);
 
             // Find all elements with eb-inst, eb-init, or rstbox classes
             $nodes = $xpath->query("//*[contains(@class, 'eb-inst') or contains(@class, 'eb-init') or contains(@class, 'rstbox')]");
             $removedCount = 0;
             foreach ($nodes as $node) {
-                $node->parentNode->removeChild($node);
-                $removedCount++;
+                if ($node->parentNode) {
+                    $node->parentNode->removeChild($node);
+                    $removedCount++;
+                }
             }
 
             // Also remove eb-close buttons
             $nodes = $xpath->query("//*[contains(@class, 'eb-close')]");
             foreach ($nodes as $node) {
-                $node->parentNode->removeChild($node);
-                $removedCount++;
+                if ($node->parentNode) {
+                    $node->parentNode->removeChild($node);
+                    $removedCount++;
+                }
             }
 
             $body = $dom->saveHTML();
