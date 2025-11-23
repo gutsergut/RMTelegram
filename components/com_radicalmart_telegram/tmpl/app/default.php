@@ -1041,12 +1041,12 @@ $storeTitle = isset($this->params) ? (string) $this->params->get('store_title', 
                                                 addBtn.addEventListener('click', async ()=>{
                                                         const vid = addBtn.dataset.vid;
                                                         addBtn.disabled = true;
-                                                        try { 
-                                                            await api('cartAdd', { product_id: vid, qty: 1 }); 
+                                                        try {
+                                                            await api('add', { id: vid, qty: 1, nonce: makeNonce() });
                                                             await refreshCart();
                                                             showAddedToCartModal(p.title || 'Товар');
-                                                        } catch(e){ 
-                                                            UIkit.notification(e.message||'Ошибка', {status:'danger'}); 
+                                                        } catch(e){
+                                                            UIkit.notification(e.message||'Ошибка', {status:'danger'});
                                                         } finally {
                                                             addBtn.disabled = false;
                                                         }
@@ -1537,9 +1537,9 @@ $storeTitle = isset($this->params) ? (string) $this->params->get('store_title', 
             if (!btn) return;
             ev.preventDefault();
             btn.disabled = true;
-            try { 
-                await api('add', { id: btn.dataset.id, qty: 1, nonce: makeNonce() }); 
-                await refreshCart(); 
+            try {
+                await api('add', { id: btn.dataset.id, qty: 1, nonce: makeNonce() });
+                await refreshCart();
                 const productTitle = btn.closest('.uk-card-body')?.querySelector('h5')?.textContent || '<?php echo Text::_('COM_RADICALMART_TELEGRAM_PRODUCT'); ?>';
                 showAddedToCartModal(productTitle);
             }
