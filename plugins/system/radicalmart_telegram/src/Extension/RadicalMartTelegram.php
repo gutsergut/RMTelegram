@@ -32,6 +32,44 @@ class RadicalMartTelegram extends CMSPlugin implements SubscriberInterface
         ];
     }
 
+    public function onAfterInitialise(Event $event): void
+    {
+        // Auto-fix plugin ordering to ensure we run AFTER EngageBox (rstbox/engagebox)
+        try {
+            $db = Factory::getContainer()->get('DatabaseDriver');
+            $query = $db->getQuery(true)
+                ->select($db->quoteName(['extension_id', 'element', 'ordering']))
+                ->from($db->quoteName('#__extensions'))
+                ->where($db->quoteName('folder') . ' = ' . $db->quote('system'))
+                ->where($db->quoteName('element') . ' IN (' . $db->quote('radicalmart_telegram') . ', ' . $db->quote('rstbox') . ', ' . $db->quote('engagebox') . ')');
+
+            $db->setQuery($query);
+            $plugins = $db->loadObjectList('element');
+
+            $targetOrder = 0;
+            if (isset($plugins['rstbox'])) {
+                $targetOrder = max($targetOrder, (int)$plugins['rstbox']->ordering);
+            }
+            if (isset($plugins['engagebox'])) {
+                $targetOrder = max($targetOrder, (int)$plugins['engagebox']->ordering);
+            }
+
+            if (isset($plugins['radicalmart_telegram'])) {
+                $myOrder = (int)$plugins['radicalmart_telegram']->ordering;
+                if ($myOrder <= $targetOrder) {
+                    $newOrder = $targetOrder + 1;
+                    $update = $db->getQuery(true)
+                        ->update($db->quoteName('#__extensions'))
+                        ->set($db->quoteName('ordering') . ' = ' . (int)$newOrder)
+                        ->where($db->quoteName('extension_id') . ' = ' . (int)$plugins['radicalmart_telegram']->extension_id);
+                    $db->setQuery($update)->execute();
+                }
+            }
+        } catch (\Throwable $e) {
+            // Ignore DB errors
+        }
+    }
+
     public function onRadicalMartPreprocessSubmenu(array &$results, AdministratorMenuItem $parent, Registry $params): void
     {
         $app = Factory::getApplication();
@@ -204,10 +242,11 @@ class RadicalMartTelegram extends CMSPlugin implements SubscriberInterface
             return;
         }
 
-        // Fallback: Inject CSS to hide EngageBox if regex fails or ordering is wrong
+        // Fallback: Inject CSS and JS to hide/remove EngageBox if regex fails or ordering is wrong
         // This works even if our plugin runs BEFORE EngageBox
         $css = '<style>.eb-inst, .eb-overlay, .eb-dialog, .eb-container { display: none !important; }</style>';
-        $body = str_replace('</head>', $css . '</head>', $body);
+        $js = '<script>document.addEventListener("DOMContentLoaded", function() { document.querySelectorAll(".eb-inst, .eb-overlay, .eb-dialog").forEach(e => e.remove()); });</script>';
+        $body = str_replace('</head>', $css . $js . '</head>', $body);
 
         // FIRST: Aggressive RstBox/EngageBox cleanup using regex
         // Simplified approach: just remove the opening tag and let browser handle broken HTML
@@ -433,39 +472,6 @@ class RadicalMartTelegram extends CMSPlugin implements SubscriberInterface
             // Optional: parse $response->body if needed
         } catch (\Throwable $e) {
             // swallow for now; add logging later
-        }
-    }
-
-    public function onAfterInitialise(Event $event): void
-    {
-        // Auto-fix plugin ordering to ensure we run AFTER EngageBox (rstbox)
-        // This is required for onAfterRender cleanup to work
-        try {
-            $db = Factory::getContainer()->get('DatabaseDriver');
-            $query = $db->getQuery(true)
-                ->select($db->quoteName(['extension_id', 'element', 'ordering']))
-                ->from($db->quoteName('#__extensions'))
-                ->where($db->quoteName('folder') . ' = ' . $db->quote('system'))
-                ->where($db->quoteName('element') . ' IN (' . $db->quote('radicalmart_telegram') . ', ' . $db->quote('rstbox') . ')');
-
-            $db->setQuery($query);
-            $plugins = $db->loadObjectList('element');
-
-            if (isset($plugins['radicalmart_telegram']) && isset($plugins['rstbox'])) {
-                $myOrder = (int)$plugins['radicalmart_telegram']->ordering;
-                $rstOrder = (int)$plugins['rstbox']->ordering;
-
-                if ($myOrder <= $rstOrder) {
-                    $newOrder = $rstOrder + 1;
-                    $update = $db->getQuery(true)
-                        ->update($db->quoteName('#__extensions'))
-                        ->set($db->quoteName('ordering') . ' = ' . (int)$newOrder)
-                        ->where($db->quoteName('extension_id') . ' = ' . (int)$plugins['radicalmart_telegram']->extension_id);
-                    $db->setQuery($update)->execute();
-                }
-            }
-        } catch (\Throwable $e) {
-            // Ignore DB errors
         }
     }
 }
