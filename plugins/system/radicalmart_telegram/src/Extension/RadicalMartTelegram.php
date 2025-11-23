@@ -242,11 +242,20 @@ class RadicalMartTelegram extends CMSPlugin implements SubscriberInterface
             }, $body);
         }
 
-        // Strategy 3: Remove eb-close buttons
+        // Strategy 3: Remove ENTIRE EngageBox block from opening div to closing div
+        // Match: <div...data-id="1"...class="eb-inst"...> ... </div> (greedy, captures nested divs)
+        $pattern_full = '/<div[^>]*data-id="1"[^>]*class="[^"]*eb-inst[^"]*"[^>]*>.*?<\/div>\s*<\/div>\s*<\/div>/is';
+        $body = preg_replace_callback($pattern_full, function($m) use (&$removedCount, &$debugInfo) {
+            $removedCount++;
+            $debugInfo[] = "FULL BLOCK: " . strlen($m[0]) . " bytes";
+            return '<!-- EngageBox full block removed -->';
+        }, $body);
+
+        // Strategy 4: Remove eb-close buttons
         $pattern2 = '/<button(?:\s+[^>]*?)?\s+class="[^"]*eb-close[^"]*"[^>]*>.*?<\/button>/is';
         $body = preg_replace($pattern2, '', $body);
 
-        // Strategy 4: Remove eb-dialog, eb-container, eb-content divs
+        // Strategy 5: Remove eb-dialog, eb-container, eb-content divs
         $pattern3 = '/<div(?:\s+[^>]*?)?\s+class="[^"]*eb-(?:dialog|container|content)[^"]*"[^>]*>.*?<\/div>/is';
         $body = preg_replace($pattern3, '', $body);
 
