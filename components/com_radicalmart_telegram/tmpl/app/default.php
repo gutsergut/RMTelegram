@@ -1202,8 +1202,13 @@ $storeTitle = isset($this->params) ? (string) $this->params->get('store_title', 
                 CART_COUNT = (cart.total && cart.total.quantity) ? Number(cart.total.quantity) : (i-1);
                 const badge = document.getElementById('cart-badge');
                 if (badge) {
-                    if (CART_COUNT > 0) { badge.hidden = false; badge.textContent = String(CART_COUNT); }
-                    else { badge.hidden = true; }
+                    if (CART_COUNT > 0) { 
+                        badge.style.display = ''; 
+                        badge.textContent = String(CART_COUNT); 
+                    }
+                    else { 
+                        badge.style.display = 'none'; 
+                    }
                 }
             } catch(e) { /* ignore */ }
         }
@@ -1540,7 +1545,7 @@ $storeTitle = isset($this->params) ? (string) $this->params->get('store_title', 
             try {
                 await api('add', { id: btn.dataset.id, qty: 1, nonce: makeNonce() });
                 await refreshCart();
-                const productTitle = btn.closest('.uk-card-body')?.querySelector('h5')?.textContent || '<?php echo Text::_('COM_RADICALMART_TELEGRAM_PRODUCT'); ?>';
+                const productTitle = btn.closest('.uk-card-body')?.querySelector('h5')?.textContent || 'Товар';
                 showAddedToCartModal(productTitle);
             }
             catch(e){ UIkit.notification(e.message, {status:'danger'}); }
@@ -1556,7 +1561,7 @@ $storeTitle = isset($this->params) ? (string) $this->params->get('store_title', 
                 UIkit.modal('#added-to-cart-modal').show();
             } catch(e) {
                 // Fallback to notification
-                UIkit.notification('<?php echo Text::_('COM_RADICALMART_TELEGRAM_ADDED_TO_CART'); ?>: ' + productTitle, {status:'success'});
+                UIkit.notification('Добавлено в корзину: ' + productTitle, {status:'success'});
             }
         }
         document.addEventListener('click', (ev) => {
@@ -1926,7 +1931,7 @@ $storeTitle = isset($this->params) ? (string) $this->params->get('store_title', 
             <li>
                 <a href="index.php?option=com_radicalmart_telegram&view=cart" class="tg-safe-text">
                     <span class="bottom-tab"><span uk-icon="icon: cart"></span><span class="caption tg-safe-text"><?php echo Text::_('COM_RADICALMART_TELEGRAM_CART'); ?></span></span>
-                    <span id="cart-badge" hidden>0</span>
+                    <span id="cart-badge" style="display:none;">0</span>
                 </a>
             </li>
             <li>
@@ -1995,11 +2000,11 @@ $storeTitle = isset($this->params) ? (string) $this->params->get('store_title', 
     <div class="uk-modal-dialog uk-modal-body uk-text-center">
         <button class="uk-modal-close-default" type="button" uk-close></button>
         <div uk-icon="icon: check; ratio: 3" class="uk-text-success"></div>
-        <h3 class="uk-margin-small-top"><?php echo Text::_('COM_RADICALMART_TELEGRAM_ADDED_TO_CART'); ?></h3>
+        <h3 class="uk-margin-small-top">Добавлено в корзину</h3>
         <p id="added-product-info" class="uk-text-meta"></p>
         <div class="uk-margin uk-flex uk-flex-center" style="gap: 8px;">
-            <button type="button" class="uk-button uk-button-default uk-modal-close"><?php echo Text::_('COM_RADICALMART_TELEGRAM_CONTINUE_SHOPPING'); ?></button>
-            <a href="index.php?option=com_radicalmart_telegram&view=cart" class="uk-button uk-button-primary"><?php echo Text::_('COM_RADICALMART_TELEGRAM_GO_TO_CART'); ?></a>
+            <button type="button" class="uk-button uk-button-default uk-modal-close">Продолжить выбор</button>
+            <a href="index.php?option=com_radicalmart_telegram&view=cart" class="uk-button uk-button-primary">Перейти в корзину</a>
         </div>
     </div>
 </div>
