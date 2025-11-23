@@ -281,27 +281,22 @@ class RadicalMartTelegram extends CMSPlugin implements SubscriberInterface
             }, $body);
         }
 
-        // Strategy 3: Remove ENTIRE EngageBox block from opening div to closing div
-        // Match: <div...data-id="1"...class="eb-inst"...> ... </div> (greedy, captures nested divs)
-        $pattern_full = '/<div[^>]*data-id="1"[^>]*class="[^"]*eb-inst[^"]*"[^>]*>.*?<\/div>\s*<\/div>\s*<\/div>/is';
-        $body = preg_replace_callback($pattern_full, function($m) use (&$removedCount, &$debugInfo) {
-            $removedCount++;
-            $debugInfo[] = "FULL BLOCK: " . strlen($m[0]) . " bytes";
-            return '<!-- EngageBox full block removed -->';
-        }, $body);
+        // Strategy 3: REMOVED (Too risky, caused page blanking)
+        // $pattern_full = ...
 
         // Strategy 4: Remove eb-close buttons
         $pattern2 = '/<button(?:\s+[^>]*?)?\s+class="[^"]*eb-close[^"]*"[^>]*>.*?<\/button>/is';
         $body = preg_replace($pattern2, '', $body);
 
         // Strategy 5: Remove eb-dialog, eb-container, eb-content divs
-        // Note: This is risky with nested divs, so we also add specific content removal below
+        // Use non-greedy match and ensure we don't eat too much
         $pattern3 = '/<div(?:\s+[^>]*?)?\s+class="[^"]*eb-(?:dialog|container|content)[^"]*"[^>]*>.*?<\/div>/is';
         $body = preg_replace($pattern3, '', $body);
 
-        // Strategy 6: Remove specific "Subscribe to Telegram" block content that might be left over
+        // Strategy 6: Remove specific "Subscribe to Telegram" block content
+        // Safer version: match only if it's a small block (limit chars) to avoid eating page
         // Matches <div class="uk-text-center">...Telegram...Подписаться...</div>
-        $pattern_sub = '/<div[^>]*class="[^"]*uk-text-center[^"]*"[^>]*>[\s\S]*?href="https:\/\/t\.me\/cacaoland"[\s\S]*?<\/div>/i';
+        $pattern_sub = '/<div[^>]*class="[^"]*uk-text-center[^"]*"[^>]*>(?:(?!<\/div>).){0,1000}href="https:\/\/t\.me\/cacaoland"(?:(?!<\/div>).){0,1000}<\/div>/is';
         $body = preg_replace_callback($pattern_sub, function($m) use (&$removedCount, &$debugInfo) {
             $removedCount++;
             $debugInfo[] = "Subscribe block: " . substr($m[0], 0, 50);
@@ -309,8 +304,8 @@ class RadicalMartTelegram extends CMSPlugin implements SubscriberInterface
         }, $body);
 
         // Strategy 7: Remove orphaned closing divs (up to 5) to clean up structure
-        // This helps if we removed opening tags but left closing tags
-        $body = preg_replace('/<\/div>\s*<\/div>\s*<\/div>\s*<!-- RadicalMart Telegram/', '<!-- RadicalMart Telegram', $body);
+        // Only remove if they are followed by our debug comment or body end
+        $body = preg_replace('/(<\/div>\s*){1,5}(?=<!-- RadicalMart Telegram|<\/body>)/', '', $body);
 
         // Remove rstbox scripts and styles
         $body = preg_replace('/<script[\s\S]*?src="[^"]*\/com_rstbox\/[^"]*"[\s\S]*?>[\s\S]*?<\/script>/', '', $body);
