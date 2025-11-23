@@ -222,7 +222,7 @@ class RadicalMartTelegram extends CMSPlugin implements SubscriberInterface
         // Strategy 2: If still nothing removed, try matching just by eb-inst class
         if ($removedCount === 0) {
             $body = preg_replace_callback(
-                '/<div[^>]*?class="[^"]*\beb-inst\b[^"]*"[^>]*?>[\s\S]*?<\/div>[\s\S]*?<\/div>[\s\S]*?<\/div>/s',
+                '/<div[\s\S]*?class="[^"]*\beb-inst\b[^"]*"[\s\S]*?>[\s\S]*?<\/div>[\s\S]*?<\/div>[\s\S]*?<\/div>/s',
                 function($matches) use (&$removedCount) {
                     $removedCount++;
                     return '';
@@ -235,7 +235,7 @@ class RadicalMartTelegram extends CMSPlugin implements SubscriberInterface
         if ($removedCount === 0) {
             for ($i = 0; $i < 10; $i++) {
                 $before = $body;
-                $body = preg_replace('/<div[^>]*class="[^"]*\beb-(?:inst|dialog|container|content|hide|custom)\b[^"]*"[^>]*>[\s\S]*?<\/div>/s', '', $body);
+                $body = preg_replace('/<div[\s\S]*?class="[^"]*\beb-(?:inst|dialog|container|content|hide|custom)\b[^"]*"[\s\S]*?>[\s\S]*?<\/div>/s', '', $body);
                 if ($body === $before) break;
                 $removedCount++;
             }
