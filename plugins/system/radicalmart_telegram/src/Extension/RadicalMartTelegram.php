@@ -213,18 +213,24 @@ class RadicalMartTelegram extends CMSPlugin implements SubscriberInterface
 
             // Find all elements with eb-inst, eb-init, or rstbox classes
             $nodes = $xpath->query("//*[contains(@class, 'eb-inst') or contains(@class, 'eb-init') or contains(@class, 'rstbox')]");
+            $removedCount = 0;
             foreach ($nodes as $node) {
                 $node->parentNode->removeChild($node);
+                $removedCount++;
             }
 
             // Also remove eb-close buttons
             $nodes = $xpath->query("//*[contains(@class, 'eb-close')]");
             foreach ($nodes as $node) {
                 $node->parentNode->removeChild($node);
+                $removedCount++;
             }
 
             $body = $dom->saveHTML();
             libxml_clear_errors();
+
+            // Add debug comment to verify plugin execution
+            $body = str_replace('</body>', "<!-- RadicalMart Telegram: Removed $removedCount EngageBox elements --></body>", $body);
         } else {
             // Fallback to regex if DOMDocument not available
             // Remove by data-id attribute (EngageBox specific)
