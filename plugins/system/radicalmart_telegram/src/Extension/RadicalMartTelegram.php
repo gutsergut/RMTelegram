@@ -209,21 +209,29 @@ class RadicalMartTelegram extends CMSPlugin implements SubscriberInterface
         $removedCount = 0;
         $debugInfo = [];
 
-        // Strategy 1: Simple removal - delete opening <div> tag with eb-inst class
-        // Use simpler pattern without word boundaries
-        $pattern1 = '/<div[\s\S]*?class="[^"]*eb-inst[^"]*"[\s\S]*?>/i';
+        // Strategy 1: Remove all EngageBox/RstBox blocks by data-id or class
+        // Use PCRE_DOTALL modifier (s flag) to match newlines with dot
+        $pattern1 = '/<div[^>]*class="[^"]*eb-inst[^"]*".*?>/is';
         $body = preg_replace_callback($pattern1, function($m) use (&$removedCount, &$debugInfo) {
             $removedCount++;
-            $debugInfo[] = substr($m[0], 0, 100);
+            $debugInfo[] = substr($m[0], 0, 80);
             return '<!-- EngageBox removed -->';
         }, $body);
 
-        // Strategy 2: Remove eb-close buttons
-        $pattern2 = '/<button[\s\S]*?class="[^"]*eb-close[^"]*"[\s\S]*?>[\s\S]*?<\/button>/i';
+        // Strategy 2: Also try removing by data-id attribute (EngageBox specific)
+        $pattern1b = '/<div[^>]*data-id="\d+"[^>]*class="[^"]*eb-inst[^"]*".*?>/is';
+        $body = preg_replace_callback($pattern1b, function($m) use (&$removedCount, &$debugInfo) {
+            $removedCount++;
+            $debugInfo[] = "data-id: " . substr($m[0], 0, 80);
+            return '<!-- EngageBox removed -->';
+        }, $body);
+
+        // Strategy 3: Remove eb-close buttons
+        $pattern2 = '/<button[^>]*class="[^"]*eb-close[^"]*".*?>.*?<\/button>/is';
         $body = preg_replace($pattern2, '', $body);
 
-        // Strategy 3: Remove orphaned eb-dialog, eb-container, eb-content divs
-        $pattern3 = '/<div[\s\S]*?class="[^"]*eb-(?:dialog|container|content)[^"]*"[\s\S]*?>[\s\S]*?<\/div>/i';
+        // Strategy 4: Remove eb-dialog, eb-container, eb-content divs with content
+        $pattern3 = '/<div[^>]*class="[^"]*eb-(?:dialog|container|content)[^"]*".*?>.*?<\/div>/is';
         $body = preg_replace($pattern3, '', $body);
 
         // Remove rstbox scripts and styles
