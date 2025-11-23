@@ -295,8 +295,22 @@ class RadicalMartTelegram extends CMSPlugin implements SubscriberInterface
         $body = preg_replace($pattern2, '', $body);
 
         // Strategy 5: Remove eb-dialog, eb-container, eb-content divs
+        // Note: This is risky with nested divs, so we also add specific content removal below
         $pattern3 = '/<div(?:\s+[^>]*?)?\s+class="[^"]*eb-(?:dialog|container|content)[^"]*"[^>]*>.*?<\/div>/is';
         $body = preg_replace($pattern3, '', $body);
+
+        // Strategy 6: Remove specific "Subscribe to Telegram" block content that might be left over
+        // Matches <div class="uk-text-center">...Telegram...Подписаться...</div>
+        $pattern_sub = '/<div[^>]*class="[^"]*uk-text-center[^"]*"[^>]*>[\s\S]*?href="https:\/\/t\.me\/cacaoland"[\s\S]*?<\/div>/i';
+        $body = preg_replace_callback($pattern_sub, function($m) use (&$removedCount, &$debugInfo) {
+            $removedCount++;
+            $debugInfo[] = "Subscribe block: " . substr($m[0], 0, 50);
+            return '<!-- Subscribe block removed -->';
+        }, $body);
+
+        // Strategy 7: Remove orphaned closing divs (up to 5) to clean up structure
+        // This helps if we removed opening tags but left closing tags
+        $body = preg_replace('/<\/div>\s*<\/div>\s*<\/div>\s*<!-- RadicalMart Telegram/', '<!-- RadicalMart Telegram', $body);
 
         // Remove rstbox scripts and styles
         $body = preg_replace('/<script[\s\S]*?src="[^"]*\/com_rstbox\/[^"]*"[\s\S]*?>[\s\S]*?<\/script>/', '', $body);
