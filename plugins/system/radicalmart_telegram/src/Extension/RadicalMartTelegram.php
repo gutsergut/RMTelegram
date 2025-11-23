@@ -203,11 +203,43 @@ class RadicalMartTelegram extends CMSPlugin implements SubscriberInterface
             return;
         }
 
-        // FIRST: Aggressive RstBox/EngageBox cleanup (before general filters)
-        // Remove all EngageBox containers and scripts
-        $body = preg_replace('/<div[^>]*class="[^"]*\b(eb-init|eb-dialog|eb-inst|rstbox)\b[^"]*"[^>]*>.*?<\/div>/is', '', $body);
-        $body = preg_replace('/<div[^>]*id="[^"]*\beb-[^"]*"[^>]*>.*?<\/div>/is', '', $body);
-        $body = preg_replace('/<button[^>]*class="[^"]*\beb-close\b[^"]*"[^>]*>.*?<\/button>/is', '', $body);
+        // FIRST: Aggressive RstBox/EngageBox cleanup
+        // Use DOMDocument for reliable removal of nested structures
+        if (class_exists('DOMDocument')) {
+            libxml_use_internal_errors(true);
+            $dom = new \DOMDocument();
+            $dom->loadHTML($body, LIBXML_HTML_NOIMPLIED | LIBXML_HTML_NODEFDTD);
+            $xpath = new \DOMXPath($dom);
+
+            // Find all elements with eb-inst, eb-init, or rstbox classes
+            $nodes = $xpath->query("//*[contains(@class, 'eb-inst') or contains(@class, 'eb-init') or contains(@class, 'rstbox')]");
+            foreach ($nodes as $node) {
+                $node->parentNode->removeChild($node);
+            }
+
+            // Also remove eb-close buttons
+            $nodes = $xpath->query("//*[contains(@class, 'eb-close')]");
+            foreach ($nodes as $node) {
+                $node->parentNode->removeChild($node);
+            }
+
+            $body = $dom->saveHTML();
+            libxml_clear_errors();
+        } else {
+            // Fallback to regex if DOMDocument not available
+            // Remove by data-id attribute (EngageBox specific)
+            $body = preg_replace('/<div\s+data-id="[^"]*"[^>]*class="[^"]*eb-inst[^"]*"[^>]*>.*?<\/div>\s*<\/div>/is', '', $body);
+
+            // Remove remaining eb-* divs
+            for ($i = 0; $i < 5; $i++) {
+                $body = preg_replace('/<div[^>]*class="[^"]*\beb-(?:inst|init|dialog|container|content|hide|custom)\b[^"]*"[^>]*>.*?<\/div>/is', '', $body);
+            }
+
+            // Remove eb-close buttons
+            $body = preg_replace('/<button[^>]*\beb-close\b[^>]*>.*?<\/button>/is', '', $body);
+        }
+
+        // Remove rstbox scripts and styles
         $body = preg_replace('/<script[^>]*src="[^"]*\/com_rstbox\/[^"]*"[^>]*>.*?<\/script>/is', '', $body);
         $body = preg_replace('/<link[^>]*href="[^"]*\/com_rstbox\/[^"]*"[^>]*>/is', '', $body);
 
