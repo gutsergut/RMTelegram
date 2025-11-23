@@ -203,64 +203,54 @@ class RadicalMartTelegram extends CMSPlugin implements SubscriberInterface
             return;
         }
 
-        // FIRST: Aggressive RstBox/EngageBox cleanup
-        // Use DOMDocument for reliable removal of nested structures
-        if (class_exists('DOMDocument')) {
-            libxml_use_internal_errors(true);
-            $dom = new \DOMDocument();
-            // Load HTML in UTF-8 with proper encoding handling
-            $dom->loadHTML('<?xml encoding="UTF-8">' . $body, LIBXML_HTML_NOIMPLIED | LIBXML_HTML_NODEFDTD);
-            // Remove the XML declaration added above
-            foreach ($dom->childNodes as $item) {
-                if ($item->nodeType == XML_PI_NODE) {
-                    $dom->removeChild($item);
-                }
-            }
-            $dom->encoding = 'UTF-8';
-            
-            $xpath = new \DOMXPath($dom);
-
-            // Find all elements with eb-inst, eb-init, or rstbox classes
-            $nodes = $xpath->query("//*[contains(@class, 'eb-inst') or contains(@class, 'eb-init') or contains(@class, 'rstbox')]");
-            $removedCount = 0;
-            foreach ($nodes as $node) {
-                if ($node->parentNode) {
-                    $node->parentNode->removeChild($node);
+        // FIRST: Aggressive RstBox/EngageBox cleanup using regex
+        // Regex is more reliable than DOMDocument for malformed HTML
+        
+        $removedCount = 0;
+        
+        // Strategy: Remove the entire eb-inst container with all nested content
+        // Match opening tag, then everything up to the LAST closing div (greedy)
+        $originalBody = $body;
+        $body = preg_replace_callback(
+            '/<div\s+data-id="[^"]*"\s+class="[^"]*eb-inst[^"]*"[^>]*>.*?<\/div>\s*<\/div>\s*<\/div>/s',
+            function($matches) use (&$removedCount) {
+                $removedCount++;
+                return '';
+            },
+            $body
+        );
+        
+        // If above didn't work, try simpler pattern matching just the opening tag with specific class
+        if ($removedCount === 0) {
+            $body = preg_replace_callback(
+                '/<div[^>]+class="[^"]*\beb-inst\b[^"]*"[^>]*>(?:(?:(?!<div[^>]*>|<\/div>).)|<div[^>]*>(?:(?:(?!<div[^>]*>|<\/div>).)|<div[^>]*>.*?<\/div>)*<\/div>)*<\/div>/s',
+                function($matches) use (&$removedCount) {
                     $removedCount++;
-                }
-            }
-
-            // Also remove eb-close buttons
-            $nodes = $xpath->query("//*[contains(@class, 'eb-close')]");
-            foreach ($nodes as $node) {
-                if ($node->parentNode) {
-                    $node->parentNode->removeChild($node);
-                    $removedCount++;
-                }
-            }
-
-            $body = $dom->saveHTML();
-            libxml_clear_errors();
-
-            // Add debug comment to verify plugin execution
-            $body = str_replace('</body>', "<!-- RadicalMart Telegram: Removed $removedCount EngageBox elements --></body>", $body);
-        } else {
-            // Fallback to regex if DOMDocument not available
-            // Remove by data-id attribute (EngageBox specific)
-            $body = preg_replace('/<div\s+data-id="[^"]*"[^>]*class="[^"]*eb-inst[^"]*"[^>]*>.*?<\/div>\s*<\/div>/is', '', $body);
-
-            // Remove remaining eb-* divs
-            for ($i = 0; $i < 5; $i++) {
-                $body = preg_replace('/<div[^>]*class="[^"]*\beb-(?:inst|init|dialog|container|content|hide|custom)\b[^"]*"[^>]*>.*?<\/div>/is', '', $body);
-            }
-
-            // Remove eb-close buttons
-            $body = preg_replace('/<button[^>]*\beb-close\b[^>]*>.*?<\/button>/is', '', $body);
+                    return '';
+                },
+                $body
+            );
         }
-
+        
+        // Fallback: simple removal with multiple passes for nested structures
+        if ($removedCount === 0) {
+            for ($i = 0; $i < 10; $i++) {
+                $before = $body;
+                $body = preg_replace('/<div[^>]*class="[^"]*\beb-(?:inst|dialog|container|content|hide|custom)\b[^"]*"[^>]*>.*?<\/div>/s', '', $body);
+                if ($body === $before) break;
+                $removedCount++;
+            }
+        }
+        
+        // Remove eb-close buttons
+        $body = preg_replace('/<button[^>]*\beb-close\b[^>]*>.*?<\/button>/s', '', $body);
+        
         // Remove rstbox scripts and styles
-        $body = preg_replace('/<script[^>]*src="[^"]*\/com_rstbox\/[^"]*"[^>]*>.*?<\/script>/is', '', $body);
-        $body = preg_replace('/<link[^>]*href="[^"]*\/com_rstbox\/[^"]*"[^>]*>/is', '', $body);
+        $body = preg_replace('/<script[^>]*src="[^"]*\/com_rstbox\/[^"]*"[^>]*>.*?<\/script>/s', '', $body);
+        $body = preg_replace('/<link[^>]*href="[^"]*\/com_rstbox\/[^"]*"[^>]*>/s', '', $body);
+        
+        // Add debug comment
+        $body = str_replace('</body>', "<!-- RadicalMart Telegram: Removed $removedCount EngageBox elements --></body>", $body);
 
         // Get configuration
         $scriptPaths = $params->get('filter_scripts_paths', "/media/com_rstbox/\n/components/com_j_sms_registration/");
