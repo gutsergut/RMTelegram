@@ -572,4 +572,108 @@ class ApiController extends BaseController
 		echo json_encode($responsePayload, JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES);
 		jexit();
 	}
+
+	/**
+	 * Reset inactive_count for all PVZ points
+	 *
+	 * @return void
+	 * @since 1.0.0
+	 */
+	public function resetInactivePvz()
+	{
+		$app = Factory::getApplication();
+
+		try {
+			$this->checkToken('get');
+		} catch (\Exception $e) {
+			$app->enqueueMessage(Text::sprintf('COM_RADICALMART_TELEGRAM_RESET_INACTIVE_PVZ_ERROR', 'Invalid token'), 'error');
+			$this->setRedirect(Route::_('index.php?option=com_radicalmart_telegram&view=status', false));
+			return;
+		}
+
+		try {
+			$db = Factory::getContainer()->get('DatabaseDriver');
+
+			// Count how many will be reset
+			$q = $db->getQuery(true)
+				->select('COUNT(*)')
+				->from($db->quoteName('#__radicalmart_apiship_points'))
+				->where($db->quoteName('inactive_count') . ' > 0');
+			$count = (int) $db->setQuery($q)->loadResult();
+
+			// Reset all counters
+			$q2 = $db->getQuery(true)
+				->update($db->quoteName('#__radicalmart_apiship_points'))
+				->set($db->quoteName('inactive_count') . ' = 0')
+				->where($db->quoteName('inactive_count') . ' > 0');
+			$db->setQuery($q2)->execute();
+
+			// Also clean up related nonces
+			$q3 = $db->getQuery(true)
+				->delete($db->quoteName('#__radicalmart_telegram_nonces'))
+				->where($db->quoteName('scope') . ' = ' . $db->quote('pvz_inactive'));
+			$db->setQuery($q3)->execute();
+
+			$app->enqueueMessage(Text::sprintf('COM_RADICALMART_TELEGRAM_RESET_INACTIVE_PVZ_SUCCESS', $count), 'success');
+
+		} catch (\Throwable $e) {
+			$app->enqueueMessage(Text::sprintf('COM_RADICALMART_TELEGRAM_RESET_INACTIVE_PVZ_ERROR', $e->getMessage()), 'error');
+		}
+
+		$this->setRedirect(Route::_('index.php?option=com_radicalmart_telegram&view=status', false));
+	}
+
+	/**
+	 * Get inactive PVZ statistics (AJAX)
+	 *
+	 * @return void
+	 * @since 1.0.0
+	 */
+	public function inactivePvzStats()
+	{
+		header('Content-Type: application/json; charset=utf-8');
+
+		try {
+			$db = Factory::getContainer()->get('DatabaseDriver');
+
+			// Count PVZ with inactive_count >= 10 (permanently hidden)
+			$q1 = $db->getQuery(true)
+				->select('COUNT(*)')
+				->from($db->quoteName('#__radicalmart_apiship_points'))
+				->where($db->quoteName('inactive_count') . ' >= 10');
+			$permanentlyInactive = (int) $db->setQuery($q1)->loadResult();
+
+			// Count PVZ with 0 < inactive_count < 10 (temporarily flagged)
+			$q2 = $db->getQuery(true)
+				->select('COUNT(*)')
+				->from($db->quoteName('#__radicalmart_apiship_points'))
+				->where($db->quoteName('inactive_count') . ' > 0')
+				->where($db->quoteName('inactive_count') . ' < 10');
+			$temporarilyFlagged = (int) $db->setQuery($q2)->loadResult();
+
+			// Total PVZ count
+			$q3 = $db->getQuery(true)
+				->select('COUNT(*)')
+				->from($db->quoteName('#__radicalmart_apiship_points'));
+			$total = (int) $db->setQuery($q3)->loadResult();
+
+			echo json_encode([
+				'success' => true,
+				'data' => [
+					'total' => $total,
+					'permanently_inactive' => $permanentlyInactive,
+					'temporarily_flagged' => $temporarilyFlagged,
+					'active' => $total - $permanentlyInactive,
+				]
+			], JSON_UNESCAPED_UNICODE);
+
+		} catch (\Throwable $e) {
+			echo json_encode([
+				'success' => false,
+				'error' => $e->getMessage()
+			], JSON_UNESCAPED_UNICODE);
+		}
+
+		jexit();
+	}
 }

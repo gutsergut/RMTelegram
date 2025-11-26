@@ -105,6 +105,11 @@ foreach ($pvzIcons as $k => $v) {
         .rmt-dark .provider-filter-btn { background: #2a2a2a; border-color: #444; }
         .rmt-dark .provider-filter-btn:hover { border-color: #666; }
         .rmt-dark .provider-filter-btn.active { border-color: var(--tg-theme-button-color, #1e87f0); background: rgba(30, 135, 240, 0.2); }
+
+        /* PVZ price label on map */
+        .pvz-price-label { position: absolute; bottom: -8px; left: 50%; transform: translateX(-50%); background: #4CAF50; color: #fff; font-size: 10px; font-weight: 600; padding: 2px 5px; border-radius: 8px; white-space: nowrap; box-shadow: 0 1px 3px rgba(0,0,0,0.3); }
+        .pvz-price-label.loading { background: #999; }
+        .pvz-marker-wrapper { position: relative; display: inline-block; }
     </style>
     <script>
         // PVZ Icons configuration from settings
@@ -276,6 +281,104 @@ foreach ($pvzIcons as $k => $v) {
         let availableProviders = {}; // Available providers with names: { code: name }
         let hidePostamats = true; // Hide postamats by default (pvz_type === '2')
 
+        // Tariff cache in sessionStorage
+        const TARIFF_CACHE_KEY = 'rmt_tariff_cache';
+        const TARIFF_CACHE_TTL = 30 * 60 * 1000; // 30 minutes
+        let tariffFetchQueue = []; // Queue of PVZ IDs to fetch tariffs
+        let tariffFetchInProgress = false;
+
+        function getTariffCache() {
+            try {
+                const raw = sessionStorage.getItem(TARIFF_CACHE_KEY);
+                if (!raw) return {};
+                const data = JSON.parse(raw);
+                // Check TTL
+                if (data._ts && Date.now() - data._ts > TARIFF_CACHE_TTL) {
+                    sessionStorage.removeItem(TARIFF_CACHE_KEY);
+                    return {};
+                }
+                return data;
+            } catch(e) { return {}; }
+        }
+
+        function setTariffCache(cache) {
+            try {
+                cache._ts = Date.now();
+                sessionStorage.setItem(TARIFF_CACHE_KEY, JSON.stringify(cache));
+            } catch(e) {}
+        }
+
+        function getCachedTariff(pvzId) {
+            const cache = getTariffCache();
+            return cache[pvzId] || null;
+        }
+
+        function setCachedTariff(pvzId, data) {
+            const cache = getTariffCache();
+            cache[pvzId] = data;
+            setTariffCache(cache);
+        }
+
+        // Queue tariff fetching for PVZ points
+        function queueTariffFetch(pvzIds) {
+            const cache = getTariffCache();
+            const newIds = pvzIds.filter(id => !cache[id] && !tariffFetchQueue.includes(id));
+            tariffFetchQueue.push(...newIds);
+            processTariffQueue();
+        }
+
+        async function processTariffQueue() {
+            if (tariffFetchInProgress || tariffFetchQueue.length === 0) return;
+
+            tariffFetchInProgress = true;
+            const batch = tariffFetchQueue.splice(0, 20); // Max 20 per request
+
+            try {
+                const res = await api('tariffs', {
+                    pvz_ids: batch.join(','),
+                    shipping_id: defaultShippingId
+                });
+
+                if (res.results) {
+                    for (const [pvzId, data] of Object.entries(res.results)) {
+                        setCachedTariff(pvzId, data);
+                        // Update map feature with price
+                        updateFeatureWithPrice(pvzId, data);
+                    }
+                }
+            } catch(e) {
+                console.error('Tariff fetch error:', e);
+            }
+
+            tariffFetchInProgress = false;
+
+            // Continue processing queue
+            if (tariffFetchQueue.length > 0) {
+                setTimeout(processTariffQueue, 100);
+            }
+        }
+
+        // Update map feature with tariff price
+        function updateFeatureWithPrice(pvzId, tariffData) {
+            if (!mapObjectManager) return;
+
+            const feature = allPvzFeatures.find(f => f.id === pvzId);
+            if (!feature) return;
+
+            if (tariffData && tariffData.min_price !== undefined) {
+                feature.properties._minPrice = tariffData.min_price;
+                feature.properties._hasTariff = true;
+            } else {
+                feature.properties._minPrice = null;
+                feature.properties._hasTariff = false;
+                // Mark as inactive (will be hidden on next filter apply)
+                feature.properties._inactive = true;
+            }
+
+            // Refresh features on map
+            applyProviderFilter(true);
+        }
+
         // Handle PVZ selection from balloon button
         window.handlePvzSelect = function(id) {
             if (!mapObjectManager) return;
@@ -362,6 +465,9 @@ foreach ($pvzIcons as $k => $v) {
             });
         }
 
+        // Custom icon layout with price label
+        let PvzIconLayout = null;
+
         function createMap(centerCoords) {
             const mapContainer = document.getElementById('shipping-map-container');
             mapContainer.innerHTML = ''; // Clear loading state
@@ -371,6 +477,24 @@ foreach ($pvzIcons as $k => $v) {
                 zoom: 12, // Closer zoom for user's location
                 controls: ['zoomControl', 'geolocationControl']
             });
+
+            // Create custom icon layout with price label
+            PvzIconLayout = ymaps.templateLayoutFactory.createClass(
+                '<div class="pvz-marker-wrapper">' +
+                    '<img src="{{ options.iconImageHref }}" style="width:32px;height:32px;">' +
+                    '{% if properties._minPrice !== null && properties._minPrice !== undefined %}' +
+                        '<div class="pvz-price-label">от {{ properties._minPrice }}₽</div>' +
+                    '{% endif %}' +
+                '</div>',
+                {
+                    build: function() {
+                        PvzIconLayout.superclass.build.call(this);
+                    },
+                    clear: function() {
+                        PvzIconLayout.superclass.clear.call(this);
+                    }
+                }
+            );
 
             mapObjectManager = new ymaps.ObjectManager({
                 clusterize: true,
@@ -394,7 +518,6 @@ foreach ($pvzIcons as $k => $v) {
             });
             mapInstance.geoObjects.add(userPlacemark);
         }
-
         async function fetchPvz(bounds) {
             if (!bounds) return;
             // Send bbox as lon1,lat1,lon2,lat2 (Yandex returns [lat,lon])
@@ -439,6 +562,10 @@ foreach ($pvzIcons as $k => $v) {
                             <button class="uk-button uk-button-small uk-button-primary select-pvz-btn" onclick="event.stopPropagation(); handlePvzSelect('${p.id}')">Выбрать этот пункт</button>
                         `;
 
+                        // Check cached tariff for this PVZ
+                        const cachedTariff = getCachedTariff(p.id);
+                        const minPrice = (cachedTariff && cachedTariff.min_price !== undefined) ? cachedTariff.min_price : null;
+
                         const feature = {
                             type: 'Feature',
                             id: p.id,
@@ -446,12 +573,22 @@ foreach ($pvzIcons as $k => $v) {
                             properties: {
                                 balloonContentBody: balloonContent,
                                 hintContent: p.title + (p.provider_name ? ' (' + p.provider_name + ')' : ''),
-                                data: p
+                                data: p,
+                                _minPrice: minPrice,
+                                _hasTariff: minPrice !== null,
+                                _inactive: cachedTariff === null ? false : (cachedTariff && !cachedTariff.tariffs)
                             }
                         };
 
-                        // Add custom icon if available
-                        if (iconHref) {
+                        // Add custom icon with price label if available
+                        if (iconHref && PvzIconLayout) {
+                            feature.options = {
+                                iconLayout: PvzIconLayout,
+                                iconImageHref: iconHref,
+                                iconImageSize: [32, 48], // Taller to accommodate price label
+                                iconImageOffset: [-16, -48]
+                            };
+                        } else if (iconHref) {
                             feature.options = {
                                 iconLayout: 'default#image',
                                 iconImageHref: iconHref,
@@ -469,6 +606,12 @@ foreach ($pvzIcons as $k => $v) {
                     const newFeatures = validFeatures.filter(f => !existingIds.has(f.id));
                     allPvzFeatures = allPvzFeatures.concat(newFeatures);
                     applyProviderFilter();
+
+                    // Queue tariff fetching for new PVZ points
+                    if (newFeatures.length > 0) {
+                        const newIds = newFeatures.map(f => f.id);
+                        queueTariffFetch(newIds);
+                    }
                 }
             } catch(e) { console.error(e); }
         }
@@ -481,10 +624,15 @@ foreach ($pvzIcons as $k => $v) {
                 ? mapObjectManager.objects.balloon.getData()?.id
                 : null;
 
-            // Filter features by active providers
-            let filteredFeatures = allPvzFeatures;
+            // Filter features by active providers and exclude inactive
+            let filteredFeatures = allPvzFeatures.filter(f => {
+                // Skip inactive PVZ (no tariffs)
+                if (f.properties._inactive === true) return false;
+                return true;
+            });
+
             if (activeProviderFilters.size > 0) {
-                filteredFeatures = allPvzFeatures.filter(f =>
+                filteredFeatures = filteredFeatures.filter(f =>
                     activeProviderFilters.has(f.properties.data.provider)
                 );
             }

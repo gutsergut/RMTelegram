@@ -23,6 +23,16 @@ use Joomla\CMS\Router\Route;
             <span class="icon-database" aria-hidden="true"></span>
             Проверить базу
         </button>
+        <a href="<?php echo Route::_('index.php?option=com_radicalmart_telegram&task=api.resetInactivePvz&' . \Joomla\CMS\Session\Session::getFormToken() . '=1'); ?>"
+           class="btn btn-warning"
+           onclick="return confirm('<?php echo Text::_('COM_RADICALMART_TELEGRAM_RESET_INACTIVE_PVZ_DESC'); ?>');">
+            <span class="icon-unpublish" aria-hidden="true"></span>
+            <?php echo Text::_('COM_RADICALMART_TELEGRAM_RESET_INACTIVE_PVZ'); ?>
+        </a>
+        <button id="btnInactiveStats" type="button" class="btn btn-info">
+            <span class="icon-chart" aria-hidden="true"></span>
+            <?php echo Text::_('COM_RADICALMART_TELEGRAM_INACTIVE_PVZ_COUNT'); ?>
+        </button>
     </div>
 
     <!-- Progress Bar -->
@@ -590,5 +600,36 @@ use Joomla\CMS\Router\Route;
             return res;
         }
     }
+
+    // Inactive PVZ stats button
+    document.getElementById('btnInactiveStats')?.addEventListener('click', async function() {
+        const btn = this;
+        btn.disabled = true;
+        btn.innerHTML = '<span class="spinner-border spinner-border-sm" role="status"></span> Загрузка...';
+
+        try {
+            const url = 'index.php?option=com_radicalmart_telegram&task=api.inactivePvzStats&format=raw';
+            const resp = await fetch(url);
+            const data = await resp.json();
+
+            if (data.success && data.data) {
+                const d = data.data;
+                alert(
+                    'Статистика неактивных ПВЗ:\n\n' +
+                    'Всего ПВЗ: ' + d.total + '\n' +
+                    'Активных: ' + d.active + '\n' +
+                    'Помечено как неактивные (временно): ' + d.temporarily_flagged + '\n' +
+                    'Скрыто навсегда (>=10 отказов): ' + d.permanently_inactive
+                );
+            } else {
+                alert('Ошибка: ' + (data.error || 'Неизвестная ошибка'));
+            }
+        } catch(e) {
+            alert('Ошибка запроса: ' + e.message);
+        }
+
+        btn.disabled = false;
+        btn.innerHTML = '<span class="icon-chart" aria-hidden="true"></span> <?php echo Text::_('COM_RADICALMART_TELEGRAM_INACTIVE_PVZ_COUNT'); ?>';
+    });
 })();
 </script>

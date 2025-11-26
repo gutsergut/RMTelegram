@@ -1451,4 +1451,244 @@ class ApiController extends BaseController
         } catch (\Throwable $e) { echo new JsonResponse(null, $e->getMessage(), true); $app->close(); }
     }
 
+    /**
+     * Batch tariff calculation for multiple PVZ points
+     * POST api.tariffs with pvz_ids=[id1,id2,...] (max 20)
+     * Returns { results: { pvz_id: { min_price, tariffs: [...] } | null } }
+     */
+    public function tariffs(): void
+    {
+        $app = Factory::getApplication();
+        $this->guardInitData();
+        $this->guardRateLimitDb('tariffs', 10); // Lower rate limit for heavy operation
+
+        $chat = $this->getChatId();
+        if ($chat <= 0) {
+            echo new JsonResponse(null, Text::_('COM_RADICALMART_TELEGRAM_ERR_INVALID_CHAT'), true);
+            $app->close();
+        }
+
+        $pvzIdsRaw = $app->input->getString('pvz_ids', '');
+        $shippingId = $app->input->getInt('shipping_id', 0);
+
+        try {
+            // Parse PVZ IDs
+            $pvzIds = array_filter(array_map('trim', explode(',', $pvzIdsRaw)));
+            if (empty($pvzIds)) {
+                echo new JsonResponse(['results' => []]);
+                $app->close();
+            }
+
+            // Limit to 20 points per request
+            $pvzIds = array_slice($pvzIds, 0, 20);
+
+            // Get cart for tariff calculation
+            $svc = new CartService();
+            $cart = $svc->getCart($chat);
+            if (!$cart || empty($cart->id)) {
+                echo new JsonResponse(null, Text::_('COM_RADICALMART_TELEGRAM_ERR_CART_EMPTY'), true);
+                $app->close();
+            }
+
+            // Get PVZ details from DB
+            $db = Factory::getContainer()->get('DatabaseDriver');
+            $q = $db->getQuery(true)
+                ->select(['id', 'provider', 'ext_id', 'title', 'address', 'lat', 'lon', 'inactive_count'])
+                ->from($db->quoteName('#__radicalmart_apiship_points'))
+                ->whereIn($db->quoteName('ext_id'), $pvzIds, \PDO::PARAM_STR)
+                ->where($db->quoteName('inactive_count') . ' < 10'); // Skip permanently inactive
+            $points = $db->setQuery($q)->loadAssocList('ext_id') ?: [];
+
+            $results = [];
+            $inactiveToMark = [];
+
+            foreach ($pvzIds as $extId) {
+                if (!isset($points[$extId])) {
+                    $results[$extId] = null; // Point not found or inactive
+                    continue;
+                }
+
+                $point = $points[$extId];
+                $provider = $point['provider'];
+
+                // Calculate tariff
+                try {
+                    $tariffResult = ApiShipIntegrationHelper::calculateTariff($shippingId, $cart, $extId, $provider);
+                    $tariffs = $tariffResult['tariffs'] ?? [];
+
+                    if (!empty($tariffs)) {
+                        // Find minimum price
+                        $minPrice = PHP_INT_MAX;
+                        $tariffList = [];
+                        foreach ($tariffs as $t) {
+                            $cost = (float)($t->deliveryCost ?? 0);
+                            if ($cost < $minPrice) {
+                                $minPrice = $cost;
+                            }
+                            $tariffList[] = [
+                                'id' => (string)$t->tariffId,
+                                'name' => $t->tariffName ?? '',
+                                'cost' => $cost,
+                                'days_min' => (int)($t->daysMin ?? 0),
+                                'days_max' => (int)($t->daysMax ?? 0),
+                            ];
+                        }
+
+                        $results[$extId] = [
+                            'min_price' => $minPrice === PHP_INT_MAX ? 0 : $minPrice,
+                            'tariffs' => $tariffList,
+                            'provider' => $provider,
+                        ];
+
+                        // Reset inactive counter if point has tariffs
+                        if ((int)$point['inactive_count'] > 0) {
+                            $this->resetPvzInactiveCount($extId, $provider);
+                        }
+                    } else {
+                        // No tariffs - mark for incrementing inactive count
+                        $results[$extId] = null;
+                        $inactiveToMark[] = ['ext_id' => $extId, 'provider' => $provider];
+                    }
+                } catch (\Throwable $e) {
+                    Log::add("[tariffs] Error calculating for $extId: " . $e->getMessage(), Log::WARNING, 'com_radicalmart.telegram');
+                    $results[$extId] = null;
+                    $inactiveToMark[] = ['ext_id' => $extId, 'provider' => $provider];
+                }
+            }
+
+            // Increment inactive counts for points without tariffs
+            foreach ($inactiveToMark as $item) {
+                $this->incrementPvzInactiveCount($item['ext_id'], $item['provider'], $chat);
+            }
+
+            echo new JsonResponse(['results' => $results]);
+            $app->close();
+
+        } catch (\Throwable $e) {
+            Log::add("[tariffs] Exception: " . $e->getMessage(), Log::ERROR, 'com_radicalmart.telegram');
+            echo new JsonResponse(null, $e->getMessage(), true);
+            $app->close();
+        }
+    }
+
+    /**
+     * Mark PVZ as inactive (no tariffs available)
+     * Increments inactive_count; if >= 10, point becomes permanently hidden
+     */
+    public function markpvz(): void
+    {
+        $app = Factory::getApplication();
+        $this->guardInitData();
+        $this->guardRateLimitDb('markpvz', 30);
+
+        $chat = $this->getChatId();
+        if ($chat <= 0) {
+            echo new JsonResponse(null, Text::_('COM_RADICALMART_TELEGRAM_ERR_INVALID_CHAT'), true);
+            $app->close();
+        }
+
+        $extId = $app->input->getString('ext_id', '');
+        $provider = $app->input->getString('provider', '');
+        $active = $app->input->getInt('active', 0); // 0 = inactive (increment), 1 = active (reset)
+
+        if (empty($extId) || empty($provider)) {
+            echo new JsonResponse(null, 'Missing ext_id or provider', true);
+            $app->close();
+        }
+
+        try {
+            if ($active === 1) {
+                $this->resetPvzInactiveCount($extId, $provider);
+            } else {
+                $this->incrementPvzInactiveCount($extId, $provider, $chat);
+            }
+
+            echo new JsonResponse(['ok' => true]);
+            $app->close();
+
+        } catch (\Throwable $e) {
+            echo new JsonResponse(null, $e->getMessage(), true);
+            $app->close();
+        }
+    }
+
+    /**
+     * Increment inactive count for a PVZ point
+     * Uses chat_id to prevent multiple increments from same user
+     */
+    private function incrementPvzInactiveCount(string $extId, string $provider, int $chatId): void
+    {
+        $db = Factory::getContainer()->get('DatabaseDriver');
+
+        // Check if this chat already reported this PVZ (using nonces table with scope 'pvz_inactive')
+        $scope = 'pvz_inactive';
+        $nonce = $extId . '_' . $provider;
+
+        // Check for existing report from this chat (within 24 hours)
+        $q = $db->getQuery(true)
+            ->select('COUNT(*)')
+            ->from($db->quoteName('#__radicalmart_telegram_nonces'))
+            ->where($db->quoteName('chat_id') . ' = :chat')
+            ->where($db->quoteName('scope') . ' = :scope')
+            ->where($db->quoteName('nonce') . ' = :nonce')
+            ->where($db->quoteName('created') . ' > DATE_SUB(NOW(), INTERVAL 24 HOUR)')
+            ->bind(':chat', $chatId)
+            ->bind(':scope', $scope)
+            ->bind(':nonce', $nonce);
+
+        if ((int)$db->setQuery($q)->loadResult() > 0) {
+            return; // Already reported by this user
+        }
+
+        // Record this report
+        $obj = (object)[
+            'chat_id' => $chatId,
+            'scope' => $scope,
+            'nonce' => $nonce,
+            'created' => (new \DateTime())->format('Y-m-d H:i:s'),
+        ];
+        $db->insertObject('#__radicalmart_telegram_nonces', $obj);
+
+        // Increment inactive_count
+        $q2 = $db->getQuery(true)
+            ->update($db->quoteName('#__radicalmart_apiship_points'))
+            ->set($db->quoteName('inactive_count') . ' = ' . $db->quoteName('inactive_count') . ' + 1')
+            ->where($db->quoteName('ext_id') . ' = :ext')
+            ->where($db->quoteName('provider') . ' = :prov')
+            ->bind(':ext', $extId)
+            ->bind(':prov', $provider);
+        $db->setQuery($q2)->execute();
+
+        Log::add("[markpvz] Incremented inactive_count for $provider:$extId by chat $chatId", Log::DEBUG, 'com_radicalmart.telegram');
+    }
+
+    /**
+     * Reset inactive count for a PVZ point (when tariff is found)
+     */
+    private function resetPvzInactiveCount(string $extId, string $provider): void
+    {
+        $db = Factory::getContainer()->get('DatabaseDriver');
+
+        $q = $db->getQuery(true)
+            ->update($db->quoteName('#__radicalmart_apiship_points'))
+            ->set($db->quoteName('inactive_count') . ' = 0')
+            ->where($db->quoteName('ext_id') . ' = :ext')
+            ->where($db->quoteName('provider') . ' = :prov')
+            ->bind(':ext', $extId)
+            ->bind(':prov', $provider);
+        $db->setQuery($q)->execute();
+
+        // Clean up nonces for this PVZ
+        $scope = 'pvz_inactive';
+        $nonce = $extId . '_' . $provider;
+
+        $q2 = $db->getQuery(true)
+            ->delete($db->quoteName('#__radicalmart_telegram_nonces'))
+            ->where($db->quoteName('scope') . ' = :scope')
+            ->where($db->quoteName('nonce') . ' = :nonce')
+            ->bind(':scope', $scope)
+            ->bind(':nonce', $nonce);
+        $db->setQuery($q2)->execute();
+    }
+
 }
