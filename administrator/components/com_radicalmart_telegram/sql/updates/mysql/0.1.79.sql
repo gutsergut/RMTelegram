@@ -1,0 +1,3 @@
+-- Version 0.1.79: Fix tariff calculation for non-Yandex providers
+-- (frontend grouping by provider for correct shipping_id)
+-- No database changes needed

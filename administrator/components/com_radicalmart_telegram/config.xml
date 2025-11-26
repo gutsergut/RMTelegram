@@ -2,13 +2,57 @@
 <config>
        <fieldset name="basic" label="COM_RADICALMART_TELEGRAM_FIELDSET_BASIC">
               <field name="store_title" type="text" label="COM_RADICALMART_TELEGRAM_STORE_TITLE_LABEL" description="COM_RADICALMART_TELEGRAM_STORE_TITLE_DESC" class="input-xlarge" default="магазин Cacao.Land" />
-              <field name="bot_token" type="password" label="COM_RADICALMART_TELEGRAM_BOT_TOKEN_LABEL" description="COM_RADICALMART_TELEGRAM_BOT_TOKEN_DESC" class="input-xlarge" />
+              <field name="bot_token" type="text" label="COM_RADICALMART_TELEGRAM_BOT_TOKEN_LABEL" description="COM_RADICALMART_TELEGRAM_BOT_TOKEN_DESC" class="input-xlarge" />
               <field name="webhook_secret" type="text" label="COM_RADICALMART_TELEGRAM_WEBHOOK_SECRET_LABEL" description="COM_RADICALMART_TELEGRAM_WEBHOOK_SECRET_DESC" filter="string" class="input-large" />
               <field name="webapp_allowed_domains" type="textarea" label="COM_RADICALMART_TELEGRAM_WEBAPP_ALLOWED_DOMAINS_LABEL" description="COM_RADICALMART_TELEGRAM_WEBAPP_ALLOWED_DOMAINS_DESC" filter="raw" rows="3" default="https://cacao.land" />
               <field name="logs_enabled" type="radio" default="1" label="COM_RADICALMART_TELEGRAM_LOGS_ENABLED_LABEL" description="COM_RADICALMART_TELEGRAM_LOGS_ENABLED_DESC">
                      <option value="1">JYES</option>
                      <option value="0">JNO</option>
               </field>
+              <field name="ym_enabled" type="radio" default="1" label="COM_RADICALMART_TELEGRAM_YM_ENABLED_LABEL" description="COM_RADICALMART_TELEGRAM_YM_ENABLED_DESC">
+                     <option value="1">JYES</option>
+                     <option value="0">JNO</option>
+              </field>
+              <field name="ym_counter_id" type="text" label="COM_RADICALMART_TELEGRAM_YM_COUNTER_ID_LABEL" description="COM_RADICALMART_TELEGRAM_YM_COUNTER_ID_DESC" class="input-small" filter="string" />
+       </fieldset>
+
+       <fieldset name="catalog" label="COM_RADICALMART_TELEGRAM_FIELDSET_CATALOG">
+              <field name="catalog_mode" type="list" default="metas" label="COM_RADICALMART_TELEGRAM_CATALOG_MODE_LABEL" description="COM_RADICALMART_TELEGRAM_CATALOG_MODE_DESC">
+                     <option value="metas">Мета‑товары (только metas)</option>
+                     <option value="products">Обычные товары</option>
+                     <option value="auto">Авто: мета без фильтров</option>
+              </field>
+              <field name="catalog_language_mode" type="list" default="all" label="COM_RADICALMART_TELEGRAM_CATALOG_LANG_MODE_LABEL" description="COM_RADICALMART_TELEGRAM_CATALOG_LANG_MODE_DESC">
+                     <option value="all">Все языки (без фильтра)</option>
+                     <option value="current">Только текущий язык сайта</option>
+              </field>
+               <field name="debug_catalog" type="radio" default="0" label="Полный дебаг каталога" description="Включить расширенные логи каталога (мета, дети, причины пропусков). При большом объёме может замедлять." >
+                      <option value="1">JYES</option>
+                      <option value="0">JNO</option>
+               </field>
+       </fieldset>
+
+       <!-- Вкладка: Вид карточек -->
+       <fieldset name="cardview" label="COM_RADICALMART_TELEGRAM_FIELDSET_CARDVIEW">
+              <field name="cardview_enabled" type="radio" default="0" label="COM_RADICALMART_TELEGRAM_CARDVIEW_ENABLE_LABEL" description="COM_RADICALMART_TELEGRAM_CARDVIEW_ENABLE_DESC">
+                     <option value="1">JYES</option>
+                     <option value="0">JNO</option>
+              </field>
+              <field name="card_badge_fields" type="RadicalMartField" multiple="true" label="COM_RADICALMART_TELEGRAM_CARDVIEW_BADGE_FIELDS_LABEL" description="COM_RADICALMART_TELEGRAM_CARDVIEW_BADGE_FIELDS_DESC" addfieldprefix="Joomla\Component\RadicalMartTelegram\Administrator\Field" />
+              <field name="card_subtitle_fields" type="RadicalMartField" multiple="true" label="COM_RADICALMART_TELEGRAM_CARDVIEW_SUBTITLE_FIELDS_LABEL" description="COM_RADICALMART_TELEGRAM_CARDVIEW_SUBTITLE_FIELDS_DESC" addfieldprefix="Joomla\Component\RadicalMartTelegram\Administrator\Field" />
+              <field name="card_variant_show_weight" type="radio" default="1" label="COM_RADICALMART_TELEGRAM_CARDVIEW_VARIANT_SHOW_WEIGHT_LABEL" description="COM_RADICALMART_TELEGRAM_CARDVIEW_VARIANT_SHOW_WEIGHT_DESC">
+                     <option value="1">JYES</option>
+                     <option value="0">JNO</option>
+              </field>
+              <field name="card_variant_show_discount" type="radio" default="1" label="COM_RADICALMART_TELEGRAM_CARDVIEW_VARIANT_SHOW_DISCOUNT_LABEL" description="COM_RADICALMART_TELEGRAM_CARDVIEW_VARIANT_SHOW_DISCOUNT_DESC">
+                     <option value="1">JYES</option>
+                     <option value="0">JNO</option>
+              </field>
+              <field name="card_variant_show_final_price" type="radio" default="1" label="COM_RADICALMART_TELEGRAM_CARDVIEW_VARIANT_SHOW_FINAL_PRICE_LABEL" description="COM_RADICALMART_TELEGRAM_CARDVIEW_VARIANT_SHOW_FINAL_PRICE_DESC">
+                     <option value="1">JYES</option>
+                     <option value="0">JNO</option>
+              </field>
+              <field name="card_variant_weight_field" type="RadicalMartField" label="COM_RADICALMART_TELEGRAM_CARDVIEW_WEIGHT_FIELD_LABEL" description="COM_RADICALMART_TELEGRAM_CARDVIEW_WEIGHT_FIELD_DESC" addfieldprefix="Joomla\Component\RadicalMartTelegram\Administrator\Field" />
        </fieldset>
 
        <fieldset name="payments" label="COM_RADICALMART_TELEGRAM_FIELDSET_PAYMENTS">
@@ -53,6 +97,18 @@
               </field>
               <field name="apiship_api_key" type="password" label="ApiShip API Key" description="Ключ доступа к ApiShip. Используется для загрузки ПВЗ." default="4446add5de10615e33d5834f0c931925" class="input-xlarge"/>
               <field name="apiship_providers" type="textarea" label="ApiShip провайдеры" description="Список провайдеров через запятую (например: yataxi,cdek,x5)." default="yataxi,cdek,x5" rows="1"/>
+
+              <field type="spacer" name="spacer_provider_icons" label="&lt;strong&gt;Иконки служб доставки на карте&lt;/strong&gt;" description="Загрузите иконки для отображения маркеров ПВЗ на карте. Рекомендуемый размер: 32x32 px, формат PNG."/>
+
+              <field name="pvz_icon_cdek" type="media" label="Иконка СДЭК" description="Иконка для ПВЗ провайдера СДЭК" directory="radicalmart_telegram/icons" preview="true" />
+              <field name="pvz_icon_x5" type="media" label="Иконка X5 (Пятёрочка)" description="Иконка для ПВЗ провайдера X5" directory="radicalmart_telegram/icons" preview="true" />
+              <field name="pvz_icon_yataxi" type="media" label="Иконка Яндекс Доставка" description="Иконка для ПВЗ провайдера Яндекс" directory="radicalmart_telegram/icons" preview="true" />
+              <field name="pvz_icon_boxberry" type="media" label="Иконка Boxberry" description="Иконка для ПВЗ провайдера Boxberry" directory="radicalmart_telegram/icons" preview="true" />
+              <field name="pvz_icon_dpd" type="media" label="Иконка DPD" description="Иконка для ПВЗ провайдера DPD" directory="radicalmart_telegram/icons" preview="true" />
+              <field name="hide_inactive_pvz" type="radio" default="1" label="Скрывать ПВЗ без тарифа" description="Автоматически скрывать ПВЗ, для которых не удалось получить тариф доставки (например, слишком далеко от склада).">
+                     <option value="1">JYES</option>
+                     <option value="0">JNO</option>
+              </field>
               <field name="pvz_cache_enabled" type="radio" default="1" label="Кешировать выдачу ПВЗ (bbox)" description="Включить файловый кеш ответов api.pvz для уменьшения нагрузки (в пределах TTL).">
                      <option value="1">JYES</option>
                      <option value="0">JNO</option>

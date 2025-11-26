@@ -22,6 +22,9 @@ $pvzIcons = [
     'boxberry' => isset($this->params) ? (string) $this->params->get('pvz_icon_boxberry', '') : '',
     'dpd' => isset($this->params) ? (string) $this->params->get('pvz_icon_dpd', '') : '',
 ];
+// Настройка скрытия неактивных ПВЗ
+$hideInactivePvz = isset($this->params) ? (int) $this->params->get('hide_inactive_pvz', 1) : 1;
+
 // Обрабатываем пути иконок: оставляем только относительный путь
 foreach ($pvzIcons as $k => $v) {
     if (!$v) continue;
@@ -106,14 +109,36 @@ foreach ($pvzIcons as $k => $v) {
         .rmt-dark .provider-filter-btn:hover { border-color: #666; }
         .rmt-dark .provider-filter-btn.active { border-color: var(--tg-theme-button-color, #1e87f0); background: rgba(30, 135, 240, 0.2); }
 
-        /* PVZ price label on map */
-        .pvz-price-label { position: absolute; bottom: -8px; left: 50%; transform: translateX(-50%); background: #4CAF50; color: #fff; font-size: 10px; font-weight: 600; padding: 2px 5px; border-radius: 8px; white-space: nowrap; box-shadow: 0 1px 3px rgba(0,0,0,0.3); }
-        .pvz-price-label.loading { background: #999; }
-        .pvz-marker-wrapper { position: relative; display: inline-block; }
+        /* PVZ Info Panel (below map) */
+        .pvz-info-panel {
+            background: #ffffff;
+            border-radius: 12px;
+            padding: 16px;
+            margin-top: 12px;
+            border: 1px solid #e0e0e0;
+            box-shadow: 0 2px 8px rgba(0,0,0,0.08);
+        }
+        .pvz-info-header { display: flex; align-items: center; justify-content: space-between; margin-bottom: 8px; }
+        .pvz-provider { display: flex; align-items: center; font-weight: 500; color: #333; }
+        .pvz-provider img { margin-right: 8px; }
+        .pvz-type-badge { font-size: 11px; padding: 3px 8px; border-radius: 10px; }
+        .pvz-type-badge.pvz { background: #e3f2fd; color: #1565c0; }
+        .pvz-type-badge.postamat { background: #e8f5e9; color: #2e7d32; }
+        .pvz-title { font-weight: 600; font-size: 15px; margin-bottom: 4px; color: #222; }
+        .pvz-address { color: #666; font-size: 13px; margin-bottom: 10px; }
+        .pvz-price { font-size: 14px; color: #4CAF50; font-weight: 500; margin-bottom: 4px; }
+        .pvz-price-loading { color: #999; font-style: italic; }
+        /* Keep light style even in dark mode for this panel */
+        .rmt-dark .pvz-info-panel { background: #ffffff; border-color: #e0e0e0; }
+        .rmt-dark .pvz-info-panel .pvz-provider { color: #333; }
+        .rmt-dark .pvz-info-panel .pvz-title { color: #222; }
+        .rmt-dark .pvz-info-panel .pvz-address { color: #666; }
     </style>
     <script>
         // PVZ Icons configuration from settings
         const pvzIcons = <?php echo json_encode($pvzIcons, JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES); ?>;
+        // Setting: hide PVZ without tariffs
+        const hideInactivePvz = <?php echo $hideInactivePvz ? 'true' : 'false'; ?>;
 
         // Basic API helper
         function qs(name){ const p=new URLSearchParams(location.search); return p.get(name); }
@@ -125,7 +150,11 @@ foreach ($pvzIcons as $k => $v) {
             url.searchParams.set('task','api.'+method);
             const chat = qs('chat'); if (chat) url.searchParams.set('chat', chat);
             try { if (window.Telegram && window.Telegram.WebApp && window.Telegram.WebApp.initData) { url.searchParams.set('tg_init', window.Telegram.WebApp.initData); } } catch(e){}
-            for (const [k,v] of Object.entries(params)) url.searchParams.set(k, v);
+            for (const [k,v] of Object.entries(params)) {
+                if (v !== null && v !== undefined) {
+                    url.searchParams.set(k, String(v));
+                }
+            }
 
             const res = await fetch(url.toString(), { credentials: 'same-origin' });
             const json = await res.json();
@@ -284,7 +313,7 @@ foreach ($pvzIcons as $k => $v) {
         // Tariff cache in sessionStorage
         const TARIFF_CACHE_KEY = 'rmt_tariff_cache';
         const TARIFF_CACHE_TTL = 30 * 60 * 1000; // 30 minutes
-        let tariffFetchQueue = []; // Queue of PVZ IDs to fetch tariffs
+        let tariffFetchQueue = []; // Queue of {id, provider} objects to fetch tariffs
         let tariffFetchInProgress = false;
 
         function getTariffCache() {
@@ -320,34 +349,102 @@ foreach ($pvzIcons as $k => $v) {
         }
 
         // Queue tariff fetching for PVZ points
-        function queueTariffFetch(pvzIds) {
+        // pvzItems: array of {id, provider} objects
+        function queueTariffFetch(pvzItems) {
             const cache = getTariffCache();
-            const newIds = pvzIds.filter(id => !cache[id] && !tariffFetchQueue.includes(id));
-            tariffFetchQueue.push(...newIds);
+            const newItems = pvzItems.filter(item =>
+                !cache[item.id] && !tariffFetchQueue.find(q => q.id === item.id)
+            );
+            if (newItems.length > 0) {
+                console.log(`[Tariff] Queued ${newItems.length} PVZ for tariff calculation:`, newItems.slice(0, 5).map(i => i.id).join(', ') + (newItems.length > 5 ? '...' : ''));
+            }
+            tariffFetchQueue.push(...newItems);
             processTariffQueue();
         }
 
         async function processTariffQueue() {
             if (tariffFetchInProgress || tariffFetchQueue.length === 0) return;
 
+            // Check if providerToShippingId mapping is loaded
+            if (Object.keys(providerToShippingId).length === 0) {
+                console.warn('[Tariff] providerToShippingId is empty, using defaultShippingId for all providers');
+            }
+
             tariffFetchInProgress = true;
-            const batch = tariffFetchQueue.splice(0, 20); // Max 20 per request
+
+            // Group queue items by provider
+            const byProvider = {};
+            tariffFetchQueue.forEach(item => {
+                const provider = item.provider || 'unknown';
+                if (!byProvider[provider]) byProvider[provider] = [];
+                byProvider[provider].push(item);
+            });
+
+            // Process one provider at a time (max 20 per batch)
+            const providerKeys = Object.keys(byProvider);
+            const currentProvider = providerKeys[0];
+            const providerItems = byProvider[currentProvider];
+            const batch = providerItems.splice(0, 20);
+
+            // Remove processed items from main queue
+            batch.forEach(batchItem => {
+                const idx = tariffFetchQueue.findIndex(q => q.id === batchItem.id);
+                if (idx !== -1) tariffFetchQueue.splice(idx, 1);
+            });
+
+            // Get shipping_id for this provider
+            const shippingIdForBatch = providerToShippingId[currentProvider] || defaultShippingId;
+            console.log(`[Tariff] Fetching batch of ${batch.length} PVZ for provider ${currentProvider}, shipping_id=${shippingIdForBatch}, remaining: ${tariffFetchQueue.length}`);
 
             try {
                 const res = await api('tariffs', {
-                    pvz_ids: batch.join(','),
-                    shipping_id: defaultShippingId
+                    pvz_ids: batch.map(b => b.id).join(','),
+                    shipping_id: shippingIdForBatch
                 });
 
                 if (res.results) {
+                    let withTariff = 0, noTariff = 0;
                     for (const [pvzId, data] of Object.entries(res.results)) {
                         setCachedTariff(pvzId, data);
+                        if (data && data.min_price !== undefined) {
+                            withTariff++;
+                            console.log(`[Tariff] ✓ ${pvzId}: от ${data.min_price}₽ (${data.provider || currentProvider})`);
+                        } else if (data && data.error) {
+                            noTariff++;
+                            // Show FULL debug info for failed tariffs
+                            const debugInfo = data._debug || {};
+                            console.warn(`[Tariff] ✗ ${pvzId} (${data.provider || currentProvider}): ${data.error}`);
+                            console.warn(`[Tariff]   FULL DEBUG:`, debugInfo);
+                            if (debugInfo.sender_keys) {
+                                console.warn(`[Tariff]   Sender keys in config: ${debugInfo.sender_keys.join(', ')}`);
+                            }
+                            if (debugInfo.request_data) {
+                                console.warn(`[Tariff]   Request data:`, debugInfo.request_data);
+                            }
+                            if (debugInfo.full_response) {
+                                console.warn(`[Tariff]   Full API response:`, debugInfo.full_response);
+                            }
+                            // Show full content of deliveryToPoint[0] if exists
+                            if (debugInfo.delivery_to_point_0) {
+                                console.warn(`[Tariff]   deliveryToPoint[0] FULL:`, debugInfo.delivery_to_point_0);
+                            }
+                        } else {
+                            noTariff++;
+                            console.log(`[Tariff] ✗ ${pvzId}: no data`);
+                        }
                         // Update map feature with price
                         updateFeatureWithPrice(pvzId, data);
                     }
+                    console.log(`[Tariff] Batch complete for ${currentProvider}: ${withTariff} with tariff, ${noTariff} without`);
+
+                    // Refresh map after batch to hide inactive PVZ
+                    if (noTariff > 0 && hideInactivePvz) {
+                        applyProviderFilter();
+                        console.log('[Tariff] Map refreshed (hidden inactive PVZ)');
+                    }
                 }
             } catch(e) {
-                console.error('Tariff fetch error:', e);
+                console.error('[Tariff] Fetch error:', e);
             }
 
             tariffFetchInProgress = false;
@@ -368,29 +465,58 @@ foreach ($pvzIcons as $k => $v) {
             if (tariffData && tariffData.min_price !== undefined) {
                 feature.properties._minPrice = tariffData.min_price;
                 feature.properties._hasTariff = true;
+
+                // Update balloon content with price
+                const p = feature.properties.data;
+                if (p) {
+                    const iconHref = pvzIcons[p.provider] || '';
+                    const providerIcon = iconHref ? `<img src="${iconHref}" alt="${p.provider_name || p.provider}" style="width:24px;height:24px;vertical-align:middle;margin-right:6px;">` : '';
+                    const providerName = p.provider_name || p.provider || '';
+                    const typeLabel = p.pvz_type === '2' ? 'Постамат' : 'Пункт выдачи заказов';
+                    const typeClass = p.pvz_type === '2' ? 'postamat' : 'pvz';
+                    const priceLabel = `<div style="margin-bottom:8px;color:#4CAF50;font-weight:600;">Доставка от ${tariffData.min_price} ₽</div>`;
+
+                    feature.properties.balloonContentBody = `
+                        <div style="font-weight:600;font-size:14px;margin-bottom:8px;">${p.title}</div>
+                        <div style="margin-bottom: 10px; display: flex; align-items: center;">
+                            ${providerIcon}
+                            <span style="font-weight: 500;">${providerName}</span>
+                        </div>
+                        <div style="margin-bottom: 8px;">
+                            <span class="pvz-type-label ${typeClass}">${typeLabel}</span>
+                        </div>
+                        ${priceLabel}
+                        <div style="margin-bottom: 10px; color: #666;">${p.address}</div>
+                        <button class="uk-button uk-button-small uk-button-primary select-pvz-btn" onclick="event.stopPropagation(); handlePvzSelect('${p.id}')">Выбрать этот пункт</button>
+                    `;
+
+                    // Update hint with price
+                    feature.properties.hintContent = p.title + (p.provider_name ? ' (' + p.provider_name + ')' : '') + ' — от ' + tariffData.min_price + ' ₽';
+                }
+
+                // Update info panel if this PVZ is currently previewed
+                if (window._previewPvzId === pvzId) {
+                    const obj = mapObjectManager.objects.getById(pvzId);
+                    if (obj) showPvzInfo(obj);
+                }
             } else {
                 feature.properties._minPrice = null;
                 feature.properties._hasTariff = false;
-                // Mark as inactive (will be hidden on next filter apply)
-                feature.properties._inactive = true;
+                // Mark as inactive and hide if setting enabled
+                if (hideInactivePvz) {
+                    feature.properties._inactive = true;
+                    console.log(`[Tariff] Marked PVZ ${pvzId} as inactive (no tariff)`);
+                    // Will be hidden on next applyProviderFilter call
+                } else {
+                    console.log(`[Tariff] No tariff for PVZ ${pvzId} (hiding disabled)`);
+                }
             }
 
-            // Refresh features on map
-            applyProviderFilter(true);
+            // DON'T refresh map here - wait until batch is complete to avoid balloon issues
+            // applyProviderFilter(true);
         }
 
         // Handle PVZ selection from balloon button
-        window.handlePvzSelect = function(id) {
-            if (!mapObjectManager) return;
-            const obj = mapObjectManager.objects.getById(id);
-            if (obj) {
-                selectPvz(obj);
-                if (mapInstance && mapInstance.balloon) {
-                    mapInstance.balloon.close();
-                }
-            }
-        };
-
         function initMap() {
             if (mapInstance || typeof ymaps === 'undefined') return;
 
@@ -465,9 +591,6 @@ foreach ($pvzIcons as $k => $v) {
             });
         }
 
-        // Custom icon layout with price label
-        let PvzIconLayout = null;
-
         function createMap(centerCoords) {
             const mapContainer = document.getElementById('shipping-map-container');
             mapContainer.innerHTML = ''; // Clear loading state
@@ -478,30 +601,24 @@ foreach ($pvzIcons as $k => $v) {
                 controls: ['zoomControl', 'geolocationControl']
             });
 
-            // Create custom icon layout with price label
-            PvzIconLayout = ymaps.templateLayoutFactory.createClass(
-                '<div class="pvz-marker-wrapper">' +
-                    '<img src="{{ options.iconImageHref }}" style="width:32px;height:32px;">' +
-                    '{% if properties._minPrice !== null && properties._minPrice !== undefined %}' +
-                        '<div class="pvz-price-label">от {{ properties._minPrice }}₽</div>' +
-                    '{% endif %}' +
-                '</div>',
-                {
-                    build: function() {
-                        PvzIconLayout.superclass.build.call(this);
-                    },
-                    clear: function() {
-                        PvzIconLayout.superclass.clear.call(this);
-                    }
-                }
-            );
-
             mapObjectManager = new ymaps.ObjectManager({
                 clusterize: true,
                 gridSize: 32,
-                clusterDisableClickZoom: false
+                clusterDisableClickZoom: false,
+                // Disable balloons - we show info below the map
+                geoObjectOpenBalloonOnClick: false,
+                clusterOpenBalloonOnClick: false
             });
             mapInstance.geoObjects.add(mapObjectManager);
+
+            // Handle click on PVZ point - show info below map
+            mapObjectManager.objects.events.add('click', (e) => {
+                const objectId = e.get('objectId');
+                const obj = mapObjectManager.objects.getById(objectId);
+                if (obj) {
+                    showPvzInfo(obj);
+                }
+            });
 
             mapInstance.events.add('boundschange', (e) => {
                 fetchPvz(e.get('newBounds'));
@@ -542,6 +659,11 @@ foreach ($pvzIcons as $k => $v) {
                         // Get icon by provider (if configured)
                         const iconHref = pvzIcons[p.provider] || '';
 
+                        // Check cached tariff for this PVZ
+                        const cachedTariff = getCachedTariff(p.id);
+                        const minPrice = (cachedTariff && cachedTariff.min_price !== undefined) ? cachedTariff.min_price : null;
+                        const priceLabel = minPrice !== null ? `<div style="margin-bottom:8px;color:#4CAF50;font-weight:600;">Доставка от ${minPrice} ₽</div>` : '';
+
                         // Build balloon content with provider icon and type info
                         const providerIcon = iconHref ? `<img src="${iconHref}" alt="${p.provider_name || p.provider}" style="width:24px;height:24px;vertical-align:middle;margin-right:6px;">` : '';
                         const providerName = p.provider_name || p.provider || '';
@@ -558,13 +680,16 @@ foreach ($pvzIcons as $k => $v) {
                             <div style="margin-bottom: 8px;">
                                 <span class="pvz-type-label ${typeClass}">${typeLabel}</span>
                             </div>
+                            ${priceLabel}
                             <div style="margin-bottom: 10px; color: #666;">${p.address}</div>
                             <button class="uk-button uk-button-small uk-button-primary select-pvz-btn" onclick="event.stopPropagation(); handlePvzSelect('${p.id}')">Выбрать этот пункт</button>
                         `;
 
-                        // Check cached tariff for this PVZ
-                        const cachedTariff = getCachedTariff(p.id);
-                        const minPrice = (cachedTariff && cachedTariff.min_price !== undefined) ? cachedTariff.min_price : null;
+                        // Build hint with price if available
+                        let hintText = p.title + (p.provider_name ? ' (' + p.provider_name + ')' : '');
+                        if (minPrice !== null) {
+                            hintText += ' — от ' + minPrice + ' ₽';
+                        }
 
                         const feature = {
                             type: 'Feature',
@@ -572,7 +697,7 @@ foreach ($pvzIcons as $k => $v) {
                             geometry: { type: 'Point', coordinates: [p.lat, p.lon] },
                             properties: {
                                 balloonContentBody: balloonContent,
-                                hintContent: p.title + (p.provider_name ? ' (' + p.provider_name + ')' : ''),
+                                hintContent: hintText,
                                 data: p,
                                 _minPrice: minPrice,
                                 _hasTariff: minPrice !== null,
@@ -580,15 +705,8 @@ foreach ($pvzIcons as $k => $v) {
                             }
                         };
 
-                        // Add custom icon with price label if available
-                        if (iconHref && PvzIconLayout) {
-                            feature.options = {
-                                iconLayout: PvzIconLayout,
-                                iconImageHref: iconHref,
-                                iconImageSize: [32, 48], // Taller to accommodate price label
-                                iconImageOffset: [-16, -48]
-                            };
-                        } else if (iconHref) {
+                        // Add custom icon if available
+                        if (iconHref) {
                             feature.options = {
                                 iconLayout: 'default#image',
                                 iconImageHref: iconHref,
@@ -607,10 +725,13 @@ foreach ($pvzIcons as $k => $v) {
                     allPvzFeatures = allPvzFeatures.concat(newFeatures);
                     applyProviderFilter();
 
-                    // Queue tariff fetching for new PVZ points
+                    // Queue tariff fetching for new PVZ points (with provider info)
                     if (newFeatures.length > 0) {
-                        const newIds = newFeatures.map(f => f.id);
-                        queueTariffFetch(newIds);
+                        const newItems = newFeatures.map(f => ({
+                            id: f.id,
+                            provider: f.properties.data?.provider || 'unknown'
+                        }));
+                        queueTariffFetch(newItems);
                     }
                 }
             } catch(e) { console.error(e); }
@@ -618,11 +739,6 @@ foreach ($pvzIcons as $k => $v) {
 
         function applyProviderFilter(forceRefresh = false) {
             if (!mapObjectManager) return;
-
-            // Remember currently open balloon
-            const openBalloonId = mapObjectManager.objects.balloon.isOpen()
-                ? mapObjectManager.objects.balloon.getData()?.id
-                : null;
 
             // Filter features by active providers and exclude inactive
             let filteredFeatures = allPvzFeatures.filter(f => {
@@ -637,22 +753,83 @@ foreach ($pvzIcons as $k => $v) {
                 );
             }
 
-            // Only update if forced or filter changed (avoid closing balloon on scroll)
-            if (!forceRefresh) {
-                const currentCount = mapObjectManager.objects.getLength();
-                if (currentCount === filteredFeatures.length) {
-                    return; // No change, keep balloon open
-                }
-            }
-
-            // Clear current objects
+            // Clear current objects and add filtered
             mapObjectManager.removeAll();
-
-            // Add filtered features
             if (filteredFeatures.length > 0) {
                 mapObjectManager.add({ type: 'FeatureCollection', features: filteredFeatures });
             }
+            console.log(`[Map] Refreshed: ${filteredFeatures.length} features`);
         }
+
+        // Show PVZ info in panel below map (instead of balloon)
+        function showPvzInfo(obj) {
+            const p = obj.properties.data;
+            if (!p) return;
+
+            const infoPanel = document.getElementById('pvz-info-panel');
+            const iconHref = pvzIcons[p.provider] || '';
+            const providerIcon = iconHref ? `<img src="${iconHref}" alt="${p.provider_name || p.provider}" style="width:28px;height:28px;vertical-align:middle;margin-right:8px;">` : '';
+            const providerName = p.provider_name || p.provider || '';
+            const typeLabel = p.pvz_type === '2' ? 'Постамат' : 'Пункт выдачи';
+            const typeClass = p.pvz_type === '2' ? 'postamat' : 'pvz';
+
+            // Get cached tariff
+            const cachedTariff = getCachedTariff(p.id);
+            const minPrice = cachedTariff?.min_price;
+            const priceHtml = minPrice !== undefined
+                ? `<div class="pvz-price">Доставка от <strong>${minPrice} ₽</strong></div>`
+                : `<div class="pvz-price pvz-price-loading">Расчёт стоимости...</div>`;
+
+            infoPanel.innerHTML = `
+                <div class="pvz-info-header">
+                    <div class="pvz-provider">${providerIcon}<span>${providerName}</span></div>
+                    <span class="pvz-type-badge ${typeClass}">${typeLabel}</span>
+                </div>
+                <div class="pvz-title">${p.title}</div>
+                <div class="pvz-address">${p.address}</div>
+                ${priceHtml}
+                <button type="button" class="uk-button uk-button-primary uk-width-1-1 uk-margin-small-top" onclick="confirmPvzSelection('${p.id}')">
+                    Выбрать этот пункт
+                </button>
+            `;
+            infoPanel.hidden = false;
+
+            // Scroll to info panel
+            infoPanel.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+
+            // Store current preview (not confirmed yet)
+            window._previewPvzId = p.id;
+
+            console.log(`[PVZ] Showing info for ${p.id}: ${p.title}`);
+        }
+
+        // Confirm PVZ selection (when user clicks "Select" button)
+        window.confirmPvzSelection = function(pvzId) {
+            const obj = mapObjectManager.objects.getById(pvzId);
+            if (obj) {
+                // Hide info panel
+                const infoPanel = document.getElementById('pvz-info-panel');
+                infoPanel.hidden = true;
+                window._previewPvzId = null;
+                
+                // Select the PVZ
+                selectPvz(obj);
+                
+                // Scroll to tariffs container
+                setTimeout(() => {
+                    const tariffsContainer = document.getElementById('tariffs-container');
+                    if (tariffsContainer && !tariffsContainer.hidden) {
+                        tariffsContainer.scrollIntoView({ behavior: 'smooth', block: 'start' });
+                    } else {
+                        // If tariffs not shown yet, scroll to selected-pvz-info
+                        const selectedInfo = document.getElementById('selected-pvz-info');
+                        if (selectedInfo && !selectedInfo.hidden) {
+                            selectedInfo.scrollIntoView({ behavior: 'smooth', block: 'start' });
+                        }
+                    }
+                }, 100);
+            }
+        };
 
         function updateProviderFilters() {
             const container = document.getElementById('provider-filters');
@@ -1019,8 +1196,13 @@ foreach ($pvzIcons as $k => $v) {
             <div class="checkout-section">
                 <h3><?php echo Text::_('COM_RADICALMART_TELEGRAM_DELIVERY'); ?></h3>
                 <div id="provider-filters" class="provider-filters" hidden></div>
-                <div id="shipping-map-container" style="height: 400px; width: 100%; margin-bottom: 10px; background: #eee;"></div>
-                <div id="selected-pvz-info" class="uk-alert uk-alert-primary" hidden>
+                <div id="shipping-map-container" style="height: 350px; width: 100%; background: #eee;"></div>
+
+                <!-- PVZ Info Panel (shown when user clicks on a point) -->
+                <div id="pvz-info-panel" class="pvz-info-panel" hidden></div>
+
+                <!-- Selected PVZ confirmation -->
+                <div id="selected-pvz-info" class="uk-alert uk-alert-success" hidden>
                     <div class="uk-text-bold" id="pvz-title"></div>
                     <div class="uk-text-small" id="pvz-address" style="white-space: pre-line;"></div>
                 </div>
