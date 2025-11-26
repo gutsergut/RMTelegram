@@ -1,57 +1,933 @@
 <?php
 /**
- * Checkout view template
+ * Telegram WebApp Checkout View
  */
 \defined('_JEXEC') or die;
 
 use Joomla\CMS\Uri\Uri;
 use Joomla\CMS\Language\Text;
+use Joomla\CMS\Factory;
+
+// Force load language file for the component
+Factory::getLanguage()->load('com_radicalmart_telegram', JPATH_COMPONENT_SITE);
 
 $root = rtrim(Uri::root(), '/');
+$storeTitle = isset($this->params) ? (string) $this->params->get('store_title', 'магазин Cacao.Land') : 'магазин Cacao.Land';
 
+// Получаем иконки служб доставки из настроек
+$pvzIcons = [
+    'cdek' => isset($this->params) ? (string) $this->params->get('pvz_icon_cdek', '') : '',
+    'x5' => isset($this->params) ? (string) $this->params->get('pvz_icon_x5', '') : '',
+    'yataxi' => isset($this->params) ? (string) $this->params->get('pvz_icon_yataxi', '') : '',
+    'boxberry' => isset($this->params) ? (string) $this->params->get('pvz_icon_boxberry', '') : '',
+    'dpd' => isset($this->params) ? (string) $this->params->get('pvz_icon_dpd', '') : '',
+];
+// Обрабатываем пути иконок: оставляем только относительный путь
+foreach ($pvzIcons as $k => $v) {
+    if (!$v) continue;
+    // Убираем суффикс #joomlaImage://... от Joomla Media Manager
+    if (($hashPos = strpos($v, '#')) !== false) {
+        $v = substr($v, 0, $hashPos);
+    }
+    // Если путь содержит полный URL с доменом, извлекаем только path
+    if (preg_match('#^https?://[^/]+(/.*?)$#i', $v, $m)) {
+        $v = $m[1]; // Только path часть URL
+    }
+    // Убираем протокол без домена (если вдруг такой формат)
+    $v = preg_replace('#^https?://#i', '', $v);
+    // Убираем ВСЕ начальные слеши
+    $v = ltrim($v, '/');
+    // Добавляем ровно один слеш в начало (если путь не пустой)
+    if ($v !== '') {
+        // $v = '/' . $v;
+    }
+    $pvzIcons[$k] = $v;
+}
+?>
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title><?php echo htmlspecialchars($storeTitle . ' - ' . Text::_('COM_RADICALMART_TELEGRAM_CHECKOUT'), ENT_QUOTES, 'UTF-8'); ?></title>
+    <link rel="stylesheet" href="<?php echo $root; ?>/templates/yootheme/css/theme.css">
+    <script src="<?php echo $root; ?>/templates/yootheme/vendor/assets/uikit/dist/js/uikit.min.js"></script>
+    <script src="<?php echo $root; ?>/templates/yootheme/vendor/assets/uikit/dist/js/uikit-icons.min.js"></script>
+    <script src="https://telegram.org/js/telegram-web-app.js"></script>
+    <script src="https://api-maps.yandex.ru/2.1/?lang=ru_RU&apikey=7866d4e2-e700-48ba-94e6-a53d93c03e96"></script>
+    <style>
+        html, body { background-color: var(--tg-theme-bg-color, #ffffff); color: var(--tg-theme-text-color, #222); }
+        body { padding-bottom: 70px; } /* Space for bottom nav */
+        body.contentpane { padding: 0 !important; margin: 0 !important; }
 
+        /* Bottom fixed navigation */
+        #app-bottom-nav { position: fixed; left: 0; right: 0; bottom: 0; z-index: 10005; background: var(--tg-theme-bg-color, #fff); border-top: 1px solid rgba(0,0,0,0.1); }
+        #app-bottom-nav .uk-navbar-nav > li > a { padding: 4px 8px; line-height: 1.05; min-height: 50px; position: relative; }
+        #app-bottom-nav .tg-safe-text { display: inline-flex; align-items: center; }
+        #app-bottom-nav .bottom-tab { display: flex; flex-direction: column; align-items: center; justify-content: center; font-size: 10px; }
+        #app-bottom-nav .bottom-tab .caption { display: block; margin-top: 1px; font-size: 10px; }
+        #app-bottom-nav .uk-icon > svg { width: 18px; height: 18px; }
 
+        /* Checkout specific styles */
+        .checkout-section { margin-bottom: 20px; background: rgba(0,0,0,0.02); padding: 15px; border-radius: 8px; }
+        .checkout-section h3 { font-size: 1.1rem; margin-bottom: 10px; font-weight: 500; }
+        .checkout-summary { font-size: 1.1rem; font-weight: bold; margin-top: 10px; border-top: 1px solid rgba(0,0,0,0.1); padding-top: 10px; }
 
+        /* Payment methods styling */
+        .payment-method-item { background: rgba(0,0,0,0.02); border-radius: 8px; cursor: pointer; transition: background 0.2s; }
+        .payment-method-item:hover { background: rgba(0,0,0,0.05); }
+        .payment-method-item input[type="radio"]:checked + * { color: var(--tg-theme-button-color, #1e87f0); }
 
+        /* Dark mode adjustments */
+        .rmt-dark #app-bottom-nav { background: #1b1c1d; border-top-color: rgba(255,255,255,0.1); }
+        .rmt-dark .checkout-section { background: rgba(255,255,255,0.05); }
+        .rmt-dark .payment-method-item { background: rgba(255,255,255,0.05); }
+        .rmt-dark .payment-method-item:hover { background: rgba(255,255,255,0.1); }
 
+        /* Yandex Maps Balloon Fixes */
+        .ymaps-2-1-79-balloon { z-index: 10000 !important; }
+        .ymaps-2-1-79-balloon__content { padding: 12px !important; min-width: 200px; }
+        /* Hide "Create your map" footer link in balloon */
+        .ymaps-2-1-79-balloon__footer { display: none !important; }
+        .ymaps-2-1-79-balloon__layout { padding-bottom: 0 !important; }
+        .select-pvz-btn { margin-top: 10px; width: 100%; }
+        .pvz-type-label { display: inline-block; padding: 4px 10px; border-radius: 12px; font-size: 12px; font-weight: 500; }
+        .pvz-type-label.pvz { background: #e3f2fd; color: #1565c0; }
+        .pvz-type-label.postamat { background: #e8f5e9; color: #2e7d32; }
 
+        /* Provider filter buttons */
+        .provider-filters { display: flex; flex-wrap: wrap; gap: 8px; margin-bottom: 12px; }
+        .provider-filter-btn { display: inline-flex; align-items: center; justify-content: center; padding: 6px 12px; border: 2px solid #e0e0e0; border-radius: 20px; background: #fff; cursor: pointer; transition: all 0.2s; min-width: 44px; height: 36px; }
+        .provider-filter-btn:hover { border-color: #bbb; }
+        .provider-filter-btn.active { border-color: var(--tg-theme-button-color, #1e87f0); background: rgba(30, 135, 240, 0.1); }
+        .provider-filter-btn img { width: 24px; height: 24px; object-fit: contain; }
+        .provider-filter-btn .filter-label { font-size: 13px; font-weight: 500; }
+        .rmt-dark .provider-filter-btn { background: #2a2a2a; border-color: #444; }
+        .rmt-dark .provider-filter-btn:hover { border-color: #666; }
+        .rmt-dark .provider-filter-btn.active { border-color: var(--tg-theme-button-color, #1e87f0); background: rgba(30, 135, 240, 0.2); }
+    </style>
+    <script>
+        // PVZ Icons configuration from settings
+        const pvzIcons = <?php echo json_encode($pvzIcons, JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES); ?>;
 
+        // Basic API helper
+        function qs(name){ const p=new URLSearchParams(location.search); return p.get(name); }
+        function makeNonce(){ return (Date.now().toString(36) + '-' + Math.random().toString(36).slice(2,10)); }
 
+        async function api(method, params={}){
+            const url = new URL(location.origin + '/index.php');
+            url.searchParams.set('option','com_radicalmart_telegram');
+            url.searchParams.set('task','api.'+method);
+            const chat = qs('chat'); if (chat) url.searchParams.set('chat', chat);
+            try { if (window.Telegram && window.Telegram.WebApp && window.Telegram.WebApp.initData) { url.searchParams.set('tg_init', window.Telegram.WebApp.initData); } } catch(e){}
+            for (const [k,v] of Object.entries(params)) url.searchParams.set(k, v);
 
+            const res = await fetch(url.toString(), { credentials: 'same-origin' });
+            const json = await res.json();
+            if (json && json.success === false) throw new Error(json.message||'API error');
+            return json.data || {};
+        }
 
+        // Theme handling
+        function getUserTheme(){ try { return localStorage.getItem('rmt_theme') || null; } catch(e){ return null; } }
+        function applyTheme(mode){
+            const root = document.documentElement;
+            const tp = (window.Telegram && window.Telegram.WebApp && window.Telegram.WebApp.themeParams) ? window.Telegram.WebApp.themeParams : {};
+            const cs = (window.Telegram && window.Telegram.WebApp && window.Telegram.WebApp.colorScheme) ? window.Telegram.WebApp.colorScheme : 'light';
+            let bg, text, btn, btnText;
+            if (mode === 'tg'){
+                bg = tp.bg_color || (cs==='dark' ? '#1f1f1f' : '#ffffff');
+                text = tp.text_color || (cs==='dark' ? '#ffffff' : '#222222');
+                btn = tp.button_color || '#1e87f0';
+                btnText = tp.button_text_color || '#ffffff';
+            } else if (mode === 'dark'){
+                bg = '#1b1c1d'; text = '#ffffff'; btn = '#1e87f0'; btnText = '#ffffff';
+            } else { // light
+                bg = '#ffffff'; text = '#222222'; btn = '#1e87f0'; btnText = '#ffffff';
+            }
+            root.style.setProperty('--tg-theme-bg-color', bg);
+            root.style.setProperty('--tg-theme-text-color', text);
+            root.style.setProperty('--tg-theme-button-color', btn);
+            root.style.setProperty('--tg-theme-button-text-color', btnText);
 
+            const isDark = (mode==='dark') || (mode==='tg' && (cs==='dark'));
+            try { root.classList.toggle('rmt-dark', !!isDark); document.body.classList.toggle('rmt-dark', !!isDark); } catch(e){}
+        }
+        function initTheme(){
+            let t=getUserTheme();
+            if(!t){ t = 'light'; }
+            applyTheme(t);
+            try { window.Telegram?.WebApp?.onEvent?.('themeChanged', () => {
+                const userPref = getUserTheme();
+                if (!userPref || userPref === 'tg') { applyTheme('tg'); }
+            }); } catch(e){}
+        }
 
+        // --- UIkit Icons Fix ---
+        function RMT_EXTRACT_ICON_NAME(attr){
+            if (!attr) return '';
+            let s = String(attr);
+            const m = s.match(/icon\s*:\s*([^;]+)/);
+            if (m && m[1]) return m[1].trim();
+            return s.trim();
+        }
+        function RMT_FORCE_UKIT_ICONS(){
+            try{
+                if (!window.UIkit || !UIkit.icon) return false;
+                const nodes = document.querySelectorAll('[uk-icon]');
+                let forced = 0;
+                nodes.forEach(el => {
+                    if (el.querySelector('svg')) return;
+                    const name = RMT_EXTRACT_ICON_NAME(el.getAttribute('uk-icon'));
+                    try { UIkit.icon(el, { icon: name }); forced++; } catch(_){}
+                });
+                if (forced>0) console.log('[RMT][icons] UIkit.icon forced for', forced, 'elements');
+                try { UIkit.update(); } catch(_){}
+                return forced>0;
+            }catch(e){ return false; }
+        }
 
+        // Observe DOM changes to force icons
+        let RMT_ICON_OBSERVER = null;
+        function RMT_OBSERVE_ICONS(){
+            try{
+                if (RMT_ICON_OBSERVER) return;
+                RMT_ICON_OBSERVER = new MutationObserver((mutations) => {
+                    let needsCheck = false;
+                    for (const m of mutations){
+                        if (m.type === 'childList'){
+                            if (m.target && (m.target.hasAttribute?.('uk-icon') || m.target.querySelector?.('[uk-icon]'))) {
+                                needsCheck = true; break;
+                            }
+                            for (const n of m.addedNodes){
+                                if (n.nodeType === 1 && ((n.hasAttribute && n.hasAttribute('uk-icon')) || n.querySelector?.('[uk-icon]'))) { needsCheck = true; break; }
+                            }
+                        }
+                        if (needsCheck) break;
+                    }
+                    if (needsCheck) { try { RMT_FORCE_UKIT_ICONS(); } catch(e){} }
+                });
+                RMT_ICON_OBSERVER.observe(document.documentElement || document.body, { childList: true, subtree: true });
+            }catch(e){}
+        }
 
+        // Checkout Logic
+        async function loadCheckout(){
+            const spinner = document.getElementById('checkout-loading');
+            const form = document.getElementById('checkout-form');
+            const empty = document.getElementById('checkout-empty');
 
+            try {
+                spinner.hidden = false;
+                form.hidden = true;
+                empty.hidden = true;
 
+                // Load cart, methods, profile in parallel
+                const [cartRes, methodsRes, profileRes] = await Promise.all([
+                    api('cart'),
+                    api('methods'),
+                    api('profile')
+                ]);
 
+                const cart = cartRes.cart;
+                if (!cart || !cart.products || Object.keys(cart.products).length === 0) {
+                    spinner.hidden = true;
+                    empty.hidden = false;
+                    return;
+                }
 
+                renderSummary(cart);
+                renderMethods(methodsRes);
+                prefillProfile(profileRes);
 
+                spinner.hidden = true;
+                form.hidden = false;
 
+            } catch(e) {
+                console.error('Load checkout error:', e);
+                UIkit.notification('Ошибка загрузки оформления заказа', {status:'danger'});
+                spinner.hidden = true;
+            }
+        }
 
+        function renderSummary(cart) {
+            const el = document.getElementById('checkout-summary-block');
+            if (!cart.total) return;
+            // Fallback for sum_string if undefined (use final_string if no discount/shipping, or calculate?)
+            // Actually cart.total usually has 'sum_string' (subtotal). If not, check 'sum_formatted' or similar.
+            // If undefined, we hide the row or show final.
+            const sumStr = cart.total.sum_string || cart.total.final_string;
 
+            el.innerHTML = `
+                <div class="uk-flex uk-flex-between"><span>Товары (${cart.total.quantity}):</span> <span>${sumStr}</span></div>
+                ${cart.total.discount_string ? `<div class="uk-flex uk-flex-between uk-text-success"><span>Скидка:</span> <span>${cart.total.discount_string}</span></div>` : ''}
+                ${cart.total.shipping_string ? `<div class="uk-flex uk-flex-between"><span>Доставка:</span> <span>${cart.total.shipping_string}</span></div>` : ''}
+                <div class="checkout-summary uk-flex uk-flex-between"><span>Итого:</span> <span>${cart.total.final_string}</span></div>
+            `;
+        }
 
+        let mapInstance = null;
+        let mapObjectManager = null;
+        let defaultShippingId = 0;
+        let providerToShippingId = {}; // Mapping: provider -> shipping_id
+        let selectedPvzProvider = '';   // Currently selected PVZ provider
+        let activeProviderFilters = new Set(); // Active provider filters (empty = all)
+        let allPvzFeatures = []; // Cache all loaded PVZ features
+        let availableProviders = {}; // Available providers with names: { code: name }
+        let hidePostamats = true; // Hide postamats by default (pvz_type === '2')
 
+        // Handle PVZ selection from balloon button
+        window.handlePvzSelect = function(id) {
+            if (!mapObjectManager) return;
+            const obj = mapObjectManager.objects.getById(id);
+            if (obj) {
+                selectPvz(obj);
+                if (mapInstance && mapInstance.balloon) {
+                    mapInstance.balloon.close();
+                }
+            }
+        };
 
+        function initMap() {
+            if (mapInstance || typeof ymaps === 'undefined') return;
 
+            // Show loading state on map container
+            const mapContainer = document.getElementById('shipping-map-container');
+            mapContainer.innerHTML = '<div style="display:flex;align-items:center;justify-content:center;height:100%;"><div uk-spinner="ratio: 2"></div><span style="margin-left:10px;">Определение местоположения...</span></div>';
 
+            ymaps.ready(() => {
+                // First, try to get user's location
+                getUserLocation().then(userCoords => {
+                    createMap(userCoords);
+                }).catch(() => {
+                    // Fallback to Moscow if geolocation fails
+                    createMap([55.76, 37.64]);
+                });
+            });
+        }
 
+        function getUserLocation() {
+            return new Promise((resolve, reject) => {
+                // Try Telegram WebApp location first (if available)
+                if (window.Telegram?.WebApp?.LocationManager) {
+                    try {
+                        Telegram.WebApp.LocationManager.getLocation((location) => {
+                            if (location && location.latitude && location.longitude) {
+                                console.log('[Map] Got location from Telegram:', location);
+                                resolve([location.latitude, location.longitude]);
+                                return;
+                            }
+                            // Fall through to browser geolocation
+                            getBrowserLocation().then(resolve).catch(reject);
+                        });
+                        return;
+                    } catch(e) {
+                        console.log('[Map] Telegram location not available:', e);
+                    }
+                }
 
+                // Try browser geolocation
+                getBrowserLocation().then(resolve).catch(reject);
+            });
+        }
 
+        function getBrowserLocation() {
+            return new Promise((resolve, reject) => {
+                if (!navigator.geolocation) {
+                    // Try Yandex geolocation by IP as fallback
+                    ymaps.geolocation.get({ provider: 'yandex' }).then(result => {
+                        const coords = result.geoObjects.get(0).geometry.getCoordinates();
+                        console.log('[Map] Got location from Yandex IP:', coords);
+                        resolve(coords);
+                    }).catch(reject);
+                    return;
+                }
 
+                navigator.geolocation.getCurrentPosition(
+                    (pos) => {
+                        console.log('[Map] Got location from browser:', pos.coords);
+                        resolve([pos.coords.latitude, pos.coords.longitude]);
+                    },
+                    (err) => {
+                        console.log('[Map] Browser geolocation error:', err.message);
+                        // Try Yandex geolocation by IP as fallback
+                        ymaps.geolocation.get({ provider: 'yandex' }).then(result => {
+                            const coords = result.geoObjects.get(0).geometry.getCoordinates();
+                            console.log('[Map] Got location from Yandex IP:', coords);
+                            resolve(coords);
+                        }).catch(reject);
+                    },
+                    { enableHighAccuracy: false, timeout: 5000, maximumAge: 300000 }
+                );
+            });
+        }
 
+        function createMap(centerCoords) {
+            const mapContainer = document.getElementById('shipping-map-container');
+            mapContainer.innerHTML = ''; // Clear loading state
 
+            mapInstance = new ymaps.Map('shipping-map-container', {
+                center: centerCoords,
+                zoom: 12, // Closer zoom for user's location
+                controls: ['zoomControl', 'geolocationControl']
+            });
 
+            mapObjectManager = new ymaps.ObjectManager({
+                clusterize: true,
+                gridSize: 32,
+                clusterDisableClickZoom: false
+            });
+            mapInstance.geoObjects.add(mapObjectManager);
 
+            mapInstance.events.add('boundschange', (e) => {
+                fetchPvz(e.get('newBounds'));
+            });
 
+            // Initial fetch
+            fetchPvz(mapInstance.getBounds());
 
+            // Add user location marker
+            const userPlacemark = new ymaps.Placemark(centerCoords, {
+                hintContent: 'Вы здесь'
+            }, {
+                preset: 'islands#blueCircleIcon'
+            });
+            mapInstance.geoObjects.add(userPlacemark);
+        }
 
+        async function fetchPvz(bounds) {
+            if (!bounds) return;
+            // Send bbox as lon1,lat1,lon2,lat2 (Yandex returns [lat,lon])
+            const bbox = [bounds[0][1], bounds[0][0], bounds[1][1], bounds[1][0]].join(',');
+            try {
+                const res = await api('pvz', { bbox: bbox, limit: 500 });
+                if (res.items) {
+                    // Collect available providers
+                    res.items.forEach(p => {
+                        if (p.provider && !availableProviders[p.provider]) {
+                            availableProviders[p.provider] = p.provider_name || p.provider;
+                        }
+                    });
+                    updateProviderFilters();
 
+                    const features = res.items.map(p => {
+                        // Skip postamats if hidePostamats is enabled
+                        if (hidePostamats && p.pvz_type === '2') {
+                            return null;
+                        }
 
+                        // Get icon by provider (if configured)
+                        const iconHref = pvzIcons[p.provider] || '';
 
+                        // Build balloon content with provider icon and type info
+                        const providerIcon = iconHref ? `<img src="${iconHref}" alt="${p.provider_name || p.provider}" style="width:24px;height:24px;vertical-align:middle;margin-right:6px;">` : '';
+                        const providerName = p.provider_name || p.provider || '';
+                        const typeLabel = p.pvz_type === '2' ? 'Постамат' : 'Пункт выдачи заказов';
+                        const typeClass = p.pvz_type === '2' ? 'postamat' : 'pvz';
 
+                        // Build complete balloon content (header + body in one, no standard footer)
+                        const balloonContent = `
+                            <div style="font-weight:600;font-size:14px;margin-bottom:8px;">${p.title}</div>
+                            <div style="margin-bottom: 10px; display: flex; align-items: center;">
+                                ${providerIcon}
+                                <span style="font-weight: 500;">${providerName}</span>
+                            </div>
+                            <div style="margin-bottom: 8px;">
+                                <span class="pvz-type-label ${typeClass}">${typeLabel}</span>
+                            </div>
+                            <div style="margin-bottom: 10px; color: #666;">${p.address}</div>
+                            <button class="uk-button uk-button-small uk-button-primary select-pvz-btn" onclick="event.stopPropagation(); handlePvzSelect('${p.id}')">Выбрать этот пункт</button>
+                        `;
 
+                        const feature = {
+                            type: 'Feature',
+                            id: p.id,
+                            geometry: { type: 'Point', coordinates: [p.lat, p.lon] },
+                            properties: {
+                                balloonContentBody: balloonContent,
+                                hintContent: p.title + (p.provider_name ? ' (' + p.provider_name + ')' : ''),
+                                data: p
+                            }
+                        };
 
+                        // Add custom icon if available
+                        if (iconHref) {
+                            feature.options = {
+                                iconLayout: 'default#image',
+                                iconImageHref: iconHref,
+                                iconImageSize: [32, 32],
+                                iconImageOffset: [-16, -32]
+                            };
+                        }
 
-</html></body></nav>    </div>        </ul>            <li><a href="index.php?option=com_radicalmart_telegram&view=profile"><span uk-icon="icon: user; ratio: 0.9"></span><span class="caption">Профиль</span></a></li>            <li><a href="index.php?option=com_radicalmart_telegram&view=orders"><span uk-icon="icon: list; ratio: 0.9"></span><span class="caption">Заказы</span></a></li>            <li><a href="index.php?option=com_radicalmart_telegram&view=cart"><span uk-icon="icon: cart; ratio: 0.9"></span><span class="caption">Корзина</span></a></li>            <li><a href="index.php?option=com_radicalmart_telegram&view=app"><span uk-icon="icon: home; ratio: 0.9"></span><span class="caption">Каталог</span></a></li>        <ul class="uk-navbar-nav">    <div class="uk-navbar uk-flex uk-flex-center"><nav id="app-bottom-nav" class="uk-navbar-container" style="background: var(--tg-theme-bg-color, #fff); border-top: 1px solid #ddd;"><!-- Bottom Navigation --></div>    </div>        </div>            <p>Выберите способ доставки и оплаты</p>        <div class="uk-alert uk-alert-warning">    <div id="checkout-content">        <h2 class="uk-heading-small">Оформление заказа</h2><div class="uk-container uk-container-small uk-padding-small"><body class="contentpane"></head>    </style>        body { padding-bottom: 60px; }        #app-bottom-nav { position: fixed; left: 0; right: 0; bottom: 0; z-index: 10005; }        body.contentpane { padding: 0 !important; margin: 0 !important; }        html, body { background-color: var(--tg-theme-bg-color, #ffffff); color: var(--tg-theme-text-color, #222); }    <style>    <script src="https://telegram.org/js/telegram-web-app.js"></script>    <script src="<?php echo $root; ?>/templates/yootheme/vendor/assets/uikit/dist/js/uikit-icons.min.js"></script>    <script src="<?php echo $root; ?>/templates/yootheme/vendor/assets/uikit/dist/js/uikit.min.js"></script>    <link rel="stylesheet" href="<?php echo $root; ?>/templates/yootheme/css/theme.css">    <title><?php echo htmlspecialchars($storeTitle . ' - Оформление заказа', ENT_QUOTES, 'UTF-8'); ?></title>    <meta name="viewport" content="width=device-width, initial-scale=1">    <meta charset="utf-8"><head><html lang="ru"><!DOCTYPE html>?>$storeTitle = isset($this->params) ? (string) $this->params->get('store_title', 'магазин Cacao.Land') : 'магазин Cacao.Land';
+                        return feature;
+                    });
+
+                    // Cache features with deduplication by id (filter out nulls from postamats)
+                    const validFeatures = features.filter(f => f !== null);
+                    const existingIds = new Set(allPvzFeatures.map(f => f.id));
+                    const newFeatures = validFeatures.filter(f => !existingIds.has(f.id));
+                    allPvzFeatures = allPvzFeatures.concat(newFeatures);
+                    applyProviderFilter();
+                }
+            } catch(e) { console.error(e); }
+        }
+
+        function applyProviderFilter(forceRefresh = false) {
+            if (!mapObjectManager) return;
+
+            // Remember currently open balloon
+            const openBalloonId = mapObjectManager.objects.balloon.isOpen()
+                ? mapObjectManager.objects.balloon.getData()?.id
+                : null;
+
+            // Filter features by active providers
+            let filteredFeatures = allPvzFeatures;
+            if (activeProviderFilters.size > 0) {
+                filteredFeatures = allPvzFeatures.filter(f =>
+                    activeProviderFilters.has(f.properties.data.provider)
+                );
+            }
+
+            // Only update if forced or filter changed (avoid closing balloon on scroll)
+            if (!forceRefresh) {
+                const currentCount = mapObjectManager.objects.getLength();
+                if (currentCount === filteredFeatures.length) {
+                    return; // No change, keep balloon open
+                }
+            }
+
+            // Clear current objects
+            mapObjectManager.removeAll();
+
+            // Add filtered features
+            if (filteredFeatures.length > 0) {
+                mapObjectManager.add({ type: 'FeatureCollection', features: filteredFeatures });
+            }
+        }
+
+        function updateProviderFilters() {
+            const container = document.getElementById('provider-filters');
+            if (!container) return;
+
+            // Check if we have any providers with icons
+            const providersWithData = Object.keys(availableProviders).filter(code => pvzIcons[code]);
+            if (providersWithData.length === 0) {
+                container.hidden = true;
+                return;
+            }
+
+            container.hidden = false;
+            let html = '';
+
+            // "All" button
+            const allActive = activeProviderFilters.size === 0 ? 'active' : '';
+            html += `<button type="button" class="provider-filter-btn ${allActive}" onclick="toggleProviderFilter('all')">
+                <span class="filter-label">Все</span>
+            </button>`;
+
+            // Provider buttons (only those with icons)
+            providersWithData.forEach(code => {
+                const name = availableProviders[code];
+                const icon = pvzIcons[code];
+                const isActive = activeProviderFilters.has(code) ? 'active' : '';
+
+                if (icon) {
+                    html += `<button type="button" class="provider-filter-btn ${isActive}" onclick="toggleProviderFilter('${code}')" title="${name}">
+                        <img src="${icon}" alt="${name}">
+                    </button>`;
+                } else {
+                    html += `<button type="button" class="provider-filter-btn ${isActive}" onclick="toggleProviderFilter('${code}')">
+                        <span class="filter-label">${name}</span>
+                    </button>`;
+                }
+            });
+
+            container.innerHTML = html;
+        }
+
+        function toggleProviderFilter(provider) {
+            if (provider === 'all') {
+                // Clear all filters - show all
+                activeProviderFilters.clear();
+            } else {
+                if (activeProviderFilters.has(provider)) {
+                    activeProviderFilters.delete(provider);
+                } else {
+                    activeProviderFilters.add(provider);
+                }
+            }
+
+            updateProviderFilters();
+            applyProviderFilter(true); // Force refresh when user changes filter
+        }
+
+        function selectPvz(obj) {
+            const p = obj.properties.data;
+            selectedPvzProvider = p.provider; // Save provider for later use
+            document.getElementById('pvz-title').innerText = p.title;
+            // Show provider and type info in address line
+            let addressInfo = p.address;
+            if (p.provider_name || p.pvz_type_name) {
+                const meta = [p.provider_name, p.pvz_type_name].filter(Boolean).join(' • ');
+                addressInfo = meta + '\n' + p.address;
+            }
+            document.getElementById('pvz-address').innerText = addressInfo;
+            document.getElementById('selected-pvz-info').hidden = false;
+            document.getElementById('pvz_id_input').value = p.id;
+            document.getElementById('pvz_provider_input').value = p.provider;
+
+            // Show loading state for tariffs
+            const tariffsContainer = document.getElementById('tariffs-container');
+            if (tariffsContainer) {
+                tariffsContainer.innerHTML = '<div uk-spinner="ratio: 0.5"></div> Расчёт стоимости доставки...';
+                tariffsContainer.hidden = false;
+            }
+
+            // Determine shipping_id by provider
+            const shippingIdForProvider = providerToShippingId[p.provider] || defaultShippingId;
+            console.log('[setpvz] Sending request:', { shipping_id: shippingIdForProvider, id: p.id, provider: p.provider, providerMapping: providerToShippingId });
+
+            api('setpvz', {
+                shipping_id: shippingIdForProvider,
+                id: p.id,
+                provider: p.provider,
+                title: p.title,
+                address: p.address,
+                lat: p.lat,
+                lon: p.lon,
+                nonce: makeNonce()
+            }).then(res => {
+                console.log('[setpvz] Response:', res);
+
+                // Update full summary block if order data available
+                if (res.order) {
+                    renderSummary({ total: res.order.total });
+                } else if (res.order_total) {
+                    // Fallback: just update total line
+                    const el = document.querySelector('.checkout-summary span:last-child');
+                    if(el) el.innerText = res.order_total;
+                }
+
+                // Render tariffs if available
+                console.log('[setpvz] Tariffs count:', res.tariffs?.length || 0);
+                renderTariffs(res.tariffs, res.selected_tariff);
+            }).catch(e => {
+                console.error('setpvz error:', e);
+                if (tariffsContainer) {
+                    tariffsContainer.innerHTML = '<span class="uk-text-warning">Не удалось рассчитать стоимость доставки</span>';
+                }
+            });
+        }
+
+        function renderTariffs(tariffs, selectedTariffId) {
+            const container = document.getElementById('tariffs-container');
+            if (!container) return;
+
+            console.log('[renderTariffs] tariffs:', tariffs, 'selectedTariffId:', selectedTariffId);
+
+            if (!tariffs || tariffs.length === 0) {
+                container.innerHTML = '<span class="uk-text-muted">Тарифы недоступны</span>';
+                return;
+            }
+
+            let html = '<div class="uk-margin-small-top"><strong>Выберите тариф доставки:</strong></div>';
+            tariffs.forEach(t => {
+                const checked = (selectedTariffId && String(t.tariffId) === String(selectedTariffId)) ? 'checked' : '';
+                const price = t.deliveryCost ? t.deliveryCost + ' ₽' : '';
+                const days = t.daysMin && t.daysMax ? `(${t.daysMin}-${t.daysMax} дн.)` : '';
+                html += `
+                    <label class="uk-display-block uk-margin-small-bottom">
+                        <input class="uk-radio" type="radio" name="tariff_id" value="${t.tariffId}" ${checked} onchange="onTariffChange('${t.tariffId}')">
+                        ${t.tariffName || 'Тариф'} ${price} ${days}
+                    </label>
+                `;
+            });
+            container.innerHTML = html;
+            container.hidden = false;
+        }
+
+        async function onTariffChange(tariffId) {
+            try {
+                // Re-send setpvz with selected tariff
+                const pvzId = document.getElementById('pvz_id_input').value;
+                const pvzProvider = document.getElementById('pvz_provider_input').value;
+                if (!pvzId) return;
+
+                // Use correct shipping_id for the selected PVZ provider
+                const shippingIdForProvider = providerToShippingId[selectedPvzProvider] || defaultShippingId;
+
+                const res = await api('setpvz', {
+                    shipping_id: shippingIdForProvider,
+                    id: pvzId,
+                    provider: pvzProvider,
+                    tariff_id: tariffId,
+                    nonce: makeNonce()
+                });
+
+                // Update full summary block if order data available
+                if (res.order) {
+                    renderSummary({ total: res.order.total });
+                } else if (res.order_total) {
+                    // Fallback: just update total line
+                    const el = document.querySelector('.checkout-summary span:last-child');
+                    if(el) el.innerText = res.order_total;
+                }
+            } catch(e) {
+                console.error('onTariffChange error:', e);
+                UIkit.notification('Ошибка выбора тарифа', {status:'danger'});
+            }
+        }
+
+        function renderMethods(data) {
+            // Store default shipping ID and build provider -> shipping_id mapping
+            providerToShippingId = {};
+            if (data.shipping && data.shipping.methods && data.shipping.methods.length > 0) {
+                if (data.shipping.selected) {
+                    defaultShippingId = data.shipping.selected;
+                } else {
+                    defaultShippingId = data.shipping.methods[0].id;
+                }
+                // Build provider to shipping_id mapping
+                data.shipping.methods.forEach(m => {
+                    if (m.providers && Array.isArray(m.providers)) {
+                        m.providers.forEach(prov => {
+                            providerToShippingId[prov] = m.id;
+                        });
+                    }
+                });
+                console.log('[renderMethods] providerToShippingId:', providerToShippingId);
+            }
+
+            // Payment
+            const payContainer = document.getElementById('payment-methods');
+            payContainer.innerHTML = '';
+            if (data.payment && data.payment.methods) {
+                data.payment.methods.forEach(m => {
+                    if (m.disabled) return; // Skip disabled methods
+                    const checked = (Number(data.payment.selected) === Number(m.id)) ? 'checked' : '';
+                    const iconHtml = m.icon ? `<img src="${m.icon}" alt="${m.title}" style="width:32px;height:32px;object-fit:contain;margin-right:10px;vertical-align:middle;">` : '';
+                    // Если есть иконка, не показываем текстовое название
+                    const titleHtml = m.icon ? '' : `<span style="font-weight:500;">${m.title}</span>`;
+                    const descHtml = m.description ? `<div class="uk-text-small uk-text-muted uk-margin-small-left" style="padding-left:42px;">${m.description}</div>` : '';
+                    payContainer.innerHTML += `
+                        <label class="uk-display-block uk-margin-small-bottom uk-padding-small" style="background:rgba(0,0,0,0.02);border-radius:8px;cursor:pointer;">
+                            <div style="display:flex;align-items:center;">
+                                <input class="uk-radio" type="radio" name="payment_id" value="${m.id}" ${checked} onchange="onPaymentChange(${m.id})" style="margin-right:10px;">
+                                ${iconHtml}
+                                ${titleHtml}
+                            </div>
+                            ${descHtml}
+                        </label>
+                    `;
+                });
+            }
+
+            // Init map
+            setTimeout(initMap, 100);
+        }
+
+        function prefillProfile(data) {
+            if (data.user) {
+                const u = data.user;
+                if (u.name) {
+                    const parts = u.name.split(' ');
+                    if (parts[0]) document.querySelector('[name="first_name"]').value = parts[0];
+                    if (parts[1]) document.querySelector('[name="last_name"]').value = parts[1];
+                }
+                if (u.phone) document.querySelector('[name="phone"]').value = u.phone;
+                if (u.email) document.querySelector('[name="email"]').value = u.email;
+            }
+        }
+
+        async function onShippingChange(id) {
+            try {
+                const res = await api('setshipping', { id, nonce: makeNonce() });
+                if (res.cart) renderSummary(res.cart);
+                if (res.payment) renderMethods({ shipping: { methods: [], selected: id }, payment: res.payment }); // Update payment methods if dependent
+            } catch(e) {
+                UIkit.notification('Ошибка выбора доставки', {status:'danger'});
+            }
+        }
+
+        async function onPaymentChange(id) {
+            try {
+                await api('setpayment', { id, nonce: makeNonce() });
+            } catch(e) {
+                UIkit.notification('Ошибка выбора оплаты', {status:'danger'});
+            }
+        }
+
+        async function submitOrder() {
+            const btn = document.getElementById('submit-btn');
+            const form = document.getElementById('checkout-form-el');
+
+            if (!form.checkValidity()) {
+                form.reportValidity();
+                return;
+            }
+
+            // Validate PVZ is selected
+            const pvzId = document.getElementById('pvz_id_input').value;
+            if (!pvzId) {
+                UIkit.notification('Выберите пункт выдачи заказа', {status:'warning'});
+                return;
+            }
+
+            // Validate tariff is selected (if there are multiple)
+            const tariffRadio = document.querySelector('input[name="tariff_id"]:checked');
+            const tariffsContainer = document.getElementById('tariffs-container');
+            if (tariffsContainer && !tariffsContainer.hidden && !tariffRadio) {
+                UIkit.notification('Выберите тариф доставки', {status:'warning'});
+                return;
+            }
+
+            const formData = new FormData(form);
+            const data = Object.fromEntries(formData.entries());
+            data.action = 'create';
+            data.nonce = makeNonce();
+
+            try {
+                btn.disabled = true;
+                btn.innerHTML = '<div uk-spinner="ratio: 0.5"></div> Создание заказа...';
+
+                const res = await api('checkout', data);
+
+                if (res.pay_url) {
+                    // Redirect to payment page
+                    btn.innerHTML = '<div uk-spinner=\"ratio: 0.5\"></div> Переход к оплате...';
+                    window.location.href = res.pay_url;
+                } else if (res.html) {
+                    // Show payment form HTML
+                    document.open();
+                    document.write(res.html);
+                    document.close();
+                } else if (res.redirect) {
+                    window.location.href = res.redirect;
+                } else if (res.order_number) {
+                    // Order created but no payment needed (e.g. cash on delivery)
+                    UIkit.modal.alert(`Заказ №${res.order_number} успешно создан!`).then(() => {
+                        window.location.href = '<?php echo \Joomla\CMS\Uri\Uri::root(); ?>index.php?option=com_radicalmart_telegram&view=orders';
+                    });
+                } else {
+                    UIkit.modal.alert('Заказ успешно создан!').then(() => {
+                        window.location.href = '<?php echo \Joomla\CMS\Uri\Uri::root(); ?>index.php?option=com_radicalmart_telegram&view=orders';
+                    });
+                }
+
+            } catch(e) {
+                console.error(e);
+                UIkit.notification(e.message || 'Ошибка оформления заказа', {status:'danger'});
+                btn.disabled = false;
+                btn.innerText = 'Оплатить';
+            }
+        }
+
+        document.addEventListener('DOMContentLoaded', () => {
+            try { document.body.classList.remove('contentpane'); } catch(e){}
+            initTheme();
+            RMT_FORCE_UKIT_ICONS();
+            RMT_OBSERVE_ICONS();
+            loadCheckout();
+        });
+    </script>
+</head>
+<body>
+
+<div class="uk-container uk-padding-small">
+    <h1 class="uk-h2 uk-margin-small-bottom"><?php echo Text::_('COM_RADICALMART_TELEGRAM_CHECKOUT'); ?></h1>
+
+    <div id="checkout-loading" class="uk-flex uk-flex-center uk-margin-large-top">
+        <div uk-spinner="ratio: 2"></div>
+    </div>
+
+    <div id="checkout-empty" class="uk-text-center uk-margin-large-top" hidden>
+        <div uk-icon="icon: cart; ratio: 3" class="uk-text-muted"></div>
+        <p class="uk-text-lead"><?php echo Text::_('COM_RADICALMART_TELEGRAM_CART_EMPTY'); ?></p>
+        <a href="<?php echo \Joomla\CMS\Uri\Uri::root(); ?>index.php?option=com_radicalmart_telegram&view=app" class="uk-button uk-button-primary uk-margin-top"><?php echo Text::_('COM_RADICALMART_TELEGRAM_GO_CATALOG'); ?></a>
+    </div>
+
+    <div id="checkout-form" hidden>
+        <form id="checkout-form-el" onsubmit="event.preventDefault(); submitOrder();">
+
+            <!-- Contacts -->
+            <div class="checkout-section">
+                <h3><?php echo Text::_('COM_RADICALMART_TELEGRAM_CONTACTS'); ?></h3>
+                <div class="uk-margin-small">
+                    <input class="uk-input" type="text" name="first_name" placeholder="<?php echo Text::_('COM_RADICALMART_TELEGRAM_FIRST_NAME'); ?>" required>
+                </div>
+                <div class="uk-margin-small">
+                    <input class="uk-input" type="text" name="last_name" placeholder="<?php echo Text::_('COM_RADICALMART_TELEGRAM_LAST_NAME'); ?>" required>
+                </div>
+                <div class="uk-margin-small">
+                    <input class="uk-input" type="tel" name="phone" placeholder="<?php echo Text::_('COM_RADICALMART_TELEGRAM_PHONE'); ?>" required>
+                </div>
+                <div class="uk-margin-small">
+                    <input class="uk-input" type="email" name="email" placeholder="<?php echo Text::_('COM_RADICALMART_TELEGRAM_EMAIL'); ?>">
+                </div>
+            </div>
+
+            <!-- Shipping -->
+            <div class="checkout-section">
+                <h3><?php echo Text::_('COM_RADICALMART_TELEGRAM_DELIVERY'); ?></h3>
+                <div id="provider-filters" class="provider-filters" hidden></div>
+                <div id="shipping-map-container" style="height: 400px; width: 100%; margin-bottom: 10px; background: #eee;"></div>
+                <div id="selected-pvz-info" class="uk-alert uk-alert-primary" hidden>
+                    <div class="uk-text-bold" id="pvz-title"></div>
+                    <div class="uk-text-small" id="pvz-address" style="white-space: pre-line;"></div>
+                </div>
+                <div id="tariffs-container" class="uk-margin-small-top" hidden></div>
+                <input type="hidden" name="pvz_id" id="pvz_id_input">
+                <input type="hidden" name="pvz_provider" id="pvz_provider_input">
+            </div>
+
+            <!-- Payment -->
+            <div class="checkout-section">
+                <h3><?php echo Text::_('COM_RADICALMART_TELEGRAM_PAYMENT'); ?></h3>
+                <div id="payment-methods">
+                    <div uk-spinner></div>
+                </div>
+            </div>
+
+            <!-- Summary -->
+            <div class="checkout-section">
+                <h3><?php echo Text::_('COM_RADICALMART_TELEGRAM_TOTAL'); ?></h3>
+                <div id="checkout-summary-block"></div>
+            </div>
+
+            <button type="submit" id="submit-btn" class="uk-button uk-button-primary uk-width-1-1 uk-button-large uk-margin-bottom">Оплатить</button>
+        </form>
+    </div>
+</div>
+
+<!-- Bottom fixed nav -->
+<div id="app-bottom-nav" class="uk-navbar-container" uk-navbar>
+    <div class="uk-navbar-center uk-width-1-1 uk-flex uk-flex-center">
+        <ul class="uk-navbar-nav">
+            <li>
+                <a href="<?php echo \Joomla\CMS\Uri\Uri::root(); ?>index.php?option=com_radicalmart_telegram&view=app" class="tg-safe-text">
+                    <span class="bottom-tab"><span uk-icon="icon: thumbnails"></span><span class="caption tg-safe-text"><?php echo Text::_('COM_RADICALMART_TELEGRAM_CATALOG'); ?></span></span>
+                </a>
+            </li>
+            <li>
+                <a href="<?php echo \Joomla\CMS\Uri\Uri::root(); ?>index.php?option=com_radicalmart_telegram&view=cart" class="tg-safe-text">
+                    <span class="bottom-tab"><span uk-icon="icon: cart"></span><span class="caption tg-safe-text"><?php echo Text::_('COM_RADICALMART_TELEGRAM_CART'); ?></span></span>
+                    <span id="cart-badge" style="display:none;">0</span>
+                </a>
+            </li>
+            <li>
+                <a href="<?php echo \Joomla\CMS\Uri\Uri::root(); ?>index.php?option=com_radicalmart_telegram&view=orders" class="tg-safe-text">
+                    <span class="bottom-tab"><span uk-icon="icon: list"></span><span class="caption tg-safe-text"><?php echo Text::_('COM_RADICALMART_TELEGRAM_ORDERS'); ?></span></span>
+                </a>
+            </li>
+            <li>
+                <a href="<?php echo \Joomla\CMS\Uri\Uri::root(); ?>index.php?option=com_radicalmart_telegram&view=profile" class="tg-safe-text">
+                    <span class="bottom-tab"><span uk-icon="icon: user"></span><span class="caption tg-safe-text"><?php echo Text::_('COM_RADICALMART_TELEGRAM_PROFILE'); ?></span></span>
+                </a>
+            </li>
+        </ul>
+    </div>
+</div>
+
+</body>
+</html>

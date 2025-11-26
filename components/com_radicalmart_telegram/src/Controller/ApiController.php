@@ -25,227 +25,13 @@ use Joomla\CMS\Filesystem\File;
 use Joomla\CMS\Log\Log;
 use Joomla\Component\RadicalMart\Administrator\Model\OrderModel as AdminOrderModel;
 use Joomla\Component\RadicalMartTelegram\Site\Helper\ConsentHelper;
+use Joomla\Plugin\RadicalMartShipping\ApiShip\Extension\ApiShip;
+use Joomla\Component\RadicalMartTelegram\Site\Controller\Concern\ApiSecurityTrait;
+use Joomla\Component\RadicalMartTelegram\Site\Helper\ApiShipIntegrationHelper;
 
 class ApiController extends BaseController
 {
-    protected int $tgUserId = 0;
-    protected string $tgUsername = '';
-    protected function guardInitData(): void
-    {
-        $app = Factory::getApplication();
-        $raw = (string) $app->input->get('tg_init', '', 'raw');
-        $params = $app->getParams('com_radicalmart_telegram');
-        $strict = (int) $params->get('strict_tg_init', 0) === 1;
-        Log::add('guardInitData: raw=' . (strlen($raw) > 0 ? 'present (' . strlen($raw) . ' bytes)' : 'EMPTY') . ', strict=' . ($strict ? 'YES' : 'NO'), Log::DEBUG, 'com_radicalmart.telegram');
-        if ($raw === '') {
-            if ($strict) {
-                Log::add('Missing Telegram initData in strict mode', Log::WARNING, 'com_radicalmart.telegram');
-                echo new JsonResponse(null, 'initData required', true);
-                $app->close();
-            }
-            return;
-        }
-        try {
-            $botToken = (string) $params->get('bot_token', '');
-            if ($botToken === '') {
-                Log::add('Bot token is empty — skip initData verify', Log::WARNING, 'com_radicalmart.telegram');
-                return;
-            }
-            Log::add('Bot token length: ' . strlen($botToken) . ' chars (first 10: ' . substr($botToken, 0, 10) . '...)', Log::DEBUG, 'com_radicalmart.telegram');
-            if (!$this->verifyInitData($raw, $botToken)) {
-                if ($strict) {
-                    Log::add('Invalid Telegram initData signature (strict mode → block)', Log::WARNING, 'com_radicalmart.telegram');
-                    echo new JsonResponse(null, 'Invalid initData', true);
-                    $app->close();
-                } else {
-                    Log::add('Invalid Telegram initData signature (non‑strict → continue as guest)', Log::WARNING, 'com_radicalmart.telegram');
-                }
-            }
-            // extract Telegram user id if present
-            $pairs = [];
-            parse_str($raw, $pairs);
-            if (!empty($pairs['user'])) {
-                $userObj = json_decode((string) $pairs['user'], true);
-                if (is_array($userObj) && !empty($userObj['id'])) {
-                    $this->tgUserId = (int) $userObj['id'];
-                    if (!empty($userObj['username'])) { $this->tgUsername = (string) $userObj['username']; }
-                }
-            }
-            // If strict mode: validate that provided chat id is mapped to same tg_user_id when mapping exists
-            if ($strict) {
-                $chat = $this->getChatId();
-                if ($chat > 0 && $this->tgUserId > 0) {
-                    try {
-                        $db = Factory::getContainer()->get('DatabaseDriver');
-                        $q = $db->getQuery(true)
-                            ->select(['user_id','tg_user_id'])
-                            ->from($db->quoteName('#__radicalmart_telegram_users'))
-                            ->where($db->quoteName('chat_id') . ' = :chat')
-                            ->bind(':chat', $chat);
-                        $row = $db->setQuery($q, 0, 1)->loadAssoc();
-                        if ($row && !empty($row['tg_user_id']) && (int)$row['tg_user_id'] !== $this->tgUserId) {
-                            Log::add('Strict initData mismatch: chat_id not bound to this tg_user_id', Log::WARNING, 'com_radicalmart.telegram');
-                            echo new JsonResponse(null, 'Unauthorized chat mapping', true);
-                            $app->close();
-                        }
-                    } catch (\Throwable $e) { /* ignore db errors here */ }
-                }
-            }
-        } catch (\Throwable $e) {
-            Log::add('initData verify error: ' . $e->getMessage(), Log::WARNING, 'com_radicalmart.telegram');
-        }
-    }
-
-    protected function guardRateLimit(string $scope, int $maxPerMinute): void
-    {
-        $app = Factory::getApplication();
-        $session = $app->getSession();
-        $now = time();
-        $key = 'com_radicalmart_telegram.rlm.' . md5($scope);
-        $arr = $session->get($key, []);
-        if (!is_array($arr)) { $arr = []; }
-        $arr = array_values(array_filter($arr, function($t) use ($now) { return is_int($t) && $t > $now - 60; }));
-        if (count($arr) >= $maxPerMinute) {
-            echo new JsonResponse(null, 'Too many requests', true);
-            $app->close();
-        }
-        $arr[] = $now;
-        $session->set($key, $arr);
-    }
-
-    protected function rateKey(): string
-    {
-        $chat = $this->getChatId();
-        if ($this->tgUserId > 0) return 'tg:' . $this->tgUserId;
-        if ($chat > 0) return 'chat:' . $chat;
-        $ip = $_SERVER['REMOTE_ADDR'] ?? '';
-        return 'ip:' . $ip;
-    }
-
-    protected function guardRateLimitDb(string $scope, int $maxPerMinute): void
-    {
-        $app = Factory::getApplication();
-        $db  = Factory::getContainer()->get('DatabaseDriver');
-        $key = substr($this->rateKey(), 0, 64);
-        $now = new \Joomla\CMS\Date\Date();
-        $window = new \Joomla\CMS\Date\Date(date('Y-m-d H:i:00', $now->toUnix()));
-        $windowSql = $window->toSql();
-        try {
-            $ins = $db->getQuery(true)
-                ->insert($db->quoteName('#__radicalmart_telegram_ratelimits'))
-                ->columns([$db->quoteName('scope'), $db->quoteName('rkey'), $db->quoteName('window_start'), $db->quoteName('count')])
-                ->values(implode(',', [ $db->quote($scope), $db->quote($key), $db->quote($windowSql), '1' ]))
-                ->onDuplicateKeyUpdate([ $db->quoteName('count') . ' = ' . $db->quoteName('count') . ' + 1' ]);
-            $db->setQuery($ins)->execute();
-            $sel = $db->getQuery(true)
-                ->select($db->quoteName('count'))
-                ->from($db->quoteName('#__radicalmart_telegram_ratelimits'))
-                ->where($db->quoteName('scope') . ' = :s')
-                ->where($db->quoteName('rkey') . ' = :k')
-                ->where($db->quoteName('window_start') . ' = :w')
-                ->bind(':s', $scope)
-                ->bind(':k', $key)
-                ->bind(':w', $windowSql);
-            $cnt = (int) $db->setQuery($sel, 0, 1)->loadResult();
-            if ($cnt > $maxPerMinute) {
-                echo new JsonResponse(null, 'Too many requests', true);
-                $app->close();
-            }
-        } catch (\Throwable $e) {
-            // fallback to session limiter on DB error
-            $this->guardRateLimit($scope, $maxPerMinute);
-        }
-    }
-
-    protected function guardNonce(string $scope): void
-    {
-        $app = Factory::getApplication();
-        $params = $app->getParams('com_radicalmart_telegram');
-        $strict = (int) $params->get('strict_nonce', 0) === 1;
-        $nonce = trim((string) $app->input->get('nonce', '', 'string'));
-        if ($nonce === '') {
-            if ($strict) {
-                echo new JsonResponse(null, 'Nonce required', true);
-                $app->close();
-            }
-            return;
-        }
-        $chat = $this->getChatId();
-        if ($chat <= 0) { return; }
-        try {
-            $db = Factory::getContainer()->get('DatabaseDriver');
-            $row = (object) [
-                'chat_id' => $chat,
-                'scope'   => substr($scope, 0, 32),
-                'nonce'   => substr($nonce, 0, 64),
-                'created' => (new \Joomla\CMS\Date\Date())->toSql(),
-            ];
-            $db->insertObject('#__radicalmart_telegram_nonces', $row);
-        } catch (\Throwable $e) {
-            // Duplicate => nonce already used
-            echo new JsonResponse(null, 'Duplicate request', true);
-            $app->close();
-        }
-    }
-
-    protected function verifyInitData(string $rawInit, string $botToken): bool
-    {
-        if ($rawInit === '' || $botToken === '' || strlen($rawInit) > 4096) {
-            Log::add('verifyInitData FAIL: empty or too long. raw=' . strlen($rawInit) . ', token=' . (strlen($botToken) > 0 ? 'set' : 'empty'), Log::DEBUG, 'com_radicalmart.telegram');
-            return false;
-        }
-        $pairs = [];
-        parse_str($rawInit, $pairs);
-        if (empty($pairs) || !isset($pairs['hash'])) {
-            Log::add('verifyInitData FAIL: no pairs or no hash', Log::DEBUG, 'com_radicalmart.telegram');
-            return false;
-        }
-        $receivedHash = (string) $pairs['hash'];
-        unset($pairs['hash']);
-        $originalKeys = array_keys($pairs);
-        // Telegram не документирует параметр signature для WebApp initData – его надо игнорировать
-        if (isset($pairs['signature'])) {
-            unset($pairs['signature']);
-        }
-        // Возможные прочие служебные параметры, которые могли добавить прокси / CDN – игнорируем по префиксу _tg_ / tg_tech
-        foreach ($pairs as $k => $v) {
-            if (str_starts_with($k, '_tg_') || str_starts_with($k, 'tg_tech')) {
-                unset($pairs[$k]);
-            }
-        }
-        ksort($pairs, SORT_STRING);
-        $lines = [];
-        foreach ($pairs as $k => $v) {
-            if (is_array($v)) {
-                Log::add('verifyInitData FAIL: array value in pairs (key=' . $k . ')', Log::DEBUG, 'com_radicalmart.telegram');
-                return false;
-            }
-            $lines[] = $k . '=' . (string) $v;
-        }
-        $dataCheckString = implode("\n", $lines);
-        $secretKey = hash_hmac('sha256', 'WebAppData', $botToken, true);
-        $calc = hash_hmac('sha256', $dataCheckString, $secretKey);
-        $okPrimary = hash_equals(strtolower($calc), strtolower($receivedHash));
-        if ($okPrimary) {
-            Log::add('verifyInitData: OK primary, received=' . substr($receivedHash, 0, 16) . '..., calc=' . substr($calc, 0, 16) . '..., keys=' . implode(',', array_keys($pairs)), Log::DEBUG, 'com_radicalmart.telegram');
-            return true;
-        }
-        // Дополнительный fallback: если среди originalKeys была signature и мы её уже удалили, пробовать ещё раз (по сути уже сделано) – логируем причину
-        Log::add('verifyInitData mismatch: received=' . substr($receivedHash,0,16) . '..., calc=' . substr($calc,0,16) . '..., keys=' . implode(',', array_keys($pairs)) . '; originalKeys=' . implode(',', $originalKeys) . '; dataCheckString(first120)=' . substr($dataCheckString,0,120), Log::WARNING, 'com_radicalmart.telegram');
-        return false;
-    }
-    protected function getChatId(): int
-    {
-        $app = Factory::getApplication();
-        $chat = (int) $app->input->get('chat', 0, 'int');
-        if ($chat > 0) { return $chat; }
-        // Fallback: в WebApp приватный chat.id равен tg_user_id, используем его при валидном initData
-        if ($this->tgUserId > 0) {
-            \Joomla\CMS\Log\Log::add('getChatId: fallback to tg_user_id=' . $this->tgUserId, \Joomla\CMS\Log\Log::DEBUG, 'com_radicalmart.telegram');
-            return (int) $this->tgUserId;
-        }
-        return 0;
-    }
+    use ApiSecurityTrait;
 
     public function list(): void
     {
@@ -1030,7 +816,14 @@ class ApiController extends BaseController
             if (!$orderId) {
                 throw new \RuntimeException('Заказ создан, но не получен идентификатор', 500);
             }
-            $payUrl = rtrim(Uri::root(), '/') . '/index.php?option=com_radicalmart&task=payment.pay&order_number=' . urlencode((string) $number);
+            if (empty($number)) {
+                throw new \RuntimeException('Заказ создан, но не получен номер заказа', 500);
+            }
+
+            // Generate payment URL using RadicalMart SEF format
+            $rmParams = \Joomla\Component\RadicalMart\Administrator\Helper\ParamsHelper::getComponentParams();
+            $paymentEntry = $rmParams->get('payment_entry', 'radicalmart_payment');
+            $payUrl = rtrim(Uri::root(), '/') . '/' . $paymentEntry . '/pay/' . urlencode((string) $number);
 
             // Optionally, send Telegram Payment invoice (cards) if enabled and selected payment is telegram*
             try {
@@ -1122,8 +915,75 @@ class ApiController extends BaseController
             $model->setState('cart.code', (string) $cart->code);
             $item  = $model->getItem();
 
-            $map = function($list){
-                $out=[]; if ($list) { foreach ($list as $m) { $out[] = [ 'id'=>(int)$m->id, 'title'=>(string)$m->title, 'disabled'=>!empty($m->disabled), 'plugin'=> isset($m->plugin) ? (string)$m->plugin : '' ]; } }
+            // Map shipping methods with providers info
+            $mapShipping = function($list) {
+                $out = [];
+                if ($list) {
+                    foreach ($list as $m) {
+                        $method = [
+                            'id' => (int)$m->id,
+                            'title' => (string)$m->title,
+                            'disabled' => !empty($m->disabled),
+                            'plugin' => isset($m->plugin) ? (string)$m->plugin : '',
+                            'providers' => []
+                        ];
+                        // Get providers for ApiShip methods
+                        if (!empty($m->plugin) && stripos($m->plugin, 'apiship') !== false) {
+                            try {
+                                $params = \Joomla\Plugin\RadicalMartShipping\ApiShip\Extension\ApiShip::getShippingMethodParams((int)$m->id);
+                                $providers = $params->get('providers', []);
+                                if (!empty($providers)) {
+                                    $method['providers'] = array_values((array)$providers);
+                                }
+                            } catch (\Throwable $e) { /* ignore */ }
+                        }
+                        $out[] = $method;
+                    }
+                }
+                return $out;
+            };
+            $mapPayment = function($list){
+                $out = [];
+                if ($list) {
+                    foreach ($list as $m) {
+                        $method = [
+                            'id' => (int)$m->id,
+                            'title' => (string)$m->title,
+                            'disabled' => !empty($m->disabled),
+                            'plugin' => isset($m->plugin) ? (string)$m->plugin : '',
+                            'description' => isset($m->description) ? (string)$m->description : '',
+                            'icon' => ''
+                        ];
+                        // Get icon from media
+                        if (!empty($m->media)) {
+                            $iconPath = '';
+                            if ($m->media instanceof \Joomla\Registry\Registry) {
+                                $iconPath = $m->media->get('icon', '');
+                            } elseif (is_object($m->media) && isset($m->media->icon)) {
+                                $iconPath = $m->media->icon;
+                            } elseif (is_array($m->media) && isset($m->media['icon'])) {
+                                $iconPath = $m->media['icon'];
+                            }
+                            if ($iconPath) {
+                                // Remove #joomlaImage:// suffix
+                                if (($hashPos = strpos($iconPath, '#')) !== false) {
+                                    $iconPath = substr($iconPath, 0, $hashPos);
+                                }
+                                // Remove full URL prefix if present, keep only path
+                                if (preg_match('#^https?://[^/]+(/.*?)$#i', $iconPath, $match)) {
+                                    $iconPath = $match[1];
+                                }
+                                // Remove any leading slashes first, then add exactly one
+                                $iconPath = ltrim($iconPath, '/');
+                                if ($iconPath !== '') {
+                                    // $iconPath = '/' . $iconPath;
+                                }
+                                $method['icon'] = $iconPath;
+                            }
+                        }
+                        $out[] = $method;
+                    }
+                }
                 return $out;
             };
 
@@ -1132,11 +992,11 @@ class ApiController extends BaseController
             $res = [
                 'shipping' => [
                     'selected' => $selectedShipping,
-                    'methods'  => $map($item->shippingMethods ?? []),
+                    'methods'  => $mapShipping($item->shippingMethods ?? []),
                 ],
                 'payment' => [
                     'selected' => $selectedPayment,
-                    'methods'  => $map($item->paymentMethods ?? []),
+                    'methods'  => $mapPayment($item->paymentMethods ?? []),
                 ],
             ];
             // If chat is not mapped to a user, mark telegram payments disabled
@@ -1194,329 +1054,6 @@ class ApiController extends BaseController
         } catch (\Throwable $e) { echo new JsonResponse(null, $e->getMessage(), true); $app->close(); }
     }
 
-    public function setshipping(): void
-    {
-        $app  = Factory::getApplication();
-        $this->guardInitData();
-        $this->guardRateLimitDb('mut', 60);
-        $this->guardNonce('setshipping');
-        $chat = $this->getChatId();
-        $id   = $app->input->getInt('id', 0);
-        if ($chat <= 0 || $id <= 0) { echo new JsonResponse(null, 'Invalid parameters', true); $app->close(); }
-        try {
-            $svc  = new CartService();
-            $cart = $svc->getCart($chat);
-            if (!$cart || empty($cart->id)) { echo new JsonResponse(null, Text::_('COM_RADICALMART_TELEGRAM_ERR_CART_EMPTY'), true); $app->close(); }
-
-            // Validate id against available methods first
-            $model = new CheckoutModel();
-            $model->setState('cart.id', (int) $cart->id);
-            $model->setState('cart.code', (string) $cart->code);
-            $curr  = $model->getItem();
-            $allowed = [];
-            if (!empty($curr->shippingMethods)) { foreach ($curr->shippingMethods as $m) { $allowed[(int)$m->id] = true; } }
-            if (!isset($allowed[$id])) { echo new JsonResponse(null, Text::_('COM_RADICALMART_TELEGRAM_ERR_SHIPPING_UNAVAILABLE'), true); $app->close(); }
-
-            $sessionData = $app->getUserState('com_radicalmart.checkout.data', []);
-            $sessionData['shipping']['id'] = $id;
-            $app->setUserState('com_radicalmart.checkout.data', $sessionData);
-
-            // Rebuild item with new shipping
-            $model = new CheckoutModel();
-            $model->setState('cart.id', (int) $cart->id);
-            $model->setState('cart.code', (string) $cart->code);
-            $item  = $model->getItem();
-
-            $map = function($list){ $out=[]; if ($list) { foreach ($list as $m) { $out[] = [ 'id'=>(int)$m->id, 'title'=>(string)$m->title, 'disabled'=>!empty($m->disabled), 'plugin'=> isset($m->plugin) ? (string)$m->plugin : '' ]; } } return $out; };
-
-            $selectedShipping = (!empty($item->shipping) && !empty($item->shipping->id)) ? (int) $item->shipping->id : 0;
-            $selectedPayment  = (!empty($item->payment) && !empty($item->payment->id)) ? (int) $item->payment->id : 0;
-            echo new JsonResponse([
-                'shipping_id'   => $selectedShipping,
-                'payment'       => [ 'selected' => $selectedPayment, 'methods' => $map($item->paymentMethods ?? []) ],
-                'shipping_title'=> (!empty($item->shipping) && !empty($item->shipping->title)) ? (string) $item->shipping->title : '',
-                'order_total'   => (!empty($item->total) && !empty($item->total['final_string'])) ? (string) $item->total['final_string'] : '',
-            ]);
-            $app->close();
-        } catch (\Throwable $e) { echo new JsonResponse(null, $e->getMessage(), true); $app->close(); }
-    }
-
-    public function setpayment(): void
-    {
-        $app  = Factory::getApplication();
-        $this->guardInitData();
-        $this->guardRateLimitDb('mut', 60);
-        $this->guardNonce('setpayment');
-        $chat = $this->getChatId();
-        $id   = $app->input->getInt('id', 0);
-        if ($chat <= 0 || $id <= 0) { echo new JsonResponse(null, 'Invalid parameters', true); $app->close(); }
-        try {
-            $svc  = new CartService();
-            $cart = $svc->getCart($chat);
-            if (!$cart || empty($cart->id)) { echo new JsonResponse(null, Text::_('COM_RADICALMART_TELEGRAM_ERR_CART_EMPTY'), true); $app->close(); }
-
-            // Validate id against available methods first
-            $model = new CheckoutModel();
-            $model->setState('cart.id', (int) $cart->id);
-            $model->setState('cart.code', (string) $cart->code);
-            $curr  = $model->getItem();
-            $allowed = [];
-            if (!empty($curr->paymentMethods)) { foreach ($curr->paymentMethods as $m) { $allowed[(int)$m->id] = true; } }
-            if (!isset($allowed[$id])) { echo new JsonResponse(null, Text::_('COM_RADICALMART_TELEGRAM_ERR_PAYMENT_UNAVAILABLE'), true); $app->close(); }
-
-            $sessionData = $app->getUserState('com_radicalmart.checkout.data', []);
-            $sessionData['payment']['id'] = $id;
-            $app->setUserState('com_radicalmart.checkout.data', $sessionData);
-
-            // Rebuild item with new payment
-            $model = new CheckoutModel();
-            $model->setState('cart.id', (int) $cart->id);
-            $model->setState('cart.code', (string) $cart->code);
-            $item  = $model->getItem();
-
-            $selectedPayment  = (!empty($item->payment) && !empty($item->payment->id)) ? (int) $item->payment->id : 0;
-            echo new JsonResponse([
-                'payment_id'    => $selectedPayment,
-                'shipping_title'=> (!empty($item->shipping) && !empty($item->shipping->title)) ? (string) $item->shipping->title : '',
-                'order_total'   => (!empty($item->total) && !empty($item->total['final_string'])) ? (string) $item->total['final_string'] : '',
-            ]);
-            $app->close();
-        } catch (\Throwable $e) { echo new JsonResponse(null, $e->getMessage(), true); $app->close(); }
-    }
-
-    public function summary(): void
-    {
-        $app  = Factory::getApplication();
-        $this->guardInitData();
-        $this->guardRateLimitDb('summary', 60);
-        $chat = $this->getChatId();
-        if ($chat <= 0) {
-            echo new JsonResponse(null, Text::_('COM_RADICALMART_TELEGRAM_ERR_INVALID_CHAT'), true);
-            $app->close();
-        }
-
-        try {
-            // Ensure cart exists
-            $cartSvc = new CartService();
-            $cart    = $cartSvc->getCart($chat);
-            if (!$cart || empty($cart->id)) {
-                echo new JsonResponse(['order_total' => '', 'shipping_title' => '', 'payment_title' => '', 'codes' => [], 'points' => 0]);
-                $app->close();
-            }
-
-            $model = new CheckoutModel();
-            $model->setState('cart.id', (int) $cart->id);
-            $model->setState('cart.code', (string) $cart->code);
-            $order = $model->getItem();
-
-            $shippingTitle = (!empty($order->shipping) && !empty($order->shipping->title)) ? (string) $order->shipping->title : '';
-            $paymentTitle  = (!empty($order->payment) && !empty($order->payment->title)) ? (string) $order->payment->title : '';
-            $orderTotal    = (!empty($order->total) && !empty($order->total['final_string'])) ? (string) $order->total['final_string'] : '';
-            $orderDiscount = (!empty($order->total) && !empty($order->total['discount_string'])) ? (string) $order->total['discount_string'] : '';
-            $pvz           = (!empty($order->formData['shipping']['point']) && is_array($order->formData['shipping']['point']))
-                ? $order->formData['shipping']['point'] : [];
-
-            // Applied bonuses (codes/points) from formData
-            $appliedCodes = [];
-            $pointsUsed   = 0;
-            if (!empty($order->formData['plugins']['bonuses'])) {
-                $b = $order->formData['plugins']['bonuses'];
-                if (!empty($b['codes']) && is_array($b['codes'])) {
-                    $codes = CodesHelper::getCodes($b['codes']);
-                    foreach ($b['codes'] as $cid) {
-                        $co = $codes[$cid] ?? null;
-                        // Compute discount per code from products
-                        $amount = 0.0; $amountStr = '';
-                        if (!empty($order->products)) {
-                            foreach ($order->products as $prod) {
-                                if (!empty($prod->order['plugins']['bonuses'])) {
-                                    $plug = $prod->order['plugins']['bonuses'];
-                                    $key  = 'discount_code_' . (int) $cid;
-                                    if (isset($plug[$key])) {
-                                        $unit = (float) $plug[$key];
-                                        $qty  = (float) ($prod->order['quantity'] ?? 1);
-                                        $amount += ($unit * $qty);
-                                    }
-                                }
-                            }
-                        }
-                        try {
-                            $curCode = !empty($order->currency['code']) ? $order->currency['code'] : '';
-                            if ($curCode !== '') {
-                                $amountStr = \Joomla\Component\RadicalMart\Administrator\Helper\PriceHelper::toString($amount, $curCode);
-                            } else {
-                                $amountStr = (string) $amount;
-                            }
-                        } catch (\Throwable $e) { $amountStr = (string) $amount; }
-
-                        if ($co) { $appliedCodes[] = ['id' => (int) $co->id, 'code' => (string) $co->code, 'amount' => $amountStr]; }
-                        else { $appliedCodes[] = ['id' => (int) $cid, 'code' => (string) $cid, 'amount' => $amountStr]; }
-                    }
-                }
-                if (isset($b['points'])) { $pointsUsed = (float) $b['points']; }
-            }
-
-            echo new JsonResponse([
-                'order_total'    => $orderTotal,
-                'shipping_title' => $shippingTitle,
-                'payment_title'  => $paymentTitle,
-                'codes'          => $appliedCodes,
-                'points'         => $pointsUsed,
-                'discount'       => $orderDiscount,
-                'pvz'            => $pvz,
-            ]);
-            $app->close();
-        }
-        catch (\Throwable $e) {
-            echo new JsonResponse(null, $e->getMessage(), true);
-            $app->close();
-        }
-    }
-
-    public function promocode(): void
-    {
-        $app  = Factory::getApplication();
-        $this->guardInitData();
-        $this->guardRateLimitDb('mut', 30);
-        $this->guardNonce('promocode');
-        $chat = $this->getChatId();
-        $op   = $app->input->getString('action', 'add');
-        $code = trim($app->input->getString('code', ''));
-        $id   = $app->input->getInt('id', 0);
-        if ($chat <= 0) { echo new JsonResponse(null, Text::_('COM_RADICALMART_TELEGRAM_ERR_INVALID_CHAT'), true); $app->close(); }
-
-        try {
-            $svc  = new CartService();
-            $cart = $svc->getCart($chat);
-            if (!$cart || empty($cart->id)) { echo new JsonResponse(null, Text::_('COM_RADICALMART_TELEGRAM_ERR_CART_EMPTY'), true); $app->close(); }
-
-            $sessionData = $app->getUserState('com_radicalmart.checkout.data', []);
-            if (empty($sessionData['plugins']['bonuses'])) { $sessionData['plugins']['bonuses'] = []; }
-            if (empty($sessionData['plugins']['bonuses']['codes'])) { $sessionData['plugins']['bonuses']['codes'] = []; }
-
-            if ($op === 'remove') {
-                $targetId = $id;
-                if (!$targetId && $code !== '') {
-                    $found = CodesHelper::find($code);
-                    $targetId = $found ? (int) $found->id : 0;
-                }
-                if ($targetId) {
-                    $sessionData['plugins']['bonuses']['codes'] = array_values(array_filter(
-                        $sessionData['plugins']['bonuses']['codes'], fn($c) => (int)$c !== (int)$targetId
-                    ));
-                }
-            } else {
-                if ($code === '') { echo new JsonResponse(null, Text::_('COM_RADICALMART_TELEGRAM_ERR_PROMO_REQUIRED'), true); $app->close(); }
-                $found = CodesHelper::find($code);
-                if ($found === false) { echo new JsonResponse(null, Text::_('COM_RADICALMART_TELEGRAM_ERR_PROMO_NOT_FOUND'), true); $app->close(); }
-                $cid = (int) $found->id;
-                if (!in_array($cid, $sessionData['plugins']['bonuses']['codes'])) {
-                    $sessionData['plugins']['bonuses']['codes'][] = $cid;
-                }
-            }
-
-            // trigger recalculation
-            $sessionData['plugins']['bonuses']['recalculate'] = 1;
-            $app->setUserState('com_radicalmart.checkout.data', $sessionData);
-
-            // Recompute
-            $model = new CheckoutModel();
-            $model->setState('cart.id', (int) $cart->id);
-            $model->setState('cart.code', (string) $cart->code);
-            $order = $model->getItem();
-
-            // Build response via summary structure
-            $shippingTitle = (!empty($order->shipping) && !empty($order->shipping->title)) ? (string) $order->shipping->title : '';
-            $paymentTitle  = (!empty($order->payment) && !empty($order->payment->title)) ? (string) $order->payment->title : '';
-            $orderTotal    = (!empty($order->total) && !empty($order->total['final_string'])) ? (string) $order->total['final_string'] : '';
-            $appliedCodes  = [];
-            if (!empty($order->formData['plugins']['bonuses']['codes'])) {
-                $codes = CodesHelper::getCodes($order->formData['plugins']['bonuses']['codes']);
-                foreach ($order->formData['plugins']['bonuses']['codes'] as $cid) {
-                    $co = $codes[$cid] ?? null;
-                    if ($co) { $appliedCodes[] = ['id' => (int) $co->id, 'code' => (string) $co->code]; }
-                }
-            }
-            echo new JsonResponse([
-                'order_total'    => $orderTotal,
-                'shipping_title' => $shippingTitle,
-                'payment_title'  => $paymentTitle,
-                'codes'          => $appliedCodes,
-            ]);
-            $app->close();
-        } catch (\Throwable $e) { echo new JsonResponse(null, $e->getMessage(), true); $app->close(); }
-    }
-
-    public function points(): void
-    {
-        $app  = Factory::getApplication();
-        $this->guardInitData();
-        $this->guardRateLimitDb('mut', 30);
-        $this->guardNonce('points');
-        $chat = $this->getChatId();
-        $pts  = (float) $app->input->get('points', 0, 'float');
-        if ($chat <= 0) { echo new JsonResponse(null, Text::_('COM_RADICALMART_TELEGRAM_ERR_INVALID_CHAT'), true); $app->close(); }
-
-        try {
-            $svc  = new CartService();
-            $cart = $svc->getCart($chat);
-            if (!$cart || empty($cart->id)) { echo new JsonResponse(null, Text::_('COM_RADICALMART_TELEGRAM_ERR_CART_EMPTY'), true); $app->close(); }
-
-            if ($pts < 0) { $pts = 0; }
-            $sessionData = $app->getUserState('com_radicalmart.checkout.data', []);
-            if (empty($sessionData['plugins']['bonuses'])) { $sessionData['plugins']['bonuses'] = []; }
-            $sessionData['plugins']['bonuses']['points'] = $pts;
-            $sessionData['plugins']['bonuses']['recalculate'] = 1;
-            $app->setUserState('com_radicalmart.checkout.data', $sessionData);
-
-            $model = new CheckoutModel();
-            $model->setState('cart.id', (int) $cart->id);
-            $model->setState('cart.code', (string) $cart->code);
-            $order = $model->getItem();
-
-            $shippingTitle = (!empty($order->shipping) && !empty($order->shipping->title)) ? (string) $order->shipping->title : '';
-            $paymentTitle  = (!empty($order->payment) && !empty($order->payment->title)) ? (string) $order->payment->title : '';
-            $orderTotal    = (!empty($order->total) && !empty($order->total['final_string'])) ? (string) $order->total['final_string'] : '';
-            $pointsUsed    = (float) ($order->formData['plugins']['bonuses']['points'] ?? 0);
-
-            echo new JsonResponse([
-                'order_total'    => $orderTotal,
-                'shipping_title' => $shippingTitle,
-                'payment_title'  => $paymentTitle,
-                'points'         => $pointsUsed,
-            ]);
-            $app->close();
-        } catch (\Throwable $e) { echo new JsonResponse(null, $e->getMessage(), true); $app->close(); }
-    }
-
-    public function bonuses(): void
-    {
-        $app  = Factory::getApplication();
-        $this->guardInitData();
-        $this->guardRateLimitDb('bon', 20);
-        $chat = $this->getChatId();
-        if ($chat <= 0) { echo new JsonResponse(null, Text::_('COM_RADICALMART_TELEGRAM_ERR_INVALID_CHAT'), true); $app->close(); }
-
-        try {
-            // Map chat to user
-            $db = Factory::getContainer()->get('DatabaseDriver');
-            $query = $db->getQuery(true)
-                ->select('user_id')
-                ->from($db->quoteName('#__radicalmart_telegram_users'))
-                ->where($db->quoteName('chat_id') . ' = :chat')
-                ->bind(':chat', $chat);
-            $userId = (int) $db->setQuery($query, 0, 1)->loadResult();
-
-            $available = 0.0;
-            if ($userId > 0) {
-                $available = (float) PointsHelper::getCustomerPoints($userId);
-            }
-
-            echo new JsonResponse(['points_available' => $available]);
-            $app->close();
-        } catch (\Throwable $e) { echo new JsonResponse(null, $e->getMessage(), true); $app->close(); }
-    }
-
     public function setpvz(): void
     {
         $app  = Factory::getApplication();
@@ -1532,11 +1069,17 @@ class ApiController extends BaseController
         $address    = $app->input->getString('address', '');
         $lat        = (float) $app->input->get('lat', 0, 'float');
         $lon        = (float) $app->input->get('lon', 0, 'float');
+        $tariffId   = $app->input->getString('tariff_id', '');
+
+        // Логирование входных параметров
+        Log::add("[setpvz] INPUT: shippingId=$shippingId, provider=$provider, extId=$extId, tariffId=$tariffId, chat=$chat", Log::DEBUG, 'com_radicalmart.telegram');
 
         try {
             $svc  = new CartService();
             $cart = $svc->getCart($chat);
             if (!$cart || empty($cart->id)) { echo new JsonResponse(null, Text::_('COM_RADICALMART_TELEGRAM_ERR_CART_EMPTY'), true); $app->close(); }
+
+            Log::add("[setpvz] Cart found: id={$cart->id}, products=" . count($cart->products ?? []), Log::DEBUG, 'com_radicalmart.telegram');
 
             $sessionData = $app->getUserState('com_radicalmart.checkout.data', []);
             if ($shippingId > 0) { $sessionData['shipping']['id'] = $shippingId; }
@@ -1548,6 +1091,64 @@ class ApiController extends BaseController
                 'latitude'  => $lat,
                 'longitude' => $lon,
             ];
+
+            // Calculate Tariff if ApiShip
+            $tariffs = [];
+            $selectedTariff = null;
+            $tariffDebug = null;
+            if ($shippingId > 0 && class_exists(ApiShip::class)) {
+                Log::add("[setpvz] Calling calculateTariff for provider=$provider, pointId=$extId", Log::DEBUG, 'com_radicalmart.telegram');
+                $tariffResult = ApiShipIntegrationHelper::calculateTariff($shippingId, $cart, $extId, $provider);
+
+                // Extract debug info and tariffs from result
+                $tariffDebug = $tariffResult['__debug'] ?? null;
+                $tariffs = $tariffResult['tariffs'] ?? [];
+
+                Log::add("[setpvz] calculateTariff returned " . count($tariffs) . " tariffs", Log::DEBUG, 'com_radicalmart.telegram');
+
+                if (!empty($tariffs)) {
+                    // Try to find selected tariff
+                    if (!empty($tariffId)) {
+                        foreach ($tariffs as $t) {
+                            if ((string)$t->tariffId === $tariffId) {
+                                $selectedTariff = $t;
+                                break;
+                            }
+                        }
+                    }
+
+                    // If not selected and only one exists, pick it
+                    if (!$selectedTariff && count($tariffs) === 1) {
+                        $selectedTariff = $tariffs[0];
+                    }
+
+                    if ($selectedTariff) {
+                        $deliveryCost = (float)($selectedTariff->deliveryCost ?? 0);
+                        $sessionData['shipping']['tariff'] = [
+                            'id'   => (int)$selectedTariff->tariffId,
+                            'name' => $selectedTariff->tariffName,
+                            'hash' => '',
+                            'deliveryCost' => $deliveryCost,
+                            'daysMin' => (int)($selectedTariff->daysMin ?? 0),
+                            'daysMax' => (int)($selectedTariff->daysMax ?? 0),
+                        ];
+                        // RadicalMart expects price as array with 'base' key
+                        $sessionData['shipping']['price'] = [
+                            'base' => $deliveryCost,
+                        ];
+                        Log::add("[setpvz] Selected tariff: id={$selectedTariff->tariffId}, name={$selectedTariff->tariffName}, cost={$deliveryCost}", Log::DEBUG, 'com_radicalmart.telegram');
+                    } else {
+                        // Multiple tariffs and none selected - clear tariff to force selection
+                        unset($sessionData['shipping']['tariff']);
+                        Log::add("[setpvz] No tariff selected (multiple available)", Log::DEBUG, 'com_radicalmart.telegram');
+                    }
+                } else {
+                    Log::add("[setpvz] No tariffs returned from calculateTariff", Log::WARNING, 'com_radicalmart.telegram');
+                }
+            } else {
+                Log::add("[setpvz] Skipping tariff calc: shippingId=$shippingId, ApiShip class exists=" . (class_exists(ApiShip::class) ? 'yes' : 'no'), Log::DEBUG, 'com_radicalmart.telegram');
+            }
+
             $app->setUserState('com_radicalmart.checkout.data', $sessionData);
 
             $model = new CheckoutModel();
@@ -1558,95 +1159,127 @@ class ApiController extends BaseController
             $shippingTitle = (!empty($order->shipping) && !empty($order->shipping->title)) ? (string) $order->shipping->title : '';
             $orderTotal    = (!empty($order->total) && !empty($order->total['final_string'])) ? (string) $order->total['final_string'] : '';
 
+            // Prepare order data for frontend (total block update)
+            $orderData = null;
+            $productsSumString = '';
+            $shippingString = '';
+            $discountString = '';
+
+            if (!empty($order->total)) {
+                // Get shipping price from RadicalMart or selected tariff
+                $shippingPrice = 0;
+                $rmShippingCalculated = false;
+
+                // First, try to get from shipping object (RadicalMart calculated)
+                if (!empty($order->shipping->order->price['final'])) {
+                    $shippingPrice = (float) $order->shipping->order->price['final'];
+                    $rmShippingCalculated = true;
+                }
+
+                // If RadicalMart didn't calculate shipping but we have selected tariff, use it
+                if ($selectedTariff && $shippingPrice <= 0) {
+                    $shippingPrice = (float)($selectedTariff->deliveryCost ?? 0);
+                    $rmShippingCalculated = false;
+                }
+
+                // Format shipping string
+                if ($shippingPrice > 0) {
+                    $shippingString = number_format($shippingPrice, 0, '', ' ') . ' ₽';
+                }
+
+                // RadicalMart's final:
+                // - If RM calculated shipping: final INCLUDES shipping already
+                // - If RM did NOT calculate shipping: final is products only (need to ADD shipping)
+                $rmFinal = (float)($order->total['final'] ?? 0);
+                $baseSum = (float)($order->total['base'] ?? 0);
+
+                if ($rmShippingCalculated) {
+                    // RM's final already includes shipping, so products = final - shipping
+                    $productsSum = $rmFinal - $shippingPrice;
+                    $finalTotal = $rmFinal;
+                } else {
+                    // RM's final is products only, need to ADD shipping
+                    $productsSum = $rmFinal;
+                    $finalTotal = $rmFinal + $shippingPrice;
+                }
+
+                $productsSumString = number_format($productsSum, 0, '', ' ') . ' ₽';
+                $orderTotal = number_format($finalTotal, 0, '', ' ') . ' ₽';
+
+                // Discount on products = base - productsSum
+                $productDiscount = $baseSum - $productsSum;
+                $discountString = ($productDiscount > 0)
+                    ? number_format($productDiscount, 0, '', ' ') . ' ₽'
+                    : '';
+
+                $orderData = [
+                    'total' => [
+                        'quantity'        => $order->total['quantity'] ?? 0,
+                        'sum_string'      => $productsSumString,  // Products sum (after discount, before shipping)
+                        'final_string'    => $orderTotal,          // Final total with shipping
+                        'discount_string' => $discountString,      // Product discount only
+                        'shipping_string' => $shippingString,      // Shipping cost
+                    ]
+                ];
+            }
+
+            Log::add("[setpvz] OUTPUT: shippingTitle=$shippingTitle, orderTotal=$orderTotal, tariffs=" . count($tariffs) .
+                ", products_sum=$productsSumString, shipping=$shippingString, discount=$discountString" .
+                ", rm_final=" . ($order->total['final'] ?? 'N/A') . ", rm_base=" . ($order->total['base'] ?? 'N/A') .
+                ", rm_shipping_calculated=" . ($rmShippingCalculated ? 'yes' : 'no'), Log::DEBUG, 'com_radicalmart.telegram');
+
             echo new JsonResponse([
                 'shipping_title' => $shippingTitle,
                 'order_total'    => $orderTotal,
+                'order'          => $orderData,
                 'pvz'            => $sessionData['shipping']['point'],
+                'tariffs'        => $tariffs,
+                'selected_tariff' => $selectedTariff ? $selectedTariff->tariffId : null,
+                '_debug_tariff'  => $tariffDebug,
+                '_debug_session' => [
+                    'tariff_id' => $sessionData['shipping']['tariff']['id'] ?? null,
+                    'tariff_name' => $sessionData['shipping']['tariff']['name'] ?? null,
+                    'price_base' => $sessionData['shipping']['price']['base'] ?? null,
+                ]
             ]);
             $app->close();
-        } catch (\Throwable $e) { echo new JsonResponse(null, $e->getMessage(), true); $app->close(); }
+        } catch (\Throwable $e) {
+            Log::add("[setpvz] ERROR: " . $e->getMessage(), Log::ERROR, 'com_radicalmart.telegram');
+            echo new JsonResponse(null, $e->getMessage(), true);
+            $app->close();
+        }
     }
 
-    public function apishipfetch(): void
+    /**
+     * Set payment method in session
+     */
+    public function setpayment(): void
     {
         $app = Factory::getApplication();
         $this->guardInitData();
-        $this->guardRateLimitDb('adminfetch', 5);
-        $chat = $this->getChatId(); // optional
+        $this->guardRateLimitDb('mut', 30);
+        $this->guardNonce('setpayment');
+
+        $paymentId = $app->input->getInt('id', 0);
+
+        if ($paymentId <= 0) {
+            echo new JsonResponse(null, 'Invalid payment ID', true);
+            $app->close();
+        }
+
         try {
-            $params    = $app->getParams('com_radicalmart_telegram');
-            $token     = (string) $params->get('apiship_api_key', '');
-            $providers = $app->input->getString('providers', (string) $params->get('apiship_providers', 'yataxi,cdek,x5'));
-            $providers = array_filter(array_map('trim', explode(',', $providers)));
-            $operation = ['giveout'];
-            if (empty($token)) { echo new JsonResponse(null, 'Missing ApiShip token', true); $app->close(); }
-            $db = Factory::getContainer()->get('DatabaseDriver');
-            $outDir = JPATH_ROOT . '/media/com_radicalmart_telegram/apiship';
-            if (!Folder::exists($outDir)) Folder::create($outDir);
-            $result = [];
-            $logsEnabled = (int) $params->get('logs_enabled', 1) === 1;
-            foreach ($providers as $prov) {
-                $total = ApiShipHelper::getPointsTotal($token, [$prov], $operation);
-                $rows  = [];
-                $limit = 500; $offset = 0;
-                while ($offset < $total) {
-                    $chunk = ApiShipHelper::getPoints($token, [$prov], $operation, $offset, $limit);
-                    if (!$chunk) break;
-                    foreach ($chunk as $row) {
-                        $rows[] = $row;
-                        $extId   = (string) ($row['id'] ?? ($row['externalId'] ?? ''));
-                        $title   = (string) ($row['title'] ?? ($row['name'] ?? ''));
-                        $address = (string) ($row['address'] ?? '');
-                        $lat     = isset($row['latitude']) ? (float)$row['latitude'] : (isset($row['location']['latitude']) ? (float)$row['location']['latitude'] : null);
-                        $lon     = isset($row['longitude']) ? (float)$row['longitude'] : (isset($row['location']['longitude']) ? (float)$row['location']['longitude'] : null);
-                        if ($lat === null || $lon === null || $extId === '') continue;
-                        $meta    = json_encode($row, JSON_UNESCAPED_UNICODE);
-                        $q = $db->getQuery(true)
-                            ->insert($db->quoteName('#__radicalmart_apiship_points'))
-                            ->columns([
-                                $db->quoteName('provider'), $db->quoteName('ext_id'), $db->quoteName('title'), $db->quoteName('address'),
-                                $db->quoteName('lat'), $db->quoteName('lon'), $db->quoteName('operation'), $db->quoteName('point'),
-                                $db->quoteName('meta'), $db->quoteName('updated_at')
-                            ])
-                            ->values(implode(',', [
-                                $db->quote($prov), $db->quote($extId), $db->quote($title), $db->quote($address),
-                                (string)$lat, (string)$lon, $db->quote('giveout'),
-                                "ST_GeomFromText('POINT(" . (string)$lon . " " . (string)$lat . ")', 4326)",
-                                $db->quote($meta), $db->quote((new \Joomla\CMS\Date\Date())->toSql())
-                            ]))
-                            ->onDuplicateKeyUpdate([
-                                $db->quoteName('title') . ' = VALUES(' . $db->quoteName('title') . ')',
-                                $db->quoteName('address') . ' = VALUES(' . $db->quoteName('address') . ')',
-                                $db->quoteName('lat') . ' = VALUES(' . $db->quoteName('lat') . ')',
-                                $db->quoteName('lon') . ' = VALUES(' . $db->quoteName('lon') . ')',
-                                $db->quoteName('point') . ' = VALUES(' . $db->quoteName('point') . ')',
-                                $db->quoteName('meta') . ' = VALUES(' . $db->quoteName('meta') . ')',
-                                $db->quoteName('updated_at') . ' = VALUES(' . $db->quoteName('updated_at') . ')',
-                            ]);
-                        $db->setQuery($q)->execute();
-                    }
-                    $offset += $limit;
-                }
-                $file = $outDir . '/points-' . $prov . '.json';
-                File::write($file, json_encode(['provider' => $prov, 'total' => $total, 'rows' => $rows], JSON_UNESCAPED_UNICODE));
-                // update meta
-                $mq = $db->getQuery(true)
-                    ->insert($db->quoteName('#__radicalmart_apiship_meta'))
-                    ->columns([$db->quoteName('provider'), $db->quoteName('last_fetch'), $db->quoteName('last_total')])
-                    ->values(implode(',', [ $db->quote($prov), $db->quote((new \Joomla\CMS\Date\Date())->toSql()), (string)$total ]))
-                    ->onDuplicateKeyUpdate([
-                        $db->quoteName('last_fetch') . ' = VALUES(' . $db->quoteName('last_fetch') . ')',
-                        $db->quoteName('last_total') . ' = VALUES(' . $db->quoteName('last_total') . ')',
-                    ]);
-                $db->setQuery($mq)->execute();
+            $sessionData = $app->getUserState('com_radicalmart.checkout.data', []);
+            $sessionData['payment']['id'] = $paymentId;
+            $app->setUserState('com_radicalmart.checkout.data', $sessionData);
 
-                if ($logsEnabled) { \Joomla\CMS\Log\Log::add('ApiShip provider ' . $prov . ' fetched: total=' . $total, \Joomla\CMS\Log\Log::INFO, 'com_radicalmart.telegram'); }
-                $result[] = ['provider' => $prov, 'total' => $total, 'saved' => basename($file), 'db' => 'ok'];
-            }
-
-            echo new JsonResponse(['providers' => $result]); $app->close();
-        } catch (\Throwable $e) { echo new JsonResponse(null, $e->getMessage(), true); $app->close(); }
+            echo new JsonResponse(['success' => true, 'payment_id' => $paymentId]);
+            $app->close();
+        } catch (\Throwable $e) {
+            echo new JsonResponse(null, $e->getMessage(), true);
+            $app->close();
+        }
     }
+
 
     public function pvz(): void
     {
@@ -1656,110 +1289,15 @@ class ApiController extends BaseController
         $bbox = $app->input->getString('bbox', ''); // lon1,lat1,lon2,lat2
         $prov = $app->input->getString('providers', '');
         $limit= $app->input->getInt('limit', 1000);
+
         try {
-            $db = Factory::getContainer()->get('DatabaseDriver');
-            // Try to ensure safe isolation level to avoid "Update locks cannot be acquired during a READ UNCOMMITTED transaction"
-            try {
-                $db->setQuery('SET SESSION TRANSACTION ISOLATION LEVEL READ COMMITTED')->execute();
-            } catch (\Throwable $e) { /* ignore */ }
-            $params = $app->getParams('com_radicalmart_telegram');
-            $allowedDefault = array_filter(array_map('trim', explode(',', (string) $params->get('apiship_providers', 'yataxi,cdek,x5'))));
-            $providersIn = array_filter(array_map('trim', explode(',', $prov)));
-            // sanitize providers against allowed list
-            $providers = !empty($providersIn) ? array_values(array_intersect($providersIn, $allowedDefault)) : $allowedDefault;
-            // clamp limit
-            $limit = max(1, min((int) $limit, 2000));
-            $coords = array_map('floatval', explode(',', $bbox));
-            $hasB  = (count($coords) === 4);
-            $minLon= $hasB ? min($coords[0], $coords[2]) : null;
-            $maxLon= $hasB ? max($coords[0], $coords[2]) : null;
-            $minLat= $hasB ? min($coords[1], $coords[3]) : null;
-            $maxLat= $hasB ? max($coords[1], $coords[3]) : null;
-            // Try cache
-            $items = null;
-            $cacheEnabled = (int) $params->get('pvz_cache_enabled', 1) === 1;
-            $ttlSeconds   = (int) $params->get('pvz_cache_ttl', 60);
-            $precision    = max(0, min(4, (int) $params->get('pvz_cache_precision', 2)));
-            $cacheDir     = JPATH_ROOT . '/media/com_radicalmart_telegram/apiship/cache';
-            if ($cacheEnabled && $ttlSeconds > 0 && $hasB) {
-                $step = pow(10, -$precision);
-                $norm = function($v,$s){ return number_format(round($v / $s) * $s, 6, '.', ''); };
-                $nb = [ $norm($minLon,$step), $norm($minLat,$step), $norm($maxLon,$step), $norm($maxLat,$step) ];
-                $provKey = $providers; sort($provKey); $provKey = implode(',', $provKey);
-                $key = sha1($provKey . '|' . implode(',', $nb) . '|' . (string)$limit);
-                $file = $cacheDir . '/pvz-' . $key . '.json';
-                if (\Joomla\CMS\Filesystem\File::exists($file)) {
-                    $raw = @file_get_contents($file);
-                    if ($raw) {
-                        $json = json_decode($raw, true);
-                        if (is_array($json) && isset($json['expires']) && (time() < (int)$json['expires']) && isset($json['items']) && is_array($json['items'])) {
-                            $items = $json['items'];
-                        }
-                    }
-                }
-            }
-            $where = [];
-            if (!empty($providers)) {
-                $where[] = $db->quoteName('provider') . ' IN (' . implode(',', array_map([$db, 'quote'], $providers)) . ')';
-            }
-            if ($hasB) {
-                $poly = sprintf('POLYGON((%f %f,%f %f,%f %f,%f %f,%f %f))', $minLon, $minLat, $maxLon, $minLat, $maxLon, $maxLat, $minLon, $maxLat, $minLon, $minLat);
-                $where[] = 'MBRWithin(' . $db->quoteName('point') . ', ST_GeomFromText(' . $db->quote($poly) . ', 4326))';
-            } else {
-                // No bbox provided — return empty set to avoid heavy queries
-                echo new JsonResponse(['items' => []]); $app->close();
-            }
-            if ($items === null) {
-                $showPostamats = (int) $params->get('show_postamats', 1) === 1;
-
-                $query = $db->getQuery(true)
-                    ->select([$db->quoteName('provider'), $db->quoteName('ext_id'), $db->quoteName('title'), $db->quoteName('address'), $db->quoteName('lat'), $db->quoteName('lon'), $db->quoteName('pvz_type')])
-                    ->from($db->quoteName('#__radicalmart_apiship_points'))
-                    ->where($db->quoteName('operation') . ' = ' . $db->quote('giveout'))
-                    ->order($db->quoteName('provider') . ' ASC');
-
-                if (!$showPostamats) {
-                    $query->where($db->quoteName('pvz_type') . ' = ' . $db->quote('1'));
-                }
-
-                if (!empty($where)) { $query->where(implode(' AND ', $where)); }
-                $rows = [];
-                try {
-                    $db->setQuery($query, 0, $limit);
-                    $rows = $db->loadAssocList();
-                } catch (\Throwable $ex) {
-                    // Specific MySQL error under READ UNCOMMITTED: try set isolation and retry once
-                    $msg = (string) $ex->getMessage();
-                    if (stripos($msg, 'Update locks cannot be acquired during a READ UNCOMMITTED transaction') !== false) {
-                        try { $db->setQuery('SET SESSION TRANSACTION ISOLATION LEVEL READ COMMITTED')->execute(); } catch (\Throwable $e2) { /* ignore */ }
-                        try { $db->setQuery($query, 0, $limit); $rows = $db->loadAssocList(); }
-                        catch (\Throwable $e3) { $rows = []; /* swallow to keep UI working */ }
-                    } else {
-                        throw $ex;
-                    }
-                }
-                $items = array_map(function($r){ return [
-                    'id' => $r['ext_id'],
-                    'provider' => $r['provider'],
-                    'title' => $r['title'],
-                    'address' => $r['address'],
-                    'lat' => (float)$r['lat'], 'lon' => (float)$r['lon'],
-                ]; }, $rows ?: []);
-                // write cache
-                if ($cacheEnabled && $ttlSeconds > 0) {
-                    if (!\Joomla\CMS\Filesystem\Folder::exists($cacheDir)) { \Joomla\CMS\Filesystem\Folder::create($cacheDir); }
-                    if (!isset($key)) {
-                        $provKey = $providers; sort($provKey); $provKey = implode(',', $provKey);
-                        $key = sha1($provKey . '|' . implode(',', [$minLon,$minLat,$maxLon,$maxLat]) . '|' . (string)$limit);
-                    }
-                    $file = $cacheDir . '/pvz-' . $key . '.json';
-                    $payload = json_encode(['expires' => time() + $ttlSeconds, 'items' => $items], JSON_UNESCAPED_UNICODE);
-                    @file_put_contents($file, $payload);
-                }
-            }
-
-            echo new JsonResponse(['items' => $items]); $app->close();
-        } catch (\Throwable $e) { echo new JsonResponse(null, $e->getMessage(), true); $app->close(); }
+            $items = ApiShipIntegrationHelper::getPvzList($bbox, $prov, $limit);
+            echo new JsonResponse(['items' => $items]);
+            $app->close();
+        } catch (\Throwable $e) {
+            echo new JsonResponse(null, $e->getMessage(), true);
+            $app->close();
+        }
     }
 
     public function orders(): void
@@ -1874,7 +1412,8 @@ class ApiController extends BaseController
                     if (!empty($ord->total['final'])) { $rub = (float) $ord->total['final']; }
                     elseif (!empty($ord->total['final_string'])) {
                         $num = preg_replace('#[^0-9\.,]#', '', (string) $ord->total['final_string']);
-                        $num = str_replace(' ', '', $num); $num = str_replace(',', '.', $num); $rub = (float) $num;
+                        $num = str_replace(' ', '', $num); $num = str_replace(',', '.', $num);
+                        $rub = (float) $num;
                     }
                     // Read stars plugin params
                     $db = Factory::getContainer()->get('DatabaseDriver');
@@ -1911,4 +1450,5 @@ class ApiController extends BaseController
             echo new JsonResponse(['ok' => true]); $app->close();
         } catch (\Throwable $e) { echo new JsonResponse(null, $e->getMessage(), true); $app->close(); }
     }
+
 }

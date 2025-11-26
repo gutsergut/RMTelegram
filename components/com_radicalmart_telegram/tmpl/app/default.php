@@ -535,13 +535,13 @@ $storeTitle = isset($this->params) ? (string) $this->params->get('store_title', 
         }
         function initTheme(){
             let t=getUserTheme();
-            // По умолчанию используем режим 'tg' (следовать теме Telegram)
-            if(!t){ t = 'tg'; }
+            // По умолчанию используем режим 'light' (светлая тема)
+            if(!t){ t = 'light'; }
             applyTheme(t);
             const btn=document.getElementById('theme-toggle');
             if(btn){ btn.addEventListener('click', (ev)=>{
                 ev.preventDefault();
-                const pref=getUserTheme()||'tg';
+                const pref=getUserTheme()||'light';
                 // Цикл: light -> dark -> tg -> light
                 let next='light';
                 if (pref==='light') next='dark'; else if (pref==='dark') next='tg'; else next='light';
@@ -1132,6 +1132,19 @@ $storeTitle = isset($this->params) ? (string) $this->params->get('store_title', 
                     });
                 });
             }
+        function toggleInstockFilter() {
+            const chk = document.getElementById('filter-instock');
+            if (chk) {
+                chk.checked = !chk.checked;
+                loadCatalog();
+            }
+        }
+        function updateInstockQuickButton(isActive) {
+            const btn = document.getElementById('btn-instock-quick');
+            if (btn) {
+                btn.style.display = isActive ? 'none' : '';
+            }
+        }
         function updateActiveFilterTags(baseParams){
             const cont = document.getElementById('active-filter-tags'); if (!cont) return;
             cont.innerHTML = '';
@@ -1153,7 +1166,10 @@ $storeTitle = isset($this->params) ? (string) $this->params->get('store_title', 
                 } catch(e){}
             };
             const params = Object.assign({}, baseParams||{});
-            if (params.in_stock === 1 || params.in_stock === '1') {
+            // Обновляем видимость быстрой кнопки "В наличии"
+            const instockActive = (params.in_stock === 1 || params.in_stock === '1');
+            updateInstockQuickButton(instockActive);
+            if (instockActive) {
                 addTag('<?php echo Text::_('COM_RADICALMART_TELEGRAM_ONLY_IN_STOCK'); ?>', {type:'in_stock'});
             }
             if (params.price_from || params.price_to) {
@@ -1186,8 +1202,15 @@ $storeTitle = isset($this->params) ? (string) $this->params->get('store_title', 
         async function refreshCart(){
             try {
                 const { cart } = await api('cart');
+                console.log('refreshCart: cart data', cart);
                 const box = document.getElementById('cart-box');
-                if (!cart || !cart.products) { CART_COUNT = 0; box.innerHTML = '<p class="uk-margin-remove"><?php echo Text::_('COM_RADICALMART_TELEGRAM_CART_EMPTY'); ?></p>'; return; }
+                if (!cart || !cart.products || Object.keys(cart.products).length === 0) {
+                    CART_COUNT = 0;
+                    if (box) box.innerHTML = '<p class="uk-margin-remove"><?php echo Text::_('COM_RADICALMART_TELEGRAM_CART_EMPTY'); ?></p>';
+                    const badge = document.getElementById('cart-badge');
+                    if (badge) badge.style.display = 'none';
+                    return;
+                }
                 let html = '<ul class="uk-list">';
                 let i=1; for (const key in cart.products) {
                     const p = cart.products[key];
@@ -1198,19 +1221,21 @@ $storeTitle = isset($this->params) ? (string) $this->params->get('store_title', 
                 }
                 html += '</ul>';
                 if (cart.total && cart.total.final_string) html += `<p><strong><?php echo Text::_('COM_RADICALMART_TELEGRAM_TOTAL'); ?>: ${cart.total.final_string}</strong></p>`;
-                box.innerHTML = html;
-                CART_COUNT = (cart.total && cart.total.quantity) ? Number(cart.total.quantity) : (i-1);
+                if (box) box.innerHTML = html;
+                // Считаем количество позиций или общее количество
+                CART_COUNT = (cart.total && cart.total.quantity) ? parseInt(cart.total.quantity, 10) : (i-1);
+                console.log('refreshCart: CART_COUNT=', CART_COUNT, 'cart.total=', cart.total);
                 const badge = document.getElementById('cart-badge');
                 if (badge) {
-                    if (CART_COUNT > 0) { 
-                        badge.style.display = ''; 
-                        badge.textContent = String(CART_COUNT); 
+                    if (CART_COUNT > 0) {
+                        badge.style.display = 'inline-block';
+                        badge.textContent = String(CART_COUNT);
                     }
-                    else { 
-                        badge.style.display = 'none'; 
+                    else {
+                        badge.style.display = 'none';
                     }
                 }
-            } catch(e) { /* ignore */ }
+            } catch(e) { console.error('refreshCart error:', e); }
         }
         // Профиль/Поиск — вынесены во внешний JS (app.js)
         let SEARCH_TIMER=null; let LAST_SEARCH_Q='';
@@ -1541,14 +1566,19 @@ $storeTitle = isset($this->params) ? (string) $this->params->get('store_title', 
             const btn = ev.target.closest('[data-action="add"][data-id]');
             if (!btn) return;
             ev.preventDefault();
+            console.log('Add to cart clicked, id:', btn.dataset.id);
             btn.disabled = true;
             try {
-                await api('add', { id: btn.dataset.id, qty: 1, nonce: makeNonce() });
+                const result = await api('add', { id: btn.dataset.id, qty: 1, nonce: makeNonce() });
+                console.log('Add to cart result:', result);
                 await refreshCart();
                 const productTitle = btn.closest('.uk-card-body')?.querySelector('h5')?.textContent || 'Товар';
                 showAddedToCartModal(productTitle);
             }
-            catch(e){ UIkit.notification(e.message, {status:'danger'}); }
+            catch(e){
+                console.error('Add to cart error:', e);
+                UIkit.notification(e.message, {status:'danger'});
+            }
             finally { btn.disabled = false; }
         });
 
@@ -1591,10 +1621,33 @@ $storeTitle = isset($this->params) ? (string) $this->params->get('store_title', 
                 const p = JSON.parse(btn.getAttribute('data-pvz').replace(/&apos;/g, "'"));
                 const params = { id: p.id, provider: p.provider, title: p.title||'', address: p.address||'', lat: p.lat, lon: p.lon, nonce: makeNonce() };
                 const res = await api('setpvz', params);
+
+                if (res.tariffs && res.tariffs.length > 1 && !res.selected_tariff) {
+                    let html = '<div class="uk-modal-body"><h3 class="uk-modal-title">Выберите тариф</h3><ul class="uk-list uk-list-divider">';
+                    res.tariffs.forEach(t => {
+                        html += `<li><button class="uk-button uk-button-default uk-width-1-1 tariff-select-btn" data-tariff-id="${t.tariffId}">${t.tariffName}</button></li>`;
+                    });
+                    html += '</ul><button class="uk-modal-close-default" type="button" uk-close></button></div>';
+
+                    const modal = UIkit.modal.dialog(html);
+                    modal.$el.addEventListener('click', async (e) => {
+                        const tbtn = e.target.closest('.tariff-select-btn');
+                        if (tbtn) {
+                            modal.hide();
+                            params.tariff_id = tbtn.dataset.tariffId;
+                            params.nonce = makeNonce();
+                            await api('setpvz', params);
+                            await refreshSummary();
+                            UIkit.notification('Тариф выбран');
+                        }
+                    });
+                } else {
+                    UIkit.notification('<?php echo Text::_('COM_RADICALMART_TELEGRAM_PVZ_SELECTED'); ?>');
+                }
+
                 try{ if (map) { map.setCenter([p.lat, p.lon], 13); } if (pvzMarkers[p.id]) { pvzMarkers[p.id].balloon.open(); } }catch(e){}
                 await refreshSummary();
                 try { await fetchPvz(); } catch(e) {}
-                UIkit.notification('<?php echo Text::_('COM_RADICALMART_TELEGRAM_PVZ_SELECTED'); ?>');
             }catch(e){ UIkit.notification(e.message, {status:'danger'}); }
         });
         document.addEventListener('click', (ev) => {
@@ -1743,6 +1796,7 @@ $storeTitle = isset($this->params) ? (string) $this->params->get('store_title', 
                 <div class="uk-flex uk-flex-middle uk-margin-small" style="gap:8px">
                     <button type="button" id="btn-sort" class="uk-icon-button" uk-tooltip="title: <?php echo Text::_('COM_RADICALMART_TELEGRAM_SORT'); ?>" uk-icon="list"></button>
                     <button type="button" id="btn-filters" class="uk-icon-button" uk-tooltip="title: <?php echo Text::_('COM_RADICALMART_TELEGRAM_FILTERS'); ?>" uk-icon="settings"></button>
+                    <button type="button" id="btn-instock-quick" class="uk-button uk-button-default uk-button-small" style="border-radius:20px; padding:0 12px; font-size:13px;" onclick="toggleInstockFilter()"><?php echo Text::_('COM_RADICALMART_TELEGRAM_ONLY_IN_STOCK'); ?></button>
                     <div id="active-filter-tags" class="uk-flex uk-flex-wrap" style="gap:6px"></div>
                     <input type="hidden" id="filter-sort" value="">
                 </div>
@@ -1924,23 +1978,23 @@ $storeTitle = isset($this->params) ? (string) $this->params->get('store_title', 
     <div class="uk-navbar-center uk-width-1-1 uk-flex uk-flex-center">
         <ul class="uk-navbar-nav">
             <li class="uk-active">
-                <a href="index.php?option=com_radicalmart_telegram&view=app" class="tg-safe-text">
+                <a href="<?php echo \Joomla\CMS\Uri\Uri::root(); ?>index.php?option=com_radicalmart_telegram&view=app" class="tg-safe-text">
                     <span class="bottom-tab"><span uk-icon="icon: thumbnails"></span><span class="caption tg-safe-text"><?php echo Text::_('COM_RADICALMART_TELEGRAM_CATALOG'); ?></span></span>
                 </a>
             </li>
             <li>
-                <a href="index.php?option=com_radicalmart_telegram&view=cart" class="tg-safe-text">
+                <a href="<?php echo \Joomla\CMS\Uri\Uri::root(); ?>index.php?option=com_radicalmart_telegram&view=cart" class="tg-safe-text">
                     <span class="bottom-tab"><span uk-icon="icon: cart"></span><span class="caption tg-safe-text"><?php echo Text::_('COM_RADICALMART_TELEGRAM_CART'); ?></span></span>
                     <span id="cart-badge" style="display:none;">0</span>
                 </a>
             </li>
             <li>
-                <a href="index.php?option=com_radicalmart_telegram&view=orders" class="tg-safe-text">
+                <a href="<?php echo \Joomla\CMS\Uri\Uri::root(); ?>index.php?option=com_radicalmart_telegram&view=orders" class="tg-safe-text">
                     <span class="bottom-tab"><span uk-icon="icon: list"></span><span class="caption tg-safe-text"><?php echo Text::_('COM_RADICALMART_TELEGRAM_ORDERS'); ?></span></span>
                 </a>
             </li>
             <li>
-                <a href="index.php?option=com_radicalmart_telegram&view=profile" class="tg-safe-text">
+                <a href="<?php echo \Joomla\CMS\Uri\Uri::root(); ?>index.php?option=com_radicalmart_telegram&view=profile" class="tg-safe-text">
                     <span class="bottom-tab"><span uk-icon="icon: user"></span><span class="caption tg-safe-text"><?php echo Text::_('COM_RADICALMART_TELEGRAM_PROFILE'); ?></span></span>
                 </a>
             </li>
@@ -2004,7 +2058,7 @@ $storeTitle = isset($this->params) ? (string) $this->params->get('store_title', 
         <p id="added-product-info" class="uk-text-meta"></p>
         <div class="uk-margin uk-flex uk-flex-center" style="gap: 8px;">
             <button type="button" class="uk-button uk-button-default uk-modal-close">Продолжить выбор</button>
-            <a href="index.php?option=com_radicalmart_telegram&view=cart" class="uk-button uk-button-primary">Перейти в корзину</a>
+            <a href="<?php echo \Joomla\CMS\Uri\Uri::root(); ?>index.php?option=com_radicalmart_telegram&view=cart" class="uk-button uk-button-primary">Перейти в корзину</a>
         </div>
     </div>
 </div>
