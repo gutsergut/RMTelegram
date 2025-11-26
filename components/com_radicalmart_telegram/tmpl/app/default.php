@@ -1676,6 +1676,8 @@ $storeTitle = isset($this->params) ? (string) $this->params->get('store_title', 
             try { if (RMT_ICON_FALLBACK_ENABLED && (RMT_ICONS_MISSING_COUNT&&RMT_ICONS_MISSING_COUNT())>0) { RMT_APPLY_ICON_FALLBACK && RMT_APPLY_ICON_FALLBACK(); } } catch(e){}
             // Start observer to auto-remove fallbacks on future SVG insertions
             try { RMT_OBSERVE_ICONS(); } catch(e){}
+            // Force light theme (reset any saved dark theme)
+            try { localStorage.removeItem('rmt_theme'); } catch(e){}
             initTheme();
             const ok = await ensureConsents();
             if (ok) { await initApp(); }
