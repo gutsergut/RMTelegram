@@ -9,10 +9,25 @@
 use Joomla\CMS\Language\Text;
 use Joomla\CMS\HTML\HTMLHelper;
 use Joomla\CMS\Uri\Uri;
+use Joomla\CMS\Factory;
 
 /** @var \Joomla\Component\RadicalMartTelegram\Site\View\Orders\HtmlView $this */
 
 $root = rtrim(Uri::root(), '/');
+$app = Factory::getApplication();
+$tgInit = $app->input->get('tg_init', '', 'raw');
+$chat = $app->input->getInt('chat', 0);
+
+// Build base URL with tg params
+$baseParams = [];
+if ($tgInit) {
+    $baseParams['tg_init'] = $tgInit;
+}
+if ($chat) {
+    $baseParams['chat'] = $chat;
+}
+$baseQuery = $baseParams ? '&' . http_build_query($baseParams) : '';
+?>
 ?>
 <!DOCTYPE html>
 <html lang="ru">
@@ -70,7 +85,7 @@ $root = rtrim(Uri::root(), '/');
         <!-- Header -->
         <div class="uk-flex uk-flex-between uk-flex-middle uk-margin-small-bottom">
             <h1 class="uk-h3 uk-margin-remove"><?php echo Text::_('COM_RADICALMART_TELEGRAM_ORDERS'); ?></h1>
-            <a href="<?php echo $root; ?>/index.php?option=com_radicalmart_telegram&view=app" class="uk-icon-link" uk-icon="icon: close"></a>
+            <a href="<?php echo $root; ?>/index.php?option=com_radicalmart_telegram&view=app<?php echo $baseQuery; ?>" class="uk-icon-link" uk-icon="icon: close"></a>
         </div>
 
         <?php if (!empty($this->statuses)): ?>
@@ -96,7 +111,7 @@ $root = rtrim(Uri::root(), '/');
             <div class="empty-orders-text">
                 <?php echo Text::_('COM_RADICALMART_TELEGRAM_NO_ORDERS'); ?>
             </div>
-            <a href="<?php echo $root; ?>/index.php?option=com_radicalmart_telegram&view=app" class="uk-button uk-button-primary">
+            <a href="<?php echo $root; ?>/index.php?option=com_radicalmart_telegram&view=app<?php echo $baseQuery; ?>" class="uk-button uk-button-primary">
                 <?php echo Text::_('COM_RADICALMART_TELEGRAM_GO_TO_CATALOG'); ?>
             </a>
         </div>
@@ -167,22 +182,22 @@ $root = rtrim(Uri::root(), '/');
         <div class="uk-navbar-center uk-width-1-1 uk-flex uk-flex-center">
             <ul class="uk-navbar-nav">
                 <li>
-                    <a href="<?php echo $root; ?>/index.php?option=com_radicalmart_telegram&view=app">
+                    <a href="<?php echo $root; ?>/index.php?option=com_radicalmart_telegram&view=app<?php echo $baseQuery; ?>">
                         <span class="bottom-tab"><span uk-icon="icon: thumbnails"></span><span class="caption"><?php echo Text::_('COM_RADICALMART_TELEGRAM_CATALOG'); ?></span></span>
                     </a>
                 </li>
                 <li>
-                    <a href="<?php echo $root; ?>/index.php?option=com_radicalmart_telegram&view=cart">
+                    <a href="<?php echo $root; ?>/index.php?option=com_radicalmart_telegram&view=cart<?php echo $baseQuery; ?>">
                         <span class="bottom-tab"><span uk-icon="icon: cart"></span><span class="caption"><?php echo Text::_('COM_RADICALMART_TELEGRAM_CART'); ?></span></span>
                     </a>
                 </li>
                 <li class="uk-active">
-                    <a href="<?php echo $root; ?>/index.php?option=com_radicalmart_telegram&view=orders">
+                    <a href="<?php echo $root; ?>/index.php?option=com_radicalmart_telegram&view=orders<?php echo $baseQuery; ?>">
                         <span class="bottom-tab"><span uk-icon="icon: list"></span><span class="caption"><?php echo Text::_('COM_RADICALMART_TELEGRAM_ORDERS'); ?></span></span>
                     </a>
                 </li>
                 <li>
-                    <a href="<?php echo $root; ?>/index.php?option=com_radicalmart_telegram&view=profile">
+                    <a href="<?php echo $root; ?>/index.php?option=com_radicalmart_telegram&view=profile<?php echo $baseQuery; ?>"
                         <span class="bottom-tab"><span uk-icon="icon: user"></span><span class="caption"><?php echo Text::_('COM_RADICALMART_TELEGRAM_PROFILE'); ?></span></span>
                     </a>
                 </li>
@@ -197,6 +212,9 @@ $root = rtrim(Uri::root(), '/');
                 if (window.Telegram && window.Telegram.WebApp) {
                     Telegram.WebApp.ready();
                     Telegram.WebApp.expand();
+                    
+                    // Store initData for use in navigation
+                    window.TG_INIT_DATA = Telegram.WebApp.initData || '';
                 }
             } catch(e) {}
 
@@ -206,13 +224,17 @@ $root = rtrim(Uri::root(), '/');
             } catch(e) {}
         });
 
-        // Status filter
+        // Status filter - preserves tg_init param
         function filterByStatus(statusId) {
             const url = new URL(window.location.href);
             if (statusId) {
                 url.searchParams.set('status', statusId);
             } else {
                 url.searchParams.delete('status');
+            }
+            // Add tg_init if available from Telegram WebApp
+            if (window.TG_INIT_DATA && !url.searchParams.has('tg_init')) {
+                url.searchParams.set('tg_init', window.TG_INIT_DATA);
             }
             window.location.href = url.toString();
         }

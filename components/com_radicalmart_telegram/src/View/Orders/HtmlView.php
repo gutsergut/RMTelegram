@@ -21,6 +21,7 @@ class HtmlView extends BaseHtmlView
     protected $statuses = [];
     protected $pagination;
     protected $currentStatus;
+    protected $userId = 0;
 
     public function display($tpl = null)
     {
@@ -31,6 +32,9 @@ class HtmlView extends BaseHtmlView
         $app = Factory::getApplication();
         $this->params = $app->getParams('com_radicalmart_telegram');
         $this->currentStatus = $app->input->getInt('status', 0);
+
+        // Get user_id from Telegram chat_id or Joomla session
+        $this->userId = $this->resolveUserId();
 
         // Load orders for current user
         $this->loadOrders();
@@ -55,24 +59,100 @@ class HtmlView extends BaseHtmlView
         parent::display($tpl);
     }
 
+    /**
+     * Resolve user_id from Telegram initData or Joomla session
+     */
+    protected function resolveUserId(): int
+    {
+        $app = Factory::getApplication();
+        $input = $app->input;
+
+        // Try to get chat_id from tg_init parameter (Telegram WebApp)
+        $tgInit = $input->get('tg_init', '', 'raw');
+        if ($tgInit) {
+            $chatId = $this->parseChatIdFromInit($tgInit);
+            if ($chatId > 0) {
+                $userId = $this->getUserIdByChatId($chatId);
+                if ($userId > 0) {
+                    return $userId;
+                }
+            }
+        }
+
+        // Try to get from chat parameter
+        $chat = $input->getInt('chat', 0);
+        if ($chat > 0) {
+            $userId = $this->getUserIdByChatId($chat);
+            if ($userId > 0) {
+                return $userId;
+            }
+        }
+
+        // Fallback to Joomla user
+        $user = Factory::getUser();
+        if (!$user->guest) {
+            return (int) $user->id;
+        }
+
+        return 0;
+    }
+
+    /**
+     * Parse chat_id from Telegram initData string
+     */
+    protected function parseChatIdFromInit(string $initData): int
+    {
+        try {
+            parse_str($initData, $parsed);
+            if (!empty($parsed['user'])) {
+                $userData = json_decode($parsed['user'], true);
+                if (!empty($userData['id'])) {
+                    return (int) $userData['id'];
+                }
+            }
+        } catch (\Throwable $e) {
+            // Ignore parse errors
+        }
+        return 0;
+    }
+
+    /**
+     * Get Joomla user_id by Telegram chat_id
+     */
+    protected function getUserIdByChatId(int $chatId): int
+    {
+        try {
+            $db = Factory::getContainer()->get('DatabaseDriver');
+            $query = $db->getQuery(true)
+                ->select('user_id')
+                ->from($db->quoteName('#__radicalmart_telegram_users'))
+                ->where($db->quoteName('chat_id') . ' = ' . (int) $chatId);
+            $db->setQuery($query, 0, 1);
+            return (int) $db->loadResult();
+        } catch (\Throwable $e) {
+            return 0;
+        }
+    }
+
     protected function loadOrders(): void
     {
-        $user = Factory::getUser();
-        if ($user->guest) {
+        if ($this->userId <= 0) {
             return;
         }
 
         try {
             $db = Factory::getContainer()->get('DatabaseDriver');
 
+            // Use created_by field (same as API controller)
             $query = $db->getQuery(true)
                 ->select('o.*')
                 ->from($db->quoteName('#__radicalmart_orders', 'o'))
-                ->where($db->quoteName('o.user_id') . ' = ' . (int) $user->id)
+                ->where($db->quoteName('o.created_by') . ' = ' . (int) $this->userId)
+                ->where($db->quoteName('o.state') . ' = 1')
                 ->order($db->quoteName('o.created') . ' DESC');
 
             if ($this->currentStatus > 0) {
-                $query->where($db->quoteName('o.status_id') . ' = ' . (int) $this->currentStatus);
+                $query->where($db->quoteName('o.status') . ' = ' . (int) $this->currentStatus);
             }
 
             $db->setQuery($query, 0, 20);
@@ -86,7 +166,7 @@ class HtmlView extends BaseHtmlView
                 $order->total = json_decode($order->total ?? '{}', true) ?: [];
 
                 // Load status
-                $order->status = $this->getStatus((int) $order->status_id);
+                $order->status = $this->getStatus((int) ($order->status ?? 0));
 
                 // Build link
                 $order->link = Uri::root() . 'index.php?option=com_radicalmart&view=order&id=' . (int) $order->id;
