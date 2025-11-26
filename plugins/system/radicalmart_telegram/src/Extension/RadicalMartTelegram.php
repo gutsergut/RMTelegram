@@ -14,6 +14,9 @@ use Joomla\Registry\Registry;
 use Joomla\CMS\Language\Text;
 use Joomla\CMS\Menu\AdministratorMenuItem;
 use Joomla\CMS\Component\ComponentHelper;
+use Joomla\CMS\Router\Route;
+use Joomla\CMS\Uri\Uri;
+use Joomla\CMS\Log\Log;
 use Joomla\Event\Event;
 
 class RadicalMartTelegram extends CMSPlugin implements SubscriberInterface
@@ -25,11 +28,115 @@ class RadicalMartTelegram extends CMSPlugin implements SubscriberInterface
     {
         return [
             'onAfterInitialise' => 'onAfterInitialise',
+            'onAfterRoute' => 'onAfterRoute',
             'onRadicalMartAfterChangeOrderStatus' => 'onAfterChangeOrderStatus',
             'onRadicalMartPreprocessSubmenu' => 'onRadicalMartPreprocessSubmenu',
             'onPreprocessMenuItems' => 'onPreprocessMenuItems',
             'onAfterRender' => 'onAfterRender',
         ];
+    }
+
+    /**
+     * Redirect WebApp users to our component if they land on other pages
+     * This handles payment success/error pages and any other accidental navigation
+     */
+    public function onAfterRoute(Event $event): void
+    {
+        $app = Factory::getApplication();
+
+        // Only process site frontend
+        if (!$app->isClient('site')) {
+            return;
+        }
+
+        $input = $app->input;
+        $option = $input->get('option', '');
+
+        // Already on our component - no redirect needed
+        if ($option === 'com_radicalmart_telegram') {
+            return;
+        }
+
+        // Check if user came from WebApp (has tg_webapp cookie or tg_init parameter)
+        $isWebApp = false;
+        $orderNumber = null;
+        $paymentResult = null;
+
+        // Check cookie (set when user enters WebApp)
+        if ($input->cookie->get('tg_webapp', '') === '1') {
+            $isWebApp = true;
+        }
+
+        // Check tg_init parameter (Telegram WebApp init data)
+        if ($input->get('tg_init', '')) {
+            $isWebApp = true;
+        }
+
+        // Check referer for Telegram WebApp
+        $referer = $input->server->get('HTTP_REFERER', '');
+        if (strpos($referer, 'tgWebAppData') !== false || strpos($referer, 'com_radicalmart_telegram') !== false) {
+            $isWebApp = true;
+        }
+
+        if (!$isWebApp) {
+            return;
+        }
+
+        // User is from WebApp - determine where to redirect
+        $redirectUrl = 'index.php?option=com_radicalmart_telegram&view=app';
+        $message = null;
+        $messageType = 'info';
+
+        // Special handling for RadicalMart payment pages
+        if ($option === 'com_radicalmart') {
+            $task = $input->get('task', '');
+            $orderNumber = $input->get('order_number', '');
+
+            if (strpos($task, 'payment.') === 0) {
+                $paymentTask = str_replace('payment.', '', $task);
+
+                switch ($paymentTask) {
+                    case 'success':
+                        $paymentResult = 'success';
+                        $message = Text::_('COM_RADICALMART_TELEGRAM_PAYMENT_SUCCESS');
+                        $messageType = 'success';
+                        break;
+                    case 'error':
+                        $paymentResult = 'error';
+                        $message = Text::_('COM_RADICALMART_TELEGRAM_PAYMENT_ERROR');
+                        $messageType = 'danger';
+                        break;
+                    case 'return':
+                        $paymentResult = 'return';
+                        break;
+                }
+
+                // Redirect to our payment result view
+                $redirectUrl = 'index.php?option=com_radicalmart_telegram&view=paymentresult';
+                if ($orderNumber) {
+                    $redirectUrl .= '&order_number=' . urlencode($orderNumber);
+                }
+                if ($paymentResult) {
+                    $redirectUrl .= '&result=' . $paymentResult;
+                }
+            }
+        }
+
+        // Log the redirect
+        Log::add(
+            sprintf('[WebApp Redirect] From %s to %s (option=%s, task=%s)',
+                Uri::current(), $redirectUrl, $option, $input->get('task', '')),
+            Log::INFO,
+            'com_radicalmart.telegram'
+        );
+
+        // Set message if any
+        if ($message) {
+            $app->enqueueMessage($message, $messageType);
+        }
+
+        // Redirect to our component
+        $app->redirect(Route::_($redirectUrl, false));
     }
 
     public function onAfterInitialise(Event $event): void

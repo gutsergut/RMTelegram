@@ -1658,6 +1658,11 @@ $storeTitle = isset($this->params) ? (string) $this->params->get('store_title', 
         });
         document.addEventListener('DOMContentLoaded', async () => {
             console.log('DOMContentLoaded: starting initialization...');
+            // Set WebApp cookie for redirect protection (2 hour expiry, refreshed on each visit)
+            try {
+                document.cookie = 'tg_webapp=1; path=/; max-age=7200; SameSite=Lax';
+                console.log('WebApp cookie set');
+            } catch(e) { console.log('Cookie set error:', e); }
             // Remove Joomla's contentpane class to avoid unwanted paddings
             try { document.body.classList.remove('contentpane'); } catch(e){}
             try { RMT_DEBUG_ICONS && RMT_DEBUG_ICONS(); } catch(e){}
