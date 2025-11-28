@@ -11,12 +11,10 @@ CREATE TABLE IF NOT EXISTS `#__radicalmart_apiship_points` (
   `pvz_type` VARCHAR(32) NOT NULL DEFAULT '',
   `point` POINT NOT NULL /*!80003 SRID 4326 */,
   `meta` LONGTEXT NULL,
-  `inactive_count` TINYINT UNSIGNED NOT NULL DEFAULT 0 COMMENT 'Count of no-tariff reports from different users',
   `updated_at` DATETIME NOT NULL,
   PRIMARY KEY (`id`),
   UNIQUE KEY `uniq_provider_ext` (`provider`, `ext_id`),
   KEY `idx_provider_op` (`provider`, `operation`),
-  KEY `idx_inactive` (`inactive_count`),
   SPATIAL KEY `sp_point` (`point`)
 ) ENGINE = InnoDB DEFAULT CHARSET = utf8mb4;
 
@@ -42,11 +40,13 @@ CREATE TABLE IF NOT EXISTS `#__radicalmart_telegram_users` (
   `consent_marketing_at` DATETIME NULL,
   `consent_terms` TINYINT (1) NOT NULL DEFAULT 0,
   `consent_terms_at` DATETIME NULL,
+  `referral_code` VARCHAR(64) NULL DEFAULT NULL COMMENT 'Referral code from /start ref_CODE',
   `created` DATETIME NOT NULL,
   PRIMARY KEY (`id`),
   UNIQUE KEY `uniq_chat` (`chat_id`),
   KEY `idx_user` (`user_id`),
-  KEY `idx_tg_user_id` (`tg_user_id`)
+  KEY `idx_tg_user_id` (`tg_user_id`),
+  KEY `idx_referral_code` (`referral_code`)
 ) ENGINE = InnoDB DEFAULT CHARSET = utf8mb4;
 
 -- Telegram bot sessions (idempotency + state)

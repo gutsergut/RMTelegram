@@ -56,16 +56,16 @@ $doc->addStyleDeclaration('
         <span uk-icon="icon: lock; ratio: 2" class="uk-text-muted"></span>
         <p class="uk-margin-small-top"><?php echo Text::_('COM_RADICALMART_TELEGRAM_REFERRALS_LOGIN_REQUIRED'); ?></p>
     </div>
-    
+
     <?php elseif (!$this->inChain): ?>
     <div class="uk-card uk-card-default uk-card-body uk-text-center">
         <span uk-icon="icon: users; ratio: 2" class="uk-text-muted"></span>
         <h3 class="uk-margin-small-top"><?php echo Text::_('COM_RADICALMART_TELEGRAM_REFERRALS_NOT_IN_PROGRAM'); ?></h3>
         <p class="uk-text-muted"><?php echo Text::_('COM_RADICALMART_TELEGRAM_REFERRALS_NOT_IN_PROGRAM_DESC'); ?></p>
     </div>
-    
+
     <?php else: ?>
-    
+
     <div class="stats-card">
         <div class="uk-grid-small uk-child-width-1-2" uk-grid>
             <div>
@@ -84,7 +84,7 @@ $doc->addStyleDeclaration('
             <span uk-icon="icon: link" class="uk-margin-small-right"></span>
             <?php echo Text::_('COM_RADICALMART_TELEGRAM_REFERRALS_MY_CODES'); ?>
         </h3>
-        
+
         <?php if (empty($this->referralCodes)): ?>
         <p class="uk-text-muted uk-text-center uk-margin-small"><?php echo Text::_('COM_RADICALMART_TELEGRAM_REFERRALS_NO_CODES'); ?></p>
         <?php else: ?>
@@ -93,7 +93,7 @@ $doc->addStyleDeclaration('
                 <div class="uk-flex uk-flex-between uk-flex-middle uk-margin-small-bottom">
                     <span class="referral-code-value"><?php echo htmlspecialchars($code->code); ?></span>
                     <span class="referral-code-badge <?php echo $code->enabled ? 'active' : ($code->expires && strtotime($code->expires) < time() ? 'expired' : 'used'); ?>">
-                        <?php 
+                        <?php
                         if (!$code->enabled) {
                             if ($code->expires && strtotime($code->expires) < time()) {
                                 echo Text::_('COM_RADICALMART_TELEGRAM_CODE_EXPIRED');
@@ -106,45 +106,127 @@ $doc->addStyleDeclaration('
                         ?>
                     </span>
                 </div>
-                
+
                 <div class="referral-code-discount uk-margin-small-bottom">
                     <?php echo Text::sprintf('COM_RADICALMART_TELEGRAM_REFERRALS_CODE_DISCOUNT', $code->discount_string); ?>
                 </div>
-                
+
                 <div class="referral-code-meta uk-margin-small-bottom">
                     <?php if ($code->customers_limit > 0): ?>
                     <?php echo Text::sprintf('COM_RADICALMART_TELEGRAM_REFERRALS_CODE_USAGE', $code->used_count, $code->customers_limit); ?>
                     <?php else: ?>
                     <?php echo Text::sprintf('COM_RADICALMART_TELEGRAM_REFERRALS_CODE_USED_TIMES', $code->used_count); ?>
                     <?php endif; ?>
-                    
+
                     <?php if ($code->expires): ?>
                     <span class="uk-margin-small-left">
                         <?php echo Text::sprintf('COM_RADICALMART_TELEGRAM_CODE_EXPIRES_AT', HTMLHelper::_('date', $code->expires, 'd.m.Y')); ?>
                     </span>
                     <?php endif; ?>
                 </div>
-                
-                <?php if ($code->link && $code->enabled): ?>
-                <div class="uk-flex uk-flex-between uk-flex-middle">
-                    <input type="text" value="<?php echo htmlspecialchars($code->link); ?>" 
-                           class="uk-input uk-form-small uk-width-expand uk-margin-small-right" 
-                           readonly id="code-link-<?php echo $code->id; ?>"
-                           style="font-size: 12px; background: var(--tg-theme-bg-color, #fff);">
-                    <button type="button" class="copy-btn" onclick="copyCodeLink(<?php echo $code->id; ?>, this)">
-                        <span uk-icon="icon: copy; ratio: 0.8"></span>
-                        <?php echo Text::_('COM_RADICALMART_TELEGRAM_COPY'); ?>
-                    </button>
+
+                <?php if ($code->enabled): ?>
+                <!-- Telegram ссылка (приоритетная) -->
+                <?php if ($code->telegram_link): ?>
+                <div class="uk-margin-small-bottom">
+                    <label class="uk-form-label uk-text-small uk-text-muted">
+                        <span uk-icon="icon: social; ratio: 0.7"></span> <?php echo Text::_('COM_RADICALMART_TELEGRAM_REFERRALS_TELEGRAM_LINK'); ?>
+                    </label>
+                    <div class="uk-flex uk-flex-between uk-flex-middle">
+                        <input type="text" value="<?php echo htmlspecialchars($code->telegram_link); ?>"
+                               class="uk-input uk-form-small uk-width-expand uk-margin-small-right"
+                               readonly id="tg-link-<?php echo $code->id; ?>"
+                               style="font-size: 12px; background: var(--tg-theme-bg-color, #fff);">
+                        <button type="button" class="copy-btn" onclick="copyTgLink(<?php echo $code->id; ?>, this)">
+                            <span uk-icon="icon: copy; ratio: 0.8"></span>
+                            <?php echo Text::_('COM_RADICALMART_TELEGRAM_COPY'); ?>
+                        </button>
+                    </div>
                 </div>
+                <?php endif; ?>
+
+                <!-- Ссылка на сайт -->
+                <?php if ($code->link): ?>
+                <div class="uk-margin-small-bottom">
+                    <label class="uk-form-label uk-text-small uk-text-muted">
+                        <span uk-icon="icon: link; ratio: 0.7"></span> <?php echo Text::_('COM_RADICALMART_TELEGRAM_REFERRALS_SITE_LINK'); ?>
+                    </label>
+                    <div class="uk-flex uk-flex-between uk-flex-middle">
+                        <input type="text" value="<?php echo htmlspecialchars($code->link); ?>"
+                               class="uk-input uk-form-small uk-width-expand uk-margin-small-right"
+                               readonly id="code-link-<?php echo $code->id; ?>"
+                               style="font-size: 12px; background: var(--tg-theme-bg-color, #fff);">
+                        <button type="button" class="copy-btn" onclick="copyCodeLink(<?php echo $code->id; ?>, this)">
+                            <span uk-icon="icon: copy; ratio: 0.8"></span>
+                            <?php echo Text::_('COM_RADICALMART_TELEGRAM_COPY'); ?>
+                        </button>
+                    </div>
+                </div>
+                <?php endif; ?>
                 <?php endif; ?>
             </div>
             <?php endforeach; ?>
         <?php endif; ?>
-        
+
         <?php if ($this->canCreateCode): ?>
-        <p class="uk-text-muted uk-text-small uk-margin-top">
-            <?php echo Text::_('COM_RADICALMART_TELEGRAM_REFERRALS_CREATE_CODE_HINT'); ?>
-        </p>
+        <!-- Форма создания нового кода -->
+        <div class="uk-margin-top" id="create-code-section">
+            <hr class="uk-divider-small">
+            <h4 class="uk-margin-small-bottom"><?php echo Text::_('COM_RADICALMART_TELEGRAM_REFERRALS_CREATE_NEW_CODE'); ?></h4>
+
+            <?php if ($this->templateDiscount): ?>
+            <p class="uk-text-muted uk-text-small uk-margin-small-bottom">
+                <?php echo Text::sprintf('COM_RADICALMART_TELEGRAM_REFERRALS_CODE_WILL_GIVE', $this->templateDiscount); ?>
+            </p>
+            <?php endif; ?>
+
+            <?php if ($this->canCustomCode): ?>
+            <div class="uk-margin-small">
+                <input type="text" id="custom-code-input" class="uk-input"
+                       placeholder="<?php echo Text::_('COM_RADICALMART_TELEGRAM_REFERRALS_ENTER_CUSTOM_CODE'); ?>"
+                       maxlength="20" pattern="[a-zA-Z0-9\-_]+"
+                       style="text-transform: uppercase;">
+                <p class="uk-text-meta uk-text-small uk-margin-small-top">
+                    <?php echo Text::_('COM_RADICALMART_TELEGRAM_REFERRALS_CUSTOM_CODE_HINT'); ?>
+                </p>
+            </div>
+            <?php endif; ?>
+
+            <button type="button" id="create-code-btn" class="uk-button uk-button-primary uk-width-1-1" onclick="createReferralCode()">
+                <span uk-icon="icon: plus-circle; ratio: 0.9" class="uk-margin-small-right"></span>
+                <?php echo Text::_('COM_RADICALMART_TELEGRAM_REFERRALS_CREATE_CODE_BTN'); ?>
+            </button>
+
+            <!-- Результат создания кода -->
+            <div id="create-code-result" class="uk-margin-top" style="display: none;">
+                <div class="referral-code-card" style="background: #e8f5e9;">
+                    <div class="uk-text-success uk-margin-small-bottom">
+                        <span uk-icon="icon: check; ratio: 0.9"></span>
+                        <?php echo Text::_('COM_RADICALMART_TELEGRAM_REFERRALS_CODE_CREATED'); ?>
+                    </div>
+                    <div class="uk-flex uk-flex-between uk-flex-middle uk-margin-small-bottom">
+                        <span class="referral-code-value" id="new-code-value"></span>
+                        <span class="referral-code-badge active"><?php echo Text::_('COM_RADICALMART_TELEGRAM_CODE_ACTIVE'); ?></span>
+                    </div>
+                    <div class="referral-code-discount uk-margin-small-bottom" id="new-code-discount"></div>
+                    <div class="uk-flex uk-flex-between uk-flex-middle">
+                        <input type="text" id="new-code-link" class="uk-input uk-form-small uk-width-expand uk-margin-small-right"
+                               readonly style="font-size: 12px; background: var(--tg-theme-bg-color, #fff);">
+                        <button type="button" class="copy-btn" onclick="copyNewCodeLink(this)">
+                            <span uk-icon="icon: copy; ratio: 0.8"></span>
+                            <?php echo Text::_('COM_RADICALMART_TELEGRAM_COPY'); ?>
+                        </button>
+                    </div>
+                </div>
+            </div>
+        </div>
+        <?php elseif ($this->codesLimitReached): ?>
+        <div class="uk-margin-top uk-text-center">
+            <p class="uk-text-warning uk-text-small">
+                <span uk-icon="icon: warning; ratio: 0.8" class="uk-margin-small-right"></span>
+                <?php echo Text::sprintf('COM_RADICALMART_TELEGRAM_REFERRALS_CODES_LIMIT_INFO', $this->codesLimit); ?>
+            </p>
+        </div>
         <?php endif; ?>
     </div>
 
@@ -154,7 +236,7 @@ $doc->addStyleDeclaration('
             <span uk-icon="icon: chevron-double-left" class="uk-margin-small-right"></span>
             <?php echo Text::_('COM_RADICALMART_TELEGRAM_REFERRALS_INVITED_BY'); ?>
         </h3>
-        
+
         <div class="parent-chain">
             <?php foreach ($this->parentChain as $parent): ?>
             <div class="parent-chain-item">
@@ -174,12 +256,12 @@ $doc->addStyleDeclaration('
             <span class="uk-badge"><?php echo $this->referralsCount; ?></span>
             <?php endif; ?>
         </h3>
-        
+
         <?php if (empty($this->myReferrals)): ?>
         <p class="uk-text-muted uk-text-center uk-margin-small"><?php echo Text::_('COM_RADICALMART_TELEGRAM_REFERRALS_NO_REFERRALS'); ?></p>
         <p class="uk-text-muted uk-text-small uk-text-center"><?php echo Text::_('COM_RADICALMART_TELEGRAM_REFERRALS_SHARE_CODE_HINT'); ?></p>
         <?php else: ?>
-        
+
         <div class="referral-tree">
             <?php foreach ($this->myReferrals as $ref): ?>
             <div class="referral-item">
@@ -192,7 +274,7 @@ $doc->addStyleDeclaration('
                         </div>
                     </div>
                 </div>
-                
+
                 <?php if (!empty($ref->sub_referrals)): ?>
                 <div class="sub-referrals">
                     <?php foreach ($ref->sub_referrals as $sub): ?>
@@ -206,7 +288,7 @@ $doc->addStyleDeclaration('
                                 </div>
                             </div>
                         </div>
-                        
+
                         <?php if (!empty($sub->sub_referrals)): ?>
                         <div class="sub-referrals">
                             <?php foreach ($sub->sub_referrals as $sub2): ?>
@@ -229,19 +311,19 @@ $doc->addStyleDeclaration('
             </div>
             <?php endforeach; ?>
         </div>
-        
+
         <?php if ($this->hasMore): ?>
         <div class="uk-text-center uk-margin-top">
-            <a href="<?php echo $root; ?>index.php?option=com_radicalmart_telegram&view=referrals<?php echo $baseQuery; ?>&start=<?php echo $this->start + $this->limit; ?>" 
+            <a href="<?php echo $root; ?>index.php?option=com_radicalmart_telegram&view=referrals<?php echo $baseQuery; ?>&start=<?php echo $this->start + $this->limit; ?>"
                class="uk-button uk-button-default uk-button-small">
                 <?php echo Text::_('COM_RADICALMART_TELEGRAM_LOAD_MORE'); ?>
             </a>
         </div>
         <?php endif; ?>
-        
+
         <?php endif; ?>
     </div>
-    
+
     <?php endif; ?>
 </div>
 
@@ -276,16 +358,136 @@ $doc->addStyleDeclaration('
 function copyCodeLink(codeId, btn) {
     var input = document.getElementById('code-link-' + codeId);
     if (!input) return;
-    
+
     navigator.clipboard.writeText(input.value).then(function() {
         if (window.Telegram && window.Telegram.WebApp) {
             window.Telegram.WebApp.HapticFeedback.notificationOccurred('success');
         }
-        
+
         btn.classList.add('copied');
         var originalHtml = btn.innerHTML;
         btn.innerHTML = '<span uk-icon="icon: check; ratio: 0.8"></span> Скопировано';
-        
+
+        setTimeout(function() {
+            btn.classList.remove('copied');
+            btn.innerHTML = originalHtml;
+        }, 2000);
+    }).catch(function() {
+        input.select();
+        document.execCommand('copy');
+        btn.classList.add('copied');
+        setTimeout(function() { btn.classList.remove('copied'); }, 2000);
+    });
+}
+
+function createReferralCode() {
+    var customCodeInput = document.getElementById('custom-code-input');
+    var customCode = customCodeInput ? customCodeInput.value.trim() : '';
+    var btn = document.getElementById('create-code-btn');
+    var form = document.getElementById('create-code-form');
+    var result = document.getElementById('create-code-result');
+    var errorDiv = document.getElementById('create-code-error');
+
+    // Disable button and show loading
+    btn.disabled = true;
+    var originalBtnText = btn.innerHTML;
+    btn.innerHTML = '<span uk-spinner="ratio: 0.5"></span> Создаём...';
+
+    if (errorDiv) errorDiv.style.display = 'none';
+
+    var formData = new FormData();
+    formData.append('custom_code', customCode);
+
+    fetch('<?php echo $root; ?>index.php?option=com_radicalmart_telegram&task=api.createReferralCode&format=raw<?php echo $baseQuery; ?>', {
+        method: 'POST',
+        body: formData
+    })
+    .then(function(response) { return response.json(); })
+    .then(function(data) {
+        if (data.success) {
+            // Hide form, show result
+            if (form) form.style.display = 'none';
+            if (result) {
+                result.style.display = 'block';
+
+                var codeSpan = document.getElementById('new-code-value');
+                var linkInput = document.getElementById('new-code-link');
+                var discountSpan = document.getElementById('new-code-discount');
+
+                if (codeSpan) codeSpan.textContent = data.data.code;
+                if (linkInput) linkInput.value = data.data.link;
+                if (discountSpan) discountSpan.textContent = data.data.discount || '';
+            }
+
+            if (window.Telegram && window.Telegram.WebApp) {
+                window.Telegram.WebApp.HapticFeedback.notificationOccurred('success');
+            }
+        } else {
+            // Show error
+            btn.disabled = false;
+            btn.innerHTML = originalBtnText;
+
+            if (errorDiv) {
+                errorDiv.textContent = data.error || '<?php echo Text::_('COM_RADICALMART_TELEGRAM_REFERRALS_CODE_CREATE_ERROR', true); ?>';
+                errorDiv.style.display = 'block';
+            }
+
+            if (window.Telegram && window.Telegram.WebApp) {
+                window.Telegram.WebApp.HapticFeedback.notificationOccurred('error');
+            }
+        }
+    })
+    .catch(function(error) {
+        btn.disabled = false;
+        btn.innerHTML = originalBtnText;
+
+        if (errorDiv) {
+            errorDiv.textContent = '<?php echo Text::_('COM_RADICALMART_TELEGRAM_REFERRALS_CODE_CREATE_ERROR', true); ?>';
+            errorDiv.style.display = 'block';
+        }
+
+        console.error('Create code error:', error);
+    });
+}
+
+function copyNewCodeLink(btn) {
+    var input = document.getElementById('new-code-link');
+    if (!input) return;
+
+    navigator.clipboard.writeText(input.value).then(function() {
+        if (window.Telegram && window.Telegram.WebApp) {
+            window.Telegram.WebApp.HapticFeedback.notificationOccurred('success');
+        }
+
+        btn.classList.add('copied');
+        var originalHtml = btn.innerHTML;
+        btn.innerHTML = '<span uk-icon="icon: check; ratio: 0.8"></span> Скопировано';
+
+        setTimeout(function() {
+            btn.classList.remove('copied');
+            btn.innerHTML = originalHtml;
+        }, 2000);
+    }).catch(function() {
+        input.select();
+        document.execCommand('copy');
+        btn.classList.add('copied');
+        setTimeout(function() { btn.classList.remove('copied'); }, 2000);
+    });
+}
+
+function copyTgLink(codeId, btn) {
+    var input = document.getElementById('tg-link-' + codeId);
+    if (!input) return;
+
+    navigator.clipboard.writeText(input.value).then(function() {
+        if (window.Telegram && window.Telegram.WebApp) {
+            window.Telegram.WebApp.HapticFeedback.notificationOccurred('success');
+        }
+
+        btn.classList.add('copied');
+        var originalHtml = btn.innerHTML;
+        btn.innerHTML = '<span uk-icon="icon: check; ratio: 0.8"></span> Скопировано';
+
         setTimeout(function() {
             btn.classList.remove('copied');
             btn.innerHTML = originalHtml;

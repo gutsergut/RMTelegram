@@ -24,15 +24,20 @@ class HtmlView extends BaseHtmlView
     protected $params;
     public $tgUser = null;
     public $userId = 0;
-    
+
     public $inChain = false;
     public $referralCodes = [];
     public $canCreateCode = false;
+    public $canCustomCode = false;
+    public $codesLimit = 0;
+    public $codesLimitReached = false;
+    public $templateDiscount = '';
     public $myReferrals = [];
     public $parentChain = [];
     public $totalEarnedPoints = 0;
     public $referralsCount = 0;
-    
+    public $botUsername = '';
+
     public $start = 0;
     public $limit = 10;
     public $hasMore = false;
@@ -73,13 +78,17 @@ class HtmlView extends BaseHtmlView
     protected function loadReferralData(): void
     {
         $this->userId = $this->tgUser['user_id'] ?? 0;
+
+        // Load bot username for Telegram referral links
+        $this->botUsername = (string) $this->params->get('bot_username', '');
+
         if ($this->userId <= 0) {
             return;
         }
 
         try {
             $this->inChain = ReferralHelper::inChain($this->userId);
-            
+
             if (!$this->inChain) {
                 return;
             }
@@ -104,21 +113,25 @@ class HtmlView extends BaseHtmlView
         $linkPrefix = $rmParams->get('bonuses_codes_cookies_selector', 'rbc');
         $linkBase = Uri::root() . '?' . $linkPrefix . '=';
 
+        // Telegram deep link format: t.me/bot?start=ref_CODE
+        $tgLinkBase = !empty($this->botUsername) ? 'https://t.me/' . $this->botUsername . '?start=ref_' : '';
+
         $query = $db->getQuery(true)
             ->select('*')
             ->from($db->quoteName('#__radicalmart_bonuses_codes'))
             ->where($db->quoteName('referral') . ' = 1')
             ->where($db->quoteName('created_by') . ' = ' . (int) $this->userId)
             ->order('id DESC');
-        
+
         $items = $db->setQuery($query)->loadObjectList();
 
         foreach ($items as $item) {
             $item->currency = PriceHelper::getCurrency($item->currency);
             $item->link = $linkEnabled ? $linkBase . $item->code : false;
+            $item->telegram_link = !empty($tgLinkBase) ? $tgLinkBase . $item->code : false;
 
             $item->discount = PriceHelper::cleanAdjustmentValue($item->discount);
-            $item->discount_string = (strpos($item->discount, '%') !== false) 
+            $item->discount_string = (strpos($item->discount, '%') !== false)
                 ? $item->discount
                 : PriceHelper::toString($item->discount, $item->currency['code']);
 
@@ -141,7 +154,7 @@ class HtmlView extends BaseHtmlView
                     $item->enabled = false;
                 }
             }
-            
+
             $item->used_count = count($item->customers);
         }
 
@@ -215,7 +228,7 @@ class HtmlView extends BaseHtmlView
             if (!$parent || empty($parent->parent_id)) {
                 break;
             }
-            
+
             $user = Factory::getUser($parent->parent_id);
             if ($user && $user->id > 0) {
                 $chain[] = (object) [
@@ -226,7 +239,7 @@ class HtmlView extends BaseHtmlView
                     'created' => $parent->created
                 ];
             }
-            
+
             $currentId = (int) $parent->parent_id;
             $i++;
         }
@@ -274,21 +287,62 @@ class HtmlView extends BaseHtmlView
     {
         try {
             $rmParams = ParamsHelper::getComponentParams();
-            
+
+            // Проверяем включены ли реферальные коды
             if ((int) $rmParams->get('bonuses_referral_codes_enabled', 1) === 0) {
                 $this->canCreateCode = false;
                 return;
             }
 
-            $codesLimit = (int) $rmParams->get('bonuses_referral_codes_limit', 1);
-            if ($codesLimit > 0 && count($this->referralCodes) >= $codesLimit) {
+            // Может ли пользователь задать свой код
+            $this->canCustomCode = ((int) $rmParams->get('bonuses_referral_codes_custom_code', 1) === 1);
+
+            // Лимит кодов
+            $this->codesLimit = (int) $rmParams->get('bonuses_referral_codes_limit', 1);
+            $currentCount = count($this->referralCodes);
+
+            if ($this->codesLimit > 0 && $currentCount >= $this->codesLimit) {
                 $this->canCreateCode = false;
+                $this->codesLimitReached = true;
                 return;
             }
+
+            // Получаем информацию о скидке из шаблона кода
+            $this->loadTemplateDiscount($rmParams);
 
             $this->canCreateCode = true;
         } catch (\Exception $e) {
             $this->canCreateCode = false;
+        }
+    }
+
+    protected function loadTemplateDiscount($rmParams): void
+    {
+        try {
+            // Получаем шаблон кода для текущей валюты (RUB)
+            $templateId = (int) $rmParams->get('bonuses_referral_codes_template_RUB', 0);
+            if ($templateId === 0) {
+                return;
+            }
+
+            $db = Factory::getContainer()->get('DatabaseDriver');
+            $query = $db->getQuery(true)
+                ->select(['discount', 'discount_type'])
+                ->from($db->quoteName('#__radicalmart_bonuses_codes'))
+                ->where($db->quoteName('id') . ' = ' . $templateId);
+
+            $template = $db->setQuery($query)->loadObject();
+
+            if ($template && !empty($template->discount)) {
+                $discount = PriceHelper::cleanAdjustmentValue($template->discount);
+                if (strpos($discount, '%') !== false) {
+                    $this->templateDiscount = $discount;
+                } else {
+                    $this->templateDiscount = PriceHelper::toString($discount, 'RUB');
+                }
+            }
+        } catch (\Exception $e) {
+            // Ignore
         }
     }
 
@@ -297,33 +351,33 @@ class HtmlView extends BaseHtmlView
         if (empty($email)) {
             return '***';
         }
-        
+
         $parts = explode('@', $email);
         if (count($parts) !== 2) {
             return '***';
         }
-        
+
         $local = $parts[0];
         $domain = $parts[1];
-        
+
         $localLen = strlen($local);
         if ($localLen <= 2) {
             $maskedLocal = str_repeat('*', $localLen);
         } else {
             $maskedLocal = $local[0] . str_repeat('*', $localLen - 2) . $local[$localLen - 1];
         }
-        
+
         $domainParts = explode('.', $domain);
         $domainName = $domainParts[0];
         $domainExt = isset($domainParts[1]) ? '.' . $domainParts[1] : '';
-        
+
         $domainLen = strlen($domainName);
         if ($domainLen <= 2) {
             $maskedDomain = str_repeat('*', $domainLen);
         } else {
             $maskedDomain = $domainName[0] . str_repeat('*', $domainLen - 2) . $domainName[$domainLen - 1];
         }
-        
+
         return $maskedLocal . '@' . $maskedDomain . $domainExt;
     }
 
@@ -332,14 +386,14 @@ class HtmlView extends BaseHtmlView
         if (empty($phone)) {
             return '***';
         }
-        
+
         $digits = preg_replace('/\D/', '', $phone);
         $len = strlen($digits);
-        
+
         if ($len < 4) {
             return str_repeat('*', $len);
         }
-        
+
         return substr($digits, 0, 3) . str_repeat('*', $len - 5) . substr($digits, -2);
     }
 }

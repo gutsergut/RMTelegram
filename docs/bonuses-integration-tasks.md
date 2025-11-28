@@ -250,23 +250,29 @@ PointsHelper::createRecord(int $customer, float $points, ?string $context, array
 - [x] Языковые строки: CREATE_NEW_CODE, CODE_WILL_GIVE, ENTER_CUSTOM_CODE и др.
 
 #### 3.3 Интеграция с Telegram реферальной системой
-**Статус**: ⏳ Ожидает
-**Вопросы перед началом**:
-- [ ] Формат реферальной ссылки: `t.me/bot?start=ref_CODE` или через сайт?
-- [ ] Что показывать новому пользователю при переходе по реф. ссылке?
-- [ ] Когда создавать связь: при первом входе или при первом заказе?
+**Статус**: ✅ Завершено (2025-11-28)
 
-**Задачи**:
-- [ ] При старте бота по реферальной ссылке (`/start ref_XXXX`):
-  - Извлечь реферальный код
-  - Сохранить в сессии/куки пользователя
-  - При создании связки user↔telegram сохранить код
-- [ ] При первом заказе:
-  - Применить сохранённый реферальный код
-  - `ReferralHelper::createReferralRelationship()` создаст связь
-- [ ] Генерация Telegram реферальной ссылки:
-  - Формат: `https://t.me/bot_name?start=ref_USERCODE`
-  - Показать в интерфейсе реферальной программы
+**Решения по вопросам**:
+- Формат ссылки: `https://t.me/BOT_USERNAME?start=ref_CODE`
+- При переходе: сохраняем код в БД (`referral_code` в `#__radicalmart_telegram_users`)
+- Связь создаётся при привязке телефона (когда есть user_id и referral_code)
+
+**Что сделано**:
+- [x] SQL миграция 0.1.71: добавлено поле `referral_code` в `#__radicalmart_telegram_users`
+- [x] `UpdateHandler::onMessage()` — обработка `/start ref_CODE`:
+  - Извлечение кода из параметра start
+  - Сохранение в БД через `saveReferralCode()`
+  - Приветственное сообщение с информацией о скидке
+- [x] `UpdateHandler::applyReferralCodeOnLink()` — применение кода при связывании:
+  - Вызывается после успешной привязки телефона
+  - Находит код через `CodesHelper::find()`
+  - Создаёт связь через `ReferralsHelper::createReferralRelationship()`
+  - Очищает `referral_code` в БД после применения
+- [x] Telegram ссылка на странице реферальной программы:
+  - `HtmlView::$botUsername` — имя бота из настроек
+  - Каждый код имеет `telegram_link` (`t.me/bot?start=ref_CODE`)
+  - UI: две ссылки (сайт + Telegram) с кнопками копирования
+- [x] Языковые строки: TELEGRAM_LINK, COPY_TELEGRAM_LINK, REFERRAL_WELCOME
 
 ---
 

@@ -166,6 +166,12 @@ class UpdateHandler
                     if ($userId > 0) { $row->user_id = $userId; }
                     $db->insertObject('#__radicalmart_telegram_users', $row);
                 }
+
+                // Apply referral code if user was linked and has pending referral code
+                if ($userId > 0) {
+                    $this->applyReferralCodeOnLink($chatId, $userId);
+                }
+
                 $msg = $userId > 0
                     ? \Joomla\CMS\Language\Text::_('COM_RADICALMART_TELEGRAM_CONTACT_LINKED')
                     : \Joomla\CMS\Language\Text::_('COM_RADICALMART_TELEGRAM_CONTACT_SAVED');
@@ -225,14 +231,22 @@ class UpdateHandler
 
         Log::add('Message text: "' . $text . '"', Log::DEBUG, 'com_radicalmart.telegram');
 
-        if ($text === '/start' || $text === '/help') {
+        // Handle /start with optional referral code: /start ref_CODE
+        if ($text === '/start' || $text === '/help' || strpos($text, '/start ') === 0) {
             Log::add('Processing /start or /help command', Log::DEBUG, 'com_radicalmart.telegram');
+
+            // Extract referral code if present (format: /start ref_CODE)
+            $referralCode = null;
+            if (strpos($text, '/start ref_') === 0) {
+                $referralCode = trim(substr($text, strlen('/start ref_')));
+                Log::add('Referral code from start parameter: ' . $referralCode, Log::DEBUG, 'com_radicalmart.telegram');
+            }
 
             // Check consent first
             try {
                 $db = Factory::getContainer()->get('DatabaseDriver');
                 $q = $db->getQuery(true)
-                    ->select(['consent_personal_data', 'phone'])
+                    ->select(['id', 'consent_personal_data', 'phone', 'user_id', 'referral_code'])
                     ->from($db->quoteName('#__radicalmart_telegram_users'))
                     ->where($db->quoteName('chat_id') . ' = :chat')
                     ->bind(':chat', $chatId);
@@ -240,6 +254,11 @@ class UpdateHandler
 
                 $hasConsent = $user && (int)$user['consent_personal_data'] === 1;
                 $hasPhone = $user && !empty($user['phone']);
+
+                // Save referral code if new user or user without referral code
+                if ($referralCode && (!$user || empty($user['referral_code']))) {
+                    $this->saveReferralCode($chatId, $referralCode, $user);
+                }
 
                 Log::add('User consent: ' . ($hasConsent ? 'YES' : 'NO') . ', phone: ' . ($hasPhone ? 'YES' : 'NO'), Log::DEBUG, 'com_radicalmart.telegram');
 
@@ -757,5 +776,102 @@ class UpdateHandler
             ]],
         ];
         $this->client->sendMessage($chatId, $text, [ 'reply_markup' => $keyboard ]);
+    }
+
+    /**
+     * Save referral code from /start ref_CODE parameter
+     */
+    protected function saveReferralCode(int $chatId, string $referralCode, ?array $existingUser): void
+    {
+        try {
+            $db = Factory::getContainer()->get('DatabaseDriver');
+
+            // Validate referral code exists in RadicalMart Bonuses using CodesHelper::find
+            if (class_exists(\Joomla\Component\RadicalMartBonuses\Administrator\Helper\CodesHelper::class)) {
+                $codeData = \Joomla\Component\RadicalMartBonuses\Administrator\Helper\CodesHelper::find($referralCode, 'code');
+                if (!$codeData || empty($codeData->referral)) {
+                    Log::add('Referral code not found or not a referral code: ' . $referralCode, Log::DEBUG, 'com_radicalmart.telegram');
+                    return;
+                }
+            }
+
+            if ($existingUser && !empty($existingUser['id'])) {
+                // Update existing user
+                $upd = $db->getQuery(true)
+                    ->update($db->quoteName('#__radicalmart_telegram_users'))
+                    ->set($db->quoteName('referral_code') . ' = ' . $db->quote($referralCode))
+                    ->where($db->quoteName('id') . ' = ' . (int) $existingUser['id']);
+                $db->setQuery($upd)->execute();
+            } else {
+                // Create new user with referral code
+                $row = (object) [
+                    'chat_id' => $chatId,
+                    'referral_code' => $referralCode,
+                    'created' => (new \Joomla\CMS\Date\Date())->toSql(),
+                ];
+                $db->insertObject('#__radicalmart_telegram_users', $row);
+            }
+
+            Log::add('Saved referral code ' . $referralCode . ' for chat ' . $chatId, Log::DEBUG, 'com_radicalmart.telegram');
+        } catch (\Throwable $e) {
+            Log::add('Error saving referral code: ' . $e->getMessage(), Log::WARNING, 'com_radicalmart.telegram');
+        }
+    }
+
+    /**
+     * Apply referral code when user is linked (has user_id and referral_code)
+     */
+    protected function applyReferralCodeOnLink(int $chatId, int $userId): void
+    {
+        try {
+            $db = Factory::getContainer()->get('DatabaseDriver');
+
+            // Get referral code for this chat
+            $q = $db->getQuery(true)
+                ->select('referral_code')
+                ->from($db->quoteName('#__radicalmart_telegram_users'))
+                ->where($db->quoteName('chat_id') . ' = :chat')
+                ->bind(':chat', $chatId);
+            $referralCode = $db->setQuery($q)->loadResult();
+
+            if (empty($referralCode)) {
+                return;
+            }
+
+            // Check if ReferralHelper (Admin) exists
+            if (!class_exists(\Joomla\Component\RadicalMartBonuses\Administrator\Helper\ReferralHelper::class)) {
+                Log::add('ReferralHelper not available, skipping referral code application', Log::DEBUG, 'com_radicalmart.telegram');
+                return;
+            }
+
+            // Check if user already has a parent (already in chain)
+            $parent = \Joomla\Component\RadicalMartBonuses\Administrator\Helper\ReferralHelper::getParent($userId);
+            if ($parent) {
+                Log::add('User ' . $userId . ' already has parent in referral chain', Log::DEBUG, 'com_radicalmart.telegram');
+                return;
+            }
+
+            // Get code data to find owner
+            $codeData = \Joomla\Component\RadicalMartBonuses\Administrator\Helper\CodesHelper::find($referralCode, 'code');
+            if (!$codeData || empty($codeData->created_by)) {
+                Log::add('Code not found or has no owner: ' . $referralCode, Log::DEBUG, 'com_radicalmart.telegram');
+                return;
+            }
+
+            // Create referral relationship: parent (code owner) -> child (new user)
+            $result = \Joomla\Component\RadicalMartBonuses\Administrator\Helper\ReferralHelper::createReferralRelationship($userId, (int) $codeData->created_by);
+            Log::add('Created referral relationship from code ' . $referralCode . ' for user ' . $userId . ' (parent: ' . $codeData->created_by . '): ' . ($result ? 'SUCCESS' : 'FAILED'), Log::DEBUG, 'com_radicalmart.telegram');
+
+            // Clear referral code after successful application
+            $upd = $db->getQuery(true)
+                ->update($db->quoteName('#__radicalmart_telegram_users'))
+                ->set($db->quoteName('referral_code') . ' = NULL')
+                ->where($db->quoteName('chat_id') . ' = :chat')
+                ->bind(':chat', $chatId);
+            $db->setQuery($upd)->execute();
+
+        } catch (\Throwable $e) {
+            Log::add('Error applying referral code: ' . $e->getMessage(), Log::WARNING, 'com_radicalmart.telegram');
+        }
     }
 }
