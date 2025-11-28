@@ -1492,10 +1492,16 @@ class ApiController extends BaseController
 
             // Get PVZ details from DB
             $db = Factory::getContainer()->get('DatabaseDriver');
+
+            // Quote each ID for safe IN clause
+            $quotedIds = array_map(function($id) use ($db) {
+                return $db->quote($id);
+            }, $pvzIds);
+
             $q = $db->getQuery(true)
                 ->select(['id', 'provider', 'ext_id', 'title', 'address', 'lat', 'lon', 'inactive_count'])
                 ->from($db->quoteName('#__radicalmart_apiship_points'))
-                ->whereIn($db->quoteName('ext_id'), $pvzIds, \PDO::PARAM_STR)
+                ->where($db->quoteName('ext_id') . ' IN (' . implode(',', $quotedIds) . ')')
                 ->where($db->quoteName('inactive_count') . ' < 10'); // Skip permanently inactive
             $points = $db->setQuery($q)->loadAssocList('ext_id') ?: [];
 
@@ -1515,6 +1521,7 @@ class ApiController extends BaseController
                 try {
                     $tariffResult = ApiShipIntegrationHelper::calculateTariff($shippingId, $cart, $extId, $provider);
                     $tariffs = $tariffResult['tariffs'] ?? [];
+                    $debug = $tariffResult['__debug'] ?? null;
 
                     if (!empty($tariffs)) {
                         // Find minimum price
@@ -1538,6 +1545,7 @@ class ApiController extends BaseController
                             'min_price' => $minPrice === PHP_INT_MAX ? 0 : $minPrice,
                             'tariffs' => $tariffList,
                             'provider' => $provider,
+                            '_debug' => $debug, // Include debug info
                         ];
 
                         // Reset inactive counter if point has tariffs
@@ -1545,13 +1553,20 @@ class ApiController extends BaseController
                             $this->resetPvzInactiveCount($extId, $provider);
                         }
                     } else {
-                        // No tariffs - mark for incrementing inactive count
-                        $results[$extId] = null;
+                        // No tariffs - include debug info to understand why
+                        $results[$extId] = [
+                            'error' => 'no_tariffs',
+                            'provider' => $provider,
+                            '_debug' => $debug,
+                        ];
                         $inactiveToMark[] = ['ext_id' => $extId, 'provider' => $provider];
                     }
                 } catch (\Throwable $e) {
                     Log::add("[tariffs] Error calculating for $extId: " . $e->getMessage(), Log::WARNING, 'com_radicalmart.telegram');
-                    $results[$extId] = null;
+                    $results[$extId] = [
+                        'error' => $e->getMessage(),
+                        'provider' => $provider,
+                    ];
                     $inactiveToMark[] = ['ext_id' => $extId, 'provider' => $provider];
                 }
             }
@@ -1689,6 +1704,182 @@ class ApiController extends BaseController
             ->bind(':scope', $scope)
             ->bind(':nonce', $nonce);
         $db->setQuery($q2)->execute();
+    }
+
+    /**
+     * Apply bonus points to cart/order
+     * Called via AJAX from checkout: task=checkout.applyPoints
+     */
+    public function applyPoints(): void
+    {
+        $app = Factory::getApplication();
+
+        try {
+            $this->guardInitData();
+
+            $points = $app->input->getInt('points', 0);
+            $chatId = $app->input->getInt('chat', 0);
+
+            // Get user from TelegramUserHelper
+            $tgUser = \Joomla\Component\RadicalMartTelegram\Site\Helper\TelegramUserHelper::getCurrentUser();
+            $userId = $tgUser['user_id'] ?? 0;
+
+            if ($userId <= 0) {
+                echo new JsonResponse(['success' => false, 'message' => Text::_('COM_RADICALMART_TELEGRAM_BONUSES_LOGIN_HINT')]);
+                $app->close();
+                return;
+            }
+
+            // Get customer_id
+            $db = Factory::getContainer()->get('DatabaseDriver');
+            $query = $db->getQuery(true)
+                ->select('id')
+                ->from($db->quoteName('#__radicalmart_customers'))
+                ->where($db->quoteName('user_id') . ' = ' . (int) $userId);
+            $db->setQuery($query);
+            $customerId = (int) $db->loadResult();
+
+            if ($customerId <= 0) {
+                echo new JsonResponse(['success' => false, 'message' => Text::_('COM_RADICALMART_ERROR_CUSTOMER_NOT_FOUND')]);
+                $app->close();
+                return;
+            }
+
+            // Validate points
+            if (class_exists(PointsHelper::class)) {
+                $availablePoints = (float) PointsHelper::getCustomerPoints($customerId);
+                $points = min($points, (int) $availablePoints);
+                $points = max(0, $points);
+            } else {
+                $points = 0;
+            }
+
+            // Store points in RadicalMart session (com_radicalmart.checkout.data)
+            // This is where RadicalMart Bonuses plugin expects them
+            $sessionData = $app->getUserState('com_radicalmart.checkout.data', []);
+            if (!isset($sessionData['plugins'])) {
+                $sessionData['plugins'] = [];
+            }
+            if (!isset($sessionData['plugins']['bonuses'])) {
+                $sessionData['plugins']['bonuses'] = [];
+            }
+            $sessionData['plugins']['bonuses']['points'] = $points;
+            $app->setUserState('com_radicalmart.checkout.data', $sessionData);
+
+            // Calculate money equivalent
+            $moneyEquivalent = 0;
+            if ($points > 0 && class_exists(PointsHelper::class)) {
+                $moneyEquivalent = PointsHelper::convertToMoney($points, 'RUB');
+            }
+
+            $message = $points > 0
+                ? Text::sprintf('COM_RADICALMART_TELEGRAM_POINTS_APPLIED') . ': ' . number_format($points, 0, ',', ' ') . ' ' . Text::_('COM_RADICALMART_TELEGRAM_POINTS_UNIT') . ' (= ' . number_format($moneyEquivalent, 0, ',', ' ') . ' ₽)'
+                : Text::_('COM_RADICALMART_TELEGRAM_POINTS_CLEARED');
+
+            echo new JsonResponse([
+                'success' => true,
+                'message' => $message,
+                'points' => $points,
+                'moneyEquivalent' => $moneyEquivalent
+            ]);
+
+        } catch (\Throwable $e) {
+            echo new JsonResponse(['success' => false, 'message' => $e->getMessage()]);
+        }
+
+        $app->close();
+    }
+
+    /**
+     * Apply promo code to cart/order
+     * Called via AJAX from checkout: task=checkout.applyPromo
+     */
+    public function applyPromo(): void
+    {
+        $app = Factory::getApplication();
+
+        try {
+            $this->guardInitData();
+
+            $code = trim($app->input->getString('code', ''));
+            $chatId = $app->input->getInt('chat', 0);
+
+            if (empty($code)) {
+                echo new JsonResponse(['success' => false, 'message' => Text::_('COM_RADICALMART_TELEGRAM_ERR_PROMO_REQUIRED')]);
+                $app->close();
+                return;
+            }
+
+            // Get user from TelegramUserHelper (promo may work for guests too)
+            $tgUser = \Joomla\Component\RadicalMartTelegram\Site\Helper\TelegramUserHelper::getCurrentUser();
+            $userId = $tgUser['user_id'] ?? 0;
+
+            // Get customer_id if user is logged in
+            $customerId = 0;
+            if ($userId > 0) {
+                $db = Factory::getContainer()->get('DatabaseDriver');
+                $query = $db->getQuery(true)
+                    ->select('id')
+                    ->from($db->quoteName('#__radicalmart_customers'))
+                    ->where($db->quoteName('user_id') . ' = ' . (int) $userId);
+                $db->setQuery($query);
+                $customerId = (int) $db->loadResult();
+            }
+
+            // Validate promo code via CodesHelper
+            $codeData = null;
+            if (class_exists(CodesHelper::class)) {
+                try {
+                    $codeData = CodesHelper::checkCode($code, 'RUB', $customerId);
+                } catch (\Throwable $e) {
+                    echo new JsonResponse(['success' => false, 'message' => Text::_('COM_RADICALMART_TELEGRAM_ERR_PROMO_NOT_FOUND')]);
+                    $app->close();
+                    return;
+                }
+            }
+
+            if (empty($codeData) || empty($codeData->id)) {
+                echo new JsonResponse(['success' => false, 'message' => Text::_('COM_RADICALMART_TELEGRAM_ERR_PROMO_NOT_FOUND')]);
+                $app->close();
+                return;
+            }
+
+            // Store code in RadicalMart session (com_radicalmart.checkout.data)
+            // This is where RadicalMart Bonuses plugin expects them
+            $sessionData = $app->getUserState('com_radicalmart.checkout.data', []);
+            if (!isset($sessionData['plugins'])) {
+                $sessionData['plugins'] = [];
+            }
+            if (!isset($sessionData['plugins']['bonuses'])) {
+                $sessionData['plugins']['bonuses'] = [];
+            }
+            $sessionData['plugins']['bonuses']['codes'] = $code;
+            $app->setUserState('com_radicalmart.checkout.data', $sessionData);
+
+            // Build success message
+            $discountText = '';
+            if (!empty($codeData->discount)) {
+                $discountText = ': -' . $codeData->discount;
+                if (!empty($codeData->discount_type) && $codeData->discount_type === 'percent') {
+                    $discountText .= '%';
+                } else {
+                    $discountText .= ' ₽';
+                }
+            }
+
+            echo new JsonResponse([
+                'success' => true,
+                'message' => Text::_('COM_RADICALMART_TELEGRAM_PROMO_APPLIED') . $discountText,
+                'code' => $code,
+                'discount' => $codeData->discount ?? 0,
+                'discount_type' => $codeData->discount_type ?? 'fixed'
+            ]);
+
+        } catch (\Throwable $e) {
+            echo new JsonResponse(['success' => false, 'message' => $e->getMessage()]);
+        }
+
+        $app->close();
     }
 
 }

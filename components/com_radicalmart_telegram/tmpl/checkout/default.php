@@ -7,12 +7,18 @@
 use Joomla\CMS\Uri\Uri;
 use Joomla\CMS\Language\Text;
 use Joomla\CMS\Factory;
+use Joomla\Component\RadicalMartTelegram\Site\Helper\TelegramUserHelper;
 
 // Force load language file for the component
 Factory::getLanguage()->load('com_radicalmart_telegram', JPATH_COMPONENT_SITE);
 
 $root = rtrim(Uri::root(), '/');
 $storeTitle = isset($this->params) ? (string) $this->params->get('store_title', 'магазин Cacao.Land') : 'магазин Cacao.Land';
+
+// Данные пользователя из View (через TelegramUserHelper)
+$tgUser = $this->tgUser ?? null;
+$userId = $tgUser['user_id'] ?? 0;
+$chatId = $tgUser['chat_id'] ?? 0;
 
 // Получаем иконки служб доставки из настроек
 $pvzIcons = [
@@ -75,6 +81,15 @@ foreach ($pvzIcons as $k => $v) {
         .checkout-section { margin-bottom: 20px; background: rgba(0,0,0,0.02); padding: 15px; border-radius: 8px; }
         .checkout-section h3 { font-size: 1.1rem; margin-bottom: 10px; font-weight: 500; }
         .checkout-summary { font-size: 1.1rem; font-weight: bold; margin-top: 10px; border-top: 1px solid rgba(0,0,0,0.1); padding-top: 10px; }
+
+        /* Points & Promo styling */
+        #points-input { width: 80px; }
+        #points-block .uk-button-small { min-width: 36px; height: 36px; padding: 0; }
+        #promo-result.uk-alert-success { background: #e8f5e9; color: #2e7d32; }
+        #promo-result.uk-alert-danger { background: #ffebee; color: #c62828; }
+        #points-result.uk-alert-success { background: #e8f5e9; color: #2e7d32; }
+        #points-result.uk-alert-danger { background: #ffebee; color: #c62828; }
+        .points-discount-line { color: #4CAF50; }
 
         /* Payment methods styling */
         .payment-method-item { background: rgba(0,0,0,0.02); border-radius: 8px; cursor: pointer; transition: background 0.2s; }
@@ -811,10 +826,10 @@ foreach ($pvzIcons as $k => $v) {
                 const infoPanel = document.getElementById('pvz-info-panel');
                 infoPanel.hidden = true;
                 window._previewPvzId = null;
-                
+
                 // Select the PVZ
                 selectPvz(obj);
-                
+
                 // Scroll to tariffs container
                 setTimeout(() => {
                     const tariffsContainer = document.getElementById('tariffs-container');
@@ -1150,11 +1165,193 @@ foreach ($pvzIcons as $k => $v) {
 
         document.addEventListener('DOMContentLoaded', () => {
             try { document.body.classList.remove('contentpane'); } catch(e){}
+
+            // Set WebApp cookie for redirect protection
+            try {
+                document.cookie = 'tg_webapp=1; path=/; max-age=7200; SameSite=Lax';
+            } catch(e) {}
+
+            // Initialize Telegram WebApp and store user data
+            try {
+                if (window.Telegram && window.Telegram.WebApp) {
+                    Telegram.WebApp.ready();
+                    Telegram.WebApp.expand();
+
+                    const tgUser = Telegram.WebApp.initDataUnsafe?.user;
+                    const chatId = tgUser?.id;
+                    console.log('[Checkout] TG User:', tgUser, 'chatId:', chatId);
+
+                    // Store globally
+                    window.TG_CHAT_ID = chatId || 0;
+                    window.TG_USER = tgUser || null;
+
+                    // Update navigation links with chat param
+                    if (chatId) {
+                        document.querySelectorAll('a[href*="com_radicalmart_telegram"]').forEach(link => {
+                            try {
+                                const url = new URL(link.href);
+                                if (!url.searchParams.has('chat')) {
+                                    url.searchParams.set('chat', chatId);
+                                    link.href = url.toString();
+                                }
+                            } catch(e) {}
+                        });
+                    }
+                }
+            } catch(e) { console.log('[Checkout] TG error:', e); }
+
             initTheme();
             RMT_FORCE_UKIT_ICONS();
             RMT_OBSERVE_ICONS();
             loadCheckout();
+            initBonuses();
         });
+
+        // ========== BONUSES (POINTS & PROMO) ==========
+        function initBonuses() {
+            const pointsBlock = document.getElementById('points-block');
+            const pointsInput = document.getElementById('points-input');
+            const pointsMinus = document.getElementById('points-minus');
+            const pointsPlus = document.getElementById('points-plus');
+            const useAllPoints = document.getElementById('use-all-points');
+            const applyPointsBtn = document.getElementById('apply-points-btn');
+            const promoInput = document.getElementById('promo-code-input');
+            const applyPromoBtn = document.getElementById('apply-promo-btn');
+
+            if (!pointsBlock) return;
+
+            const maxPoints = parseInt(pointsBlock.dataset.points) || 0;
+
+            // Points +/- buttons
+            if (pointsMinus && pointsInput) {
+                pointsMinus.addEventListener('click', function() {
+                    let val = parseInt(pointsInput.value) || 0;
+                    val = Math.max(0, val - 10);
+                    pointsInput.value = val;
+                    useAllPoints.checked = (val >= maxPoints);
+                });
+            }
+
+            if (pointsPlus && pointsInput) {
+                pointsPlus.addEventListener('click', function() {
+                    let val = parseInt(pointsInput.value) || 0;
+                    val = Math.min(maxPoints, val + 10);
+                    pointsInput.value = val;
+                    useAllPoints.checked = (val >= maxPoints);
+                });
+            }
+
+            // Use all points checkbox
+            if (useAllPoints && pointsInput) {
+                useAllPoints.addEventListener('change', function() {
+                    if (this.checked) {
+                        pointsInput.value = maxPoints;
+                    } else {
+                        pointsInput.value = 0;
+                    }
+                });
+            }
+
+            // Points input manual change
+            if (pointsInput) {
+                pointsInput.addEventListener('change', function() {
+                    let val = parseInt(this.value) || 0;
+                    val = Math.max(0, Math.min(maxPoints, val));
+                    this.value = val;
+                    useAllPoints.checked = (val >= maxPoints);
+                });
+            }
+
+            // Apply points button
+            if (applyPointsBtn) {
+                applyPointsBtn.addEventListener('click', applyPoints);
+            }
+
+            // Apply promo button
+            if (applyPromoBtn) {
+                applyPromoBtn.addEventListener('click', applyPromo);
+            }
+        }
+
+        // Apply points via AJAX
+        async function applyPoints() {
+            const pointsInput = document.getElementById('points-input');
+            const pointsResult = document.getElementById('points-result');
+            const points = parseInt(pointsInput?.value) || 0;
+
+            try {
+                pointsResult.hidden = true;
+
+                const chatId = window.TG_CHAT_ID || qs('chat') || 0;
+                const url = `<?php echo $root; ?>/index.php?option=com_radicalmart_telegram&task=checkout.applyPoints&format=json&chat=${chatId}&points=${points}`;
+
+                const res = await fetch(url).then(r => r.json());
+
+                if (res.success) {
+                    pointsResult.className = 'uk-alert uk-alert-success uk-padding-small';
+                    pointsResult.innerHTML = res.message || '<?php echo Text::_('COM_RADICALMART_TELEGRAM_POINTS_APPLIED'); ?>';
+                    pointsResult.hidden = false;
+
+                    // Update summary if we got new totals
+                    if (res.cart) {
+                        renderSummary(res.cart);
+                    }
+                } else {
+                    pointsResult.className = 'uk-alert uk-alert-danger uk-padding-small';
+                    pointsResult.innerHTML = res.message || '<?php echo Text::_('COM_RADICALMART_TELEGRAM_ERROR'); ?>';
+                    pointsResult.hidden = false;
+                }
+            } catch(e) {
+                console.error('Apply points error:', e);
+                pointsResult.className = 'uk-alert uk-alert-danger uk-padding-small';
+                pointsResult.innerHTML = '<?php echo Text::_('COM_RADICALMART_TELEGRAM_ERROR'); ?>';
+                pointsResult.hidden = false;
+            }
+        }
+
+        // Apply promo code via AJAX
+        async function applyPromo() {
+            const promoInput = document.getElementById('promo-code-input');
+            const promoResult = document.getElementById('promo-result');
+            const code = promoInput?.value?.trim() || '';
+
+            if (!code) {
+                promoResult.className = 'uk-alert uk-alert-danger uk-padding-small';
+                promoResult.innerHTML = '<?php echo Text::_('COM_RADICALMART_TELEGRAM_ERR_PROMO_REQUIRED'); ?>';
+                promoResult.hidden = false;
+                return;
+            }
+
+            try {
+                promoResult.hidden = true;
+
+                const chatId = window.TG_CHAT_ID || qs('chat') || 0;
+                const url = `<?php echo $root; ?>/index.php?option=com_radicalmart_telegram&task=checkout.applyPromo&format=json&chat=${chatId}&code=${encodeURIComponent(code)}`;
+
+                const res = await fetch(url).then(r => r.json());
+
+                if (res.success) {
+                    promoResult.className = 'uk-alert uk-alert-success uk-padding-small';
+                    promoResult.innerHTML = res.message || '<?php echo Text::_('COM_RADICALMART_TELEGRAM_PROMO_APPLIED'); ?>';
+                    promoResult.hidden = false;
+
+                    // Update summary if we got new totals
+                    if (res.cart) {
+                        renderSummary(res.cart);
+                    }
+                } else {
+                    promoResult.className = 'uk-alert uk-alert-danger uk-padding-small';
+                    promoResult.innerHTML = res.message || '<?php echo Text::_('COM_RADICALMART_TELEGRAM_ERR_PROMO_NOT_FOUND'); ?>';
+                    promoResult.hidden = false;
+                }
+            } catch(e) {
+                console.error('Apply promo error:', e);
+                promoResult.className = 'uk-alert uk-alert-danger uk-padding-small';
+                promoResult.innerHTML = '<?php echo Text::_('COM_RADICALMART_TELEGRAM_ERROR'); ?>';
+                promoResult.hidden = false;
+            }
+        }
+        // ========== END BONUSES ==========
     </script>
 </head>
 <body>
@@ -1217,6 +1414,55 @@ foreach ($pvzIcons as $k => $v) {
                 <div id="payment-methods">
                     <div uk-spinner></div>
                 </div>
+            </div>
+
+            <!-- Discounts & Points -->
+            <div class="checkout-section" id="bonuses-section">
+                <h3><?php echo Text::_('COM_RADICALMART_TELEGRAM_DISCOUNTS_POINTS'); ?></h3>
+
+                <!-- Promo Code -->
+                <div class="uk-margin-small" id="promo-code-block">
+                    <label class="uk-form-label"><?php echo Text::_('COM_RADICALMART_TELEGRAM_PROMO'); ?></label>
+                    <div class="uk-flex uk-flex-middle">
+                        <input class="uk-input uk-width-expand" type="text" name="bonuses_codes" id="promo-code-input" placeholder="<?php echo Text::_('COM_RADICALMART_TELEGRAM_ENTER_PROMO'); ?>" value="<?php echo htmlspecialchars($this->appliedCode); ?>">
+                        <button type="button" class="uk-button uk-button-default uk-margin-small-left" id="apply-promo-btn"><?php echo Text::_('COM_RADICALMART_TELEGRAM_APPLY'); ?></button>
+                    </div>
+                    <div id="promo-result" class="uk-margin-small-top" <?php if (empty($this->appliedCode)): ?>hidden<?php endif; ?>><?php if (!empty($this->appliedCode)): ?><span class="uk-text-success"><?php echo Text::_('COM_RADICALMART_TELEGRAM_PROMO_APPLIED'); ?></span><?php endif; ?></div>
+                </div>
+
+                <!-- Points -->
+                <div class="uk-margin-small" id="points-block" data-points="<?php echo $this->points; ?>" data-points-equivalent="<?php echo htmlspecialchars($this->pointsEquivalent); ?>" data-customer-id="<?php echo $this->customerId; ?>" data-applied-points="<?php echo $this->appliedPoints; ?>" <?php if (!$this->pointsEnabled || $this->points <= 0): ?>hidden<?php endif; ?>>
+                    <label class="uk-form-label"><?php echo Text::_('COM_RADICALMART_TELEGRAM_POINTS'); ?></label>
+                    <div class="uk-text-small uk-text-muted uk-margin-small-bottom">
+                        <?php echo Text::_('COM_RADICALMART_TELEGRAM_POINTS_AVAILABLE'); ?>:
+                        <strong id="points-available"><?php echo number_format($this->points, 0, ',', ' '); ?></strong>
+                        <?php if ($this->pointsEquivalent): ?>
+                        <span>(= <?php echo $this->pointsEquivalent; ?>)</span>
+                        <?php endif; ?>
+                    </div>
+                    <div class="uk-flex uk-flex-middle uk-margin-small-bottom">
+                        <button type="button" class="uk-button uk-button-default uk-button-small" id="points-minus">−</button>
+                        <input class="uk-input uk-width-small uk-text-center uk-margin-small-left uk-margin-small-right" type="number" name="bonuses_points" id="points-input" value="<?php echo (int) $this->appliedPoints; ?>" min="0" max="<?php echo (int) $this->points; ?>">
+                        <button type="button" class="uk-button uk-button-default uk-button-small" id="points-plus">+</button>
+                        <button type="button" class="uk-button uk-button-default uk-margin-small-left" id="apply-points-btn"><?php echo Text::_('COM_RADICALMART_TELEGRAM_APPLY'); ?></button>
+                    </div>
+                    <div class="uk-margin-small">
+                        <label>
+                            <input class="uk-checkbox" type="checkbox" id="use-all-points" <?php if ($this->appliedPoints > 0 && $this->appliedPoints >= $this->points): ?>checked<?php endif; ?>>
+                            <?php echo Text::_('COM_RADICALMART_TELEGRAM_USE_ALL_POINTS'); ?>
+                        </label>
+                    </div>
+                    <div id="points-result" class="uk-margin-small-top" <?php if ($this->appliedPoints <= 0): ?>hidden<?php endif; ?>><?php if ($this->appliedPoints > 0): ?><span class="uk-text-success"><?php echo Text::_('COM_RADICALMART_TELEGRAM_POINTS_APPLIED'); ?></span><?php endif; ?></div>
+                </div>
+
+                <!-- No bonuses available message for guests -->
+                <?php if (!$this->pointsEnabled || ($this->customerId <= 0 && $this->points <= 0)): ?>
+                <div class="uk-text-muted uk-text-small" id="bonuses-login-hint">
+                    <?php if ($this->customerId <= 0): ?>
+                    <?php echo Text::_('COM_RADICALMART_TELEGRAM_BONUSES_LOGIN_HINT'); ?>
+                    <?php endif; ?>
+                </div>
+                <?php endif; ?>
             </div>
 
             <!-- Summary -->

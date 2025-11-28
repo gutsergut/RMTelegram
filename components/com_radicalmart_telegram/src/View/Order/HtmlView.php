@@ -1,9 +1,10 @@
 <?php
 /*
  * @package     com_radicalmart_telegram (site)
+ * Order Detail View
  */
 
-namespace Joomla\Component\RadicalMartTelegram\Site\View\Orders;
+namespace Joomla\Component\RadicalMartTelegram\Site\View\Order;
 
 \defined('_JEXEC') or die;
 
@@ -19,11 +20,8 @@ use Joomla\Component\RadicalMart\Administrator\Helper\PriceHelper;
 class HtmlView extends BaseHtmlView
 {
     protected $params;
-    public $items = [];
-    public $statuses = [];
-    protected $pagination;
-    public $currentStatus;
-    public $tgUser = null; // Данные пользователя из TelegramUserHelper
+    public $order = null;
+    public $tgUser = null;
 
     public function display($tpl = null)
     {
@@ -33,14 +31,13 @@ class HtmlView extends BaseHtmlView
 
         $app = Factory::getApplication();
         $this->params = $app->getParams('com_radicalmart_telegram');
-        $this->currentStatus = $app->input->getInt('status', 0);
 
-        // Используем централизованный хелпер для идентификации пользователя
+        // Get user
         $this->tgUser = TelegramUserHelper::getCurrentUser();
 
-        // Load orders for current user
-        $this->loadOrders();
-        $this->loadStatuses();
+        // Load order
+        $orderId = $app->input->getInt('id', 0);
+        $this->loadOrder($orderId);
 
         if ($app->getTemplate() !== 'yootheme') {
             $app->setTemplate('yootheme');
@@ -53,17 +50,16 @@ class HtmlView extends BaseHtmlView
 
         $wa->registerAndUseStyle('yootheme.theme', 'templates/yootheme_cacao/css/theme.9.css?1745431273');
         $wa->registerAndUseStyle('yootheme.custom', 'templates/yootheme_cacao/css/custom.css?4.5.9');
-
         $wa->registerAndUseScript('uikit.js', 'templates/yootheme/vendor/assets/uikit/dist/js/uikit.min.js?4.5.9', [], ['defer' => false]);
         $wa->registerAndUseScript('yootheme.theme', 'templates/yootheme/js/theme.js?4.5.9', ['uikit.js'], ['defer' => false]);
 
         parent::display($tpl);
     }
 
-    protected function loadOrders(): void
+    protected function loadOrder(int $orderId): void
     {
         $userId = $this->tgUser['user_id'] ?? 0;
-        if ($userId <= 0) {
+        if ($orderId <= 0 || $userId <= 0) {
             return;
         }
 
@@ -73,22 +69,19 @@ class HtmlView extends BaseHtmlView
             $query = $db->getQuery(true)
                 ->select('o.*')
                 ->from($db->quoteName('#__radicalmart_orders', 'o'))
+                ->where($db->quoteName('o.id') . ' = ' . (int) $orderId)
                 ->where($db->quoteName('o.created_by') . ' = ' . (int) $userId)
-                ->where($db->quoteName('o.state') . ' = 1')
-                ->order($db->quoteName('o.created') . ' DESC');
+                ->where($db->quoteName('o.state') . ' = 1');
 
-            if ($this->currentStatus > 0) {
-                $query->where($db->quoteName('o.status') . ' = ' . (int) $this->currentStatus);
-            }
+            $db->setQuery($query);
+            $order = $db->loadObject();
 
-            $db->setQuery($query, 0, 20);
-            $orders = $db->loadObjectList();
-
-            foreach ($orders as $order) {
+            if ($order) {
                 $order->products = json_decode($order->products ?? '[]', true) ?: [];
                 $order->shipping = new Registry($order->shipping ?? '{}');
                 $order->payment = new Registry($order->payment ?? '{}');
                 $order->total = json_decode($order->total ?? '{}', true) ?: [];
+                $order->contacts = new Registry($order->contacts ?? '{}');
 
                 // Format price strings like RadicalMart does
                 $currency = $order->currency ?? 'RUB';
@@ -100,34 +93,8 @@ class HtmlView extends BaseHtmlView
                 }
 
                 $order->status = $this->getStatus((int) ($order->status ?? 0));
-                $order->link = Uri::root() . 'index.php?option=com_radicalmart&view=order&id=' . (int) $order->id;
                 $order->title = Text::sprintf('COM_RADICALMART_TELEGRAM_ORDER_NUMBER', $order->number ?: $order->id);
-                $this->items[] = $order;
-            }
-        } catch (\Throwable $e) {
-            // Log error
-        }
-    }
-
-    protected function loadStatuses(): void
-    {
-        try {
-            $db = Factory::getContainer()->get('DatabaseDriver');
-            $query = $db->getQuery(true)
-                ->select(['id', 'title', 'params'])
-                ->from($db->quoteName('#__radicalmart_statuses'))
-                ->where($db->quoteName('state') . ' = 1')
-                ->order('ordering ASC');
-
-            $db->setQuery($query);
-            $rows = $db->loadObjectList();
-
-            foreach ($rows as $row) {
-                // Localize title like RadicalMart does
-                $row->rawtitle = $row->title;
-                $row->title = Text::_($row->title);
-                $row->params = new Registry($row->params ?? '{}');
-                $this->statuses[$row->id] = $row;
+                $this->order = $order;
             }
         } catch (\Throwable $e) {
             // Log error
@@ -136,9 +103,26 @@ class HtmlView extends BaseHtmlView
 
     protected function getStatus(int $id): ?object
     {
-        if (empty($this->statuses)) {
-            $this->loadStatuses();
-        }
-        return $this->statuses[$id] ?? null;
+        if ($id <= 0) return null;
+
+        try {
+            $db = Factory::getContainer()->get('DatabaseDriver');
+            $query = $db->getQuery(true)
+                ->select(['id', 'title', 'params'])
+                ->from($db->quoteName('#__radicalmart_statuses'))
+                ->where($db->quoteName('id') . ' = ' . (int) $id);
+
+            $db->setQuery($query);
+            $row = $db->loadObject();
+
+            if ($row) {
+                $row->rawtitle = $row->title;
+                $row->title = Text::_($row->title);
+                $row->params = new Registry($row->params ?? '{}');
+                return $row;
+            }
+        } catch (\Throwable $e) {}
+
+        return null;
     }
 }
