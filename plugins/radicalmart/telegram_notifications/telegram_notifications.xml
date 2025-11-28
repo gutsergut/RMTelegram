@@ -1,0 +1,22 @@
+<?xml version="1.0" encoding="utf-8"?>
+<extension type="plugin" group="radicalmart" method="upgrade">
+    <name>plg_radicalmart_telegram_notifications</name>
+    <author>RadicalMart Telegram</author>
+    <creationDate>2025-11</creationDate>
+    <copyright>Copyright (C) 2025</copyright>
+    <license>GNU General Public License version 2 or later</license>
+    <version>0.1.0</version>
+    <description>PLG_RADICALMART_TELEGRAM_NOTIFICATIONS_DESC</description>
+    <namespace path="src">Joomla\Plugin\RadicalMart\TelegramNotifications</namespace>
+    <files>
+        <folder plugin="telegram_notifications">services</folder>
+        <folder>src</folder>
+        <folder>language</folder>
+    </files>
+    <languages folder="language">
+        <language tag="en-GB">en-GB/plg_radicalmart_telegram_notifications.ini</language>
+        <language tag="en-GB">en-GB/plg_radicalmart_telegram_notifications.sys.ini</language>
+        <language tag="ru-RU">ru-RU/plg_radicalmart_telegram_notifications.ini</language>
+        <language tag="ru-RU">ru-RU/plg_radicalmart_telegram_notifications.sys.ini</language>
+    </languages>
+</extension>
