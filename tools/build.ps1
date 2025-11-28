@@ -68,9 +68,9 @@ $PackageSource = Join-Path $Root 'com_radicalmart_telegram-package'
 Copy-Item -Path (Join-Path $PackageSource 'pkg_radicalmart_telegram.xml') -Destination $Stage -Force
 Copy-Item -Path (Join-Path $PackageSource 'script.php') -Destination $Stage -Force
 New-Item -ItemType Directory -Path (Join-Path $Stage 'language\ru-RU') -Force | Out-Null
-Copy-Item -Path (Join-Path $Root 'language\ru-RU\ru-RU.pkg_radicalmart_telegram.sys.ini') -Destination (Join-Path $Stage 'language\ru-RU') -Force
+Copy-Item -Path (Join-Path $Root 'administrator\language\ru-RU\ru-RU.pkg_radicalmart_telegram.sys.ini') -Destination (Join-Path $Stage 'language\ru-RU') -Force
 New-Item -ItemType Directory -Path (Join-Path $Stage 'language\en-GB') -Force | Out-Null
-Copy-Item -Path (Join-Path $Root 'language\en-GB\en-GB.pkg_radicalmart_telegram.sys.ini') -Destination (Join-Path $Stage 'language\en-GB') -Force
+Copy-Item -Path (Join-Path $Root 'administrator\language\en-GB\en-GB.pkg_radicalmart_telegram.sys.ini') -Destination (Join-Path $Stage 'language\en-GB') -Force
 
 $PackagesDir = Join-Path $Stage 'packages'
 if (Test-Path $PackagesDir) { Remove-Item -Recurse -Force $PackagesDir }
@@ -108,6 +108,7 @@ $PluginsAllow = @{
     'plugins\task\radicalmart_telegram_fetch' = @('radicalmart_telegram_fetch.xml','services','src','language');
     'plugins\radicalmart_payment\telegramcards' = @('telegramcards.xml','telegramcards.php','language');
     'plugins\radicalmart_payment\telegramstars' = @('telegramstars.xml','telegramstars.php','language');
+    'plugins\radicalmart\telegram_notifications' = @('telegram_notifications.xml','services','src','language');
 }
 foreach ($kv in $PluginsAllow.GetEnumerator()) {
     $base = Join-Path $Root $kv.Key
@@ -127,6 +128,17 @@ $MediaSrc = Join-Path $Root 'media\com_radicalmart_telegram'
 $MediaDst = Join-Path $Stage 'media\com_radicalmart_telegram'
 Copy-Item -Path $MediaSrc -Destination $MediaDst -Recurse -Force
 
+# Verify new WebApp JS exists in package stage
+$AppJs = Join-Path $MediaDst 'js\app.js'
+if (!(Test-Path $AppJs)) {
+    Write-Error "Missing media JS: $AppJs"
+}
+else {
+    $len = (Get-Item $AppJs).Length
+    $kb = [math]::Round($len / 1KB, 1)
+    Write-Host "Included WebApp JS: media/com_radicalmart_telegram/js/app.js ($kb KB)" -ForegroundColor Green
+}
+
 Write-Host "`nSearching for 7-Zip..." -ForegroundColor Cyan
 $Seven = Find-7Zip
 Write-Host ""
@@ -136,6 +148,7 @@ Zip-Child -SrcDir (Join-Path $Stage 'plugins\system\radicalmart_telegram') -ZipN
 Zip-Child -SrcDir (Join-Path $Stage 'plugins\task\radicalmart_telegram_fetch') -ZipName 'plg_task_radicalmart_telegram_fetch.zip' -SevenZipExe $Seven -StageDir $PackagesDir
 Zip-Child -SrcDir (Join-Path $Stage 'plugins\radicalmart_payment\telegramcards') -ZipName 'plg_radicalmart_payment_telegramcards.zip' -SevenZipExe $Seven -StageDir $PackagesDir
 Zip-Child -SrcDir (Join-Path $Stage 'plugins\radicalmart_payment\telegramstars') -ZipName 'plg_radicalmart_payment_telegramstars.zip' -SevenZipExe $Seven -StageDir $PackagesDir
+Zip-Child -SrcDir (Join-Path $Stage 'plugins\radicalmart\telegram_notifications') -ZipName 'plg_radicalmart_telegram_notifications.zip' -SevenZipExe $Seven -StageDir $PackagesDir
 
 Remove-Item -Recurse -Force (Join-Path $Stage 'plugins') -ErrorAction SilentlyContinue
 Remove-Item -Recurse -Force (Join-Path $Stage 'administrator\components') -ErrorAction SilentlyContinue
