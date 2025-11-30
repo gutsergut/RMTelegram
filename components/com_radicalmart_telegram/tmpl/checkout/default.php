@@ -1261,15 +1261,47 @@ foreach ($pvzIcons as $k => $v) {
         }
 
         function prefillProfile(data) {
+            // Phone from top-level (works even if user not linked)
+            const phone = data.phone || (data.user && data.user.phone) || '';
+            if (phone) {
+                const phoneInput = document.querySelector('[name="phone"]');
+                if (phoneInput) phoneInput.value = phone;
+            }
+            
             if (data.user) {
                 const u = data.user;
-                if (u.name) {
-                    const parts = u.name.split(' ');
-                    if (parts[0]) document.querySelector('[name="first_name"]').value = parts[0];
-                    if (parts[1]) document.querySelector('[name="last_name"]').value = parts[1];
+                
+                // Use first_name/last_name from API if available
+                if (u.first_name) {
+                    const fnInput = document.querySelector('[name="first_name"]');
+                    if (fnInput) fnInput.value = u.first_name;
                 }
-                if (u.phone) document.querySelector('[name="phone"]').value = u.phone;
-                if (u.email) document.querySelector('[name="email"]').value = u.email;
+                if (u.second_name) {
+                    const snInput = document.querySelector('[name="second_name"]');
+                    if (snInput) snInput.value = u.second_name;
+                }
+                if (u.last_name) {
+                    const lnInput = document.querySelector('[name="last_name"]');
+                    if (lnInput) lnInput.value = u.last_name;
+                }
+                
+                // Fallback: parse name field if separate fields not set
+                if (!u.first_name && !u.last_name && u.name) {
+                    const parts = u.name.split(' ');
+                    if (parts[0]) {
+                        const fnInput = document.querySelector('[name="first_name"]');
+                        if (fnInput && !fnInput.value) fnInput.value = parts[0];
+                    }
+                    if (parts[1]) {
+                        const lnInput = document.querySelector('[name="last_name"]');
+                        if (lnInput && !lnInput.value) lnInput.value = parts[1];
+                    }
+                }
+                
+                if (u.email) {
+                    const emailInput = document.querySelector('[name="email"]');
+                    if (emailInput) emailInput.value = u.email;
+                }
             }
         }
 

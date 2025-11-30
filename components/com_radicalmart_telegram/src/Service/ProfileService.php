@@ -19,16 +19,66 @@ class ProfileService
     public function getProfile(int $chatId): array
     {
         $db = Factory::getContainer()->get('DatabaseDriver');
+        
+        // Get user_id and phone from telegram_users table
         $query = $db->getQuery(true)
-            ->select('user_id')
+            ->select(['user_id', 'phone AS tg_phone'])
             ->from($db->quoteName('#__radicalmart_telegram_users'))
             ->where($db->quoteName('chat_id') . ' = :chat')
             ->bind(':chat', $chatId);
-        $userId = (int) $db->setQuery($query, 0, 1)->loadResult();
+        $tgUser = $db->setQuery($query, 0, 1)->loadObject();
+        
+        $userId = (int) ($tgUser->user_id ?? 0);
+        $tgPhone = (string) ($tgUser->tg_phone ?? '');
+        
         $user = null;
+        $phone = '';
+        $firstName = '';
+        $secondName = '';
+        $lastName = '';
+        $email = '';
+        
         if ($userId > 0) {
             $user = Factory::getUser($userId);
+            
+            // Get phone from RadicalMart phones table
+            $phoneQuery = $db->getQuery(true)
+                ->select('phone')
+                ->from($db->quoteName('#__radicalmart_users_phones'))
+                ->where($db->quoteName('user_id') . ' = :uid')
+                ->bind(':uid', $userId);
+            $rmPhone = (string) $db->setQuery($phoneQuery, 0, 1)->loadResult();
+            
+            // Get contacts from RadicalMart users table
+            $contactsQuery = $db->getQuery(true)
+                ->select('contacts')
+                ->from($db->quoteName('#__radicalmart_users'))
+                ->where($db->quoteName('user_id') . ' = :uid')
+                ->bind(':uid', $userId);
+            $contactsJson = $db->setQuery($contactsQuery, 0, 1)->loadResult();
+            
+            if ($contactsJson) {
+                try {
+                    $contacts = json_decode($contactsJson, true) ?: [];
+                    $firstName = (string) ($contacts['first_name'] ?? '');
+                    $secondName = (string) ($contacts['second_name'] ?? '');
+                    $lastName = (string) ($contacts['last_name'] ?? '');
+                    if (empty($rmPhone) && !empty($contacts['phone'])) {
+                        $rmPhone = (string) $contacts['phone'];
+                    }
+                } catch (\Throwable $e) {}
+            }
+            
+            // Phone priority: RadicalMart > Telegram users table > Joomla profile
+            $phone = $rmPhone ?: $tgPhone ?: (string) ($user->getParam('profile.phonenum') ?: '');
+            
+            // Email from user
+            $email = (string) $user->email;
+        } else {
+            // Not linked - use phone from telegram_users
+            $phone = $tgPhone;
         }
+        
         $points = 0.0;
         if ($userId > 0 && class_exists(PointsHelper::class)) {
             $points = (float) PointsHelper::getCustomerPoints($userId);
@@ -49,9 +99,13 @@ class ProfileService
                 'id' => (int) $user->id,
                 'name' => (string) ($user->name ?: $user->username ?: ''),
                 'username' => (string) $user->username,
-                'email' => (string) $user->email,
-                'phone' => (string) ($user->getParam('profile.phonenum') ?: ''),
+                'email' => $email,
+                'phone' => $phone,
+                'first_name' => $firstName,
+                'second_name' => $secondName,
+                'last_name' => $lastName,
             ] : null),
+            'phone' => $phone, // Phone even if user not linked (from tg_users table)
             'points' => $points,
             'referrals_info' => $info,
             'referral_codes' => array_map(function($c) {
