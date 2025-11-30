@@ -130,6 +130,102 @@ class CheckoutService
         return ['tariffs' => $tariffResult['tariffs'] ?? []];
     }
 
+    /**
+     * Batch tariff calculation for multiple PVZ points
+     * @param int $chatId
+     * @param array $pvzIds Array of ext_ids
+     * @param int $shippingId
+     * @return array Results keyed by ext_id
+     */
+    public function getTariffsBatch(int $chatId, array $pvzIds, int $shippingId = 0): array
+    {
+        if (empty($pvzIds)) {
+            return ['results' => []];
+        }
+
+        // Limit to 20 points per request
+        $pvzIds = array_slice($pvzIds, 0, 20);
+
+        $cartService = new CartService();
+        $cart = $cartService->getCart($chatId);
+        if (!$cart || empty($cart->id)) {
+            throw new \RuntimeException(Text::_('COM_RADICALMART_TELEGRAM_ERR_CART_EMPTY'));
+        }
+
+        // Get PVZ details from DB via PvzService
+        $pvzService = new PvzService();
+        $points = $pvzService->getPoints($pvzIds);
+
+        $results = [];
+        $inactiveToMark = [];
+
+        foreach ($pvzIds as $extId) {
+            if (!isset($points[$extId])) {
+                $results[$extId] = null; // Point not found or inactive
+                continue;
+            }
+
+            $point = $points[$extId];
+            $provider = $point['provider'];
+
+            try {
+                $tariffResult = ApiShipIntegrationHelper::calculateTariff($shippingId, $cart, $extId, $provider);
+                $tariffs = $tariffResult['tariffs'] ?? [];
+                $debug = $tariffResult['__debug'] ?? null;
+
+                if (!empty($tariffs)) {
+                    // Find minimum price
+                    $minPrice = PHP_INT_MAX;
+                    $tariffList = [];
+                    foreach ($tariffs as $t) {
+                        $cost = (float)($t->deliveryCost ?? 0);
+                        if ($cost < $minPrice) {
+                            $minPrice = $cost;
+                        }
+                        $tariffList[] = [
+                            'id' => (string)$t->tariffId,
+                            'name' => $t->tariffName ?? '',
+                            'cost' => $cost,
+                            'days_min' => (int)($t->daysMin ?? 0),
+                            'days_max' => (int)($t->daysMax ?? 0),
+                        ];
+                    }
+
+                    $results[$extId] = [
+                        'min_price' => $minPrice === PHP_INT_MAX ? 0 : $minPrice,
+                        'tariffs' => $tariffList,
+                        'provider' => $provider,
+                        '_debug' => $debug,
+                    ];
+
+                    // Reset inactive counter if point has tariffs
+                    if ((int)$point['inactive_count'] > 0) {
+                        $pvzService->resetInactiveCount($extId, $provider);
+                    }
+                } else {
+                    $results[$extId] = [
+                        'error' => 'no_tariffs',
+                        'provider' => $provider,
+                        '_debug' => $debug,
+                    ];
+                    $inactiveToMark[] = ['ext_id' => $extId, 'provider' => $provider];
+                }
+            } catch (\Throwable $e) {
+                Log::add("[getTariffsBatch] Error calculating for $extId: " . $e->getMessage(), Log::WARNING, 'com_radicalmart.telegram');
+                $results[$extId] = [
+                    'error' => $e->getMessage(),
+                    'provider' => $provider,
+                ];
+                $inactiveToMark[] = ['ext_id' => $extId, 'provider' => $provider];
+            }
+        }
+
+        return [
+            'results' => $results,
+            'inactive_to_mark' => $inactiveToMark,
+        ];
+    }
+
     public function setPayment(int $chatId, int $paymentId): array
     {
         $app = Factory::getApplication();

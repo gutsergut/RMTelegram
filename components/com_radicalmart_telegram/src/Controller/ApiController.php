@@ -1488,15 +1488,16 @@ class ApiController extends BaseController
 
     public function pvz(): void
     {
-        $app  = Factory::getApplication();
+        $app = Factory::getApplication();
         $this->guardInitData();
         $this->guardRateLimitDb('pvz', 20);
-        $bbox = $app->input->getString('bbox', ''); // lon1,lat1,lon2,lat2
+        $bbox = $app->input->getString('bbox', '');
         $prov = $app->input->getString('providers', '');
-        $limit= $app->input->getInt('limit', 1000);
+        $limit = $app->input->getInt('limit', 1000);
 
         try {
-            $items = ApiShipIntegrationHelper::getPvzList($bbox, $prov, $limit);
+            $svc = new PvzService();
+            $items = $svc->getPvzList($bbox, $prov, $limit);
             echo new JsonResponse(['items' => $items]);
             $app->close();
         } catch (\Throwable $e) {
@@ -1507,152 +1508,40 @@ class ApiController extends BaseController
 
     public function orders(): void
     {
-        $app  = Factory::getApplication();
+        $app = Factory::getApplication();
         $this->guardInitData();
         $this->guardRateLimitDb('orders', 30);
         $chat = $this->getChatId();
         if ($chat <= 0) { echo new JsonResponse(null, Text::_('COM_RADICALMART_TELEGRAM_ERR_INVALID_CHAT'), true); $app->close(); }
-        try {
-            $db = Factory::getContainer()->get('DatabaseDriver');
-            $q  = $db->getQuery(true)
-                ->select('user_id')
-                ->from($db->quoteName('#__radicalmart_telegram_users'))
-                ->where($db->quoteName('chat_id') . ' = :chat')
-                ->bind(':chat', $chat);
-            $uid = (int) $db->setQuery($q, 0, 1)->loadResult();
-            if ($uid <= 0) { echo new JsonResponse(['items'=>[], 'has_more'=>false, 'page'=>1]); $app->close(); }
-            $page  = max(1, (int) $app->input->getInt('page', 1));
-            $limit = min(50, max(1, (int) $app->input->getInt('limit', 10)));
-            $status = trim((string) $app->input->get('status', '', 'string'));
-            $q2 = $db->getQuery(true)
-                ->select(['id','number'])
-                ->from($db->quoteName('#__radicalmart_orders'))
-                ->where($db->quoteName('created_by') . ' = :uid')
-                ->where($db->quoteName('state') . ' = 1')
-                ->order($db->quoteName('id') . ' DESC')
-                ->bind(':uid', $uid);
-            if ($status !== '' && ctype_digit($status)) {
-                $q2->where($db->quoteName('status') . ' = :st')->bind(':st', (int) $status);
-            }
-            $offset = ($page - 1) * $limit;
-            $db->setQuery($q2, $offset, $limit + 1);
-            $rows = $db->loadAssocList() ?: [];
-            $hasMore = false;
-            if (count($rows) > $limit) { $hasMore = true; array_pop($rows); }
-            $out = [];
-            $omodel = new AdminOrderModel();
-            foreach ($rows as $r) {
-                $order = $omodel->getItem((int)$r['id']);
-                if (!$order || empty($order->id)) continue;
-                $plugin = (!empty($order->payment) && !empty($order->payment->plugin)) ? (string) $order->payment->plugin : '';
-                $canResend = ($plugin !== '' && stripos($plugin, 'telegram') !== false);
-                $out[] = [
-                    'id'     => (int) $order->id,
-                    'number' => (string) ($order->number ?? ''),
-                    'status' => (!empty($order->status) && !empty($order->status->title)) ? (string) $order->status->title : '',
-                    'total'  => (!empty($order->total) && !empty($order->total['final_string'])) ? (string) $order->total['final_string'] : '',
-                    'pay_url'=> rtrim(Uri::root(), '/') . '/index.php?option=com_radicalmart&task=payment.pay&order_number=' . urlencode((string) ($order->number ?? '')),
-                    'created'=> (string) ($order->created ?? ''),
-                    'payment_plugin' => $plugin,
-                    'can_resend' => $canResend,
-                ];
-            }
-            // Load statuses list (optional)
-            $statuses = [];
-            try {
-                $qs = $db->getQuery(true)
-                    ->select([$db->quoteName('id'), $db->quoteName('title')])
-                    ->from($db->quoteName('#__radicalmart_statuses'))
-                    ->where($db->quoteName('state') . ' = 1')
-                    ->order($db->quoteName('ordering') . ' ASC');
-                $statuses = $db->setQuery($qs)->loadAssocList() ?: [];
-            } catch (\Throwable $e) { $statuses = []; }
 
-            echo new JsonResponse(['items'=>$out, 'has_more'=>$hasMore, 'page'=>$page, 'statuses'=>$statuses]); $app->close();
+        try {
+            $page = max(1, (int) $app->input->getInt('page', 1));
+            $limit = min(50, max(1, (int) $app->input->getInt('limit', 10)));
+            $statusRaw = trim((string) $app->input->get('status', '', 'string'));
+            $status = ($statusRaw !== '' && ctype_digit($statusRaw)) ? (int) $statusRaw : null;
+
+            $svc = new OrderService();
+            $result = $svc->getOrders($chat, $page, $limit, $status);
+            echo new JsonResponse($result);
+            $app->close();
         } catch (\Throwable $e) { echo new JsonResponse(null, $e->getMessage(), true); $app->close(); }
     }
 
     public function invoice(): void
     {
-        $app  = Factory::getApplication();
+        $app = Factory::getApplication();
         $this->guardInitData();
         $this->guardRateLimitDb('invoice', 10);
         $this->guardNonce('invoice');
         $chat = $this->getChatId();
         $number = trim((string) $app->input->getString('number', ''));
         if ($chat <= 0 || $number === '') { echo new JsonResponse(null, Text::_('COM_RADICALMART_TELEGRAM_ERR_INVALID_CHAT'), true); $app->close(); }
+
         try {
-            // Load order by number
-            $pm = new \Joomla\Component\RadicalMart\Site\Model\PaymentModel();
-            $order = $pm->getOrder($number, 'number');
-            if (!$order || empty($order->id)) { echo new JsonResponse(null, 'Order not found', true); $app->close(); }
-            // Check it's telegram payment
-            $plugin = (!empty($order->payment) && !empty($order->payment->plugin)) ? (string) $order->payment->plugin : '';
-            if ($plugin === '' || stripos($plugin, 'telegram') === false) { echo new JsonResponse(null, 'Payment method is not Telegram', true); $app->close(); }
-            // Resolve provider token from component settings (for cards)
-            $params = $app->getParams('com_radicalmart_telegram');
-            $provider = (string) $params->get('provider_cards', 'yookassa');
-            $env      = (string) $params->get('payments_env', 'test');
-            $ptoken   = '';
-            if (stripos($plugin, 'telegramstars') === false) {
-                if ($provider === 'yookassa') {
-                    $ptoken = (string) $params->get($env === 'prod' ? 'yookassa_provider_token_prod' : 'yookassa_provider_token_test', '');
-                } else {
-                    $ptoken = (string) $params->get($env === 'prod' ? 'robokassa_provider_token_prod' : 'robokassa_provider_token_test', '');
-                }
-                if ($ptoken === '') { echo new JsonResponse(null, 'Missing provider token', true); $app->close(); }
-            }
-            // Compute amount and currency from AdminOrderModel
-            $adm = new AdminOrderModel();
-            $ord = $adm->getItem((int) $order->id);
-            if (!$ord || empty($ord->id)) { echo new JsonResponse(null, 'Order not found', true); $app->close(); }
-            $title = 'Заказ ' . ($ord->number ?? ('#' . (int) $ord->id));
-            $desc  = 'Оплата заказа в магазине';
-            $payload = 'order:' . (string) ($ord->number ?? (string) $ord->id);
-            $tg = new TelegramClient();
-            if ($tg->isConfigured()) {
-                if (stripos($plugin, 'telegramstars') !== false) {
-                    // Convert RUB to stars
-                    $rub = 0.0;
-                    if (!empty($ord->total['final'])) { $rub = (float) $ord->total['final']; }
-                    elseif (!empty($ord->total['final_string'])) {
-                        $num = preg_replace('#[^0-9\.,]#', '', (string) $ord->total['final_string']);
-                        $num = str_replace(' ', '', $num); $num = str_replace(',', '.', $num);
-                        $rub = (float) $num;
-                    }
-                    // Read stars plugin params
-                    $db = Factory::getContainer()->get('DatabaseDriver');
-                    $q = $db->getQuery(true)
-                        ->select($db->quoteName('params'))
-                        ->from($db->quoteName('#__extensions'))
-                        ->where($db->quoteName('type') . ' = ' . $db->quote('plugin'))
-                        ->where($db->quoteName('folder') . ' = ' . $db->quote('radicalmart_payment'))
-                        ->where($db->quoteName('element') . ' = ' . $db->quote('telegramstars'));
-                    $paramsJson = (string) $db->setQuery($q, 0, 1)->loadResult();
-                    $conf = [];
-                    if ($paramsJson !== '') { try { $conf = json_decode($paramsJson, true) ?: []; } catch (\Throwable $e) { $conf = []; } }
-                    $rubPerStar = isset($conf['rub_per_star']) ? (float) $conf['rub_per_star'] : 1.0;
-                    $percent = isset($conf['conversion_percent']) ? (float) $conf['conversion_percent'] : 0.0;
-                    if ($rubPerStar <= 0) { $rubPerStar = 1.0; }
-                    $rub = $rub * (1.0 + ($percent/100.0));
-                    $stars = (int) round($rub / $rubPerStar);
-                    if ($stars <= 0) { echo new JsonResponse(null, 'Bad amount', true); $app->close(); }
-                    $tg->sendInvoice((int) $chat, $title, $desc, $payload, '', 'XTR', $stars, []);
-                } else {
-                    $currency = (!empty($ord->currency['code'])) ? (string) $ord->currency['code'] : 'RUB';
-                    $amountMinor = 0;
-                    if (!empty($ord->total['final'])) {
-                        $amountMinor = (int) round(((float) $ord->total['final']) * 100);
-                    } elseif (!empty($ord->total['final_string'])) {
-                        $num = preg_replace('#[^0-9\.,]#', '', (string) $ord->total['final_string']);
-                        $num = str_replace(' ', '', $num); $num = str_replace(',', '.', $num);
-                        $amountMinor = (int) round(((float) $num) * 100);
-                    }
-                    if ($amountMinor <= 0) { echo new JsonResponse(null, 'Bad amount', true); $app->close(); }
-                    $tg->sendInvoice((int) $chat, $title, $desc, $payload, $ptoken, $currency, $amountMinor, []);
-                }
-            }
-            echo new JsonResponse(['ok' => true]); $app->close();
+            $svc = new OrderService();
+            $result = $svc->sendInvoice($chat, $number);
+            echo new JsonResponse($result);
+            $app->close();
         } catch (\Throwable $e) { echo new JsonResponse(null, $e->getMessage(), true); $app->close(); }
     }
 
@@ -1665,7 +1554,7 @@ class ApiController extends BaseController
     {
         $app = Factory::getApplication();
         $this->guardInitData();
-        $this->guardRateLimitDb('tariffs', 10); // Lower rate limit for heavy operation
+        $this->guardRateLimitDb('tariffs', 10);
 
         $chat = $this->getChatId();
         if ($chat <= 0) {
@@ -1677,113 +1566,25 @@ class ApiController extends BaseController
         $shippingId = $app->input->getInt('shipping_id', 0);
 
         try {
-            // Parse PVZ IDs
             $pvzIds = array_filter(array_map('trim', explode(',', $pvzIdsRaw)));
             if (empty($pvzIds)) {
                 echo new JsonResponse(['results' => []]);
                 $app->close();
             }
 
-            // Limit to 20 points per request
-            $pvzIds = array_slice($pvzIds, 0, 20);
+            $svc = new CheckoutService();
+            $result = $svc->getTariffsBatch($chat, $pvzIds, $shippingId);
 
-            // Get cart for tariff calculation
-            $svc = new CartService();
-            $cart = $svc->getCart($chat);
-            if (!$cart || empty($cart->id)) {
-                echo new JsonResponse(null, Text::_('COM_RADICALMART_TELEGRAM_ERR_CART_EMPTY'), true);
-                $app->close();
-            }
-
-            // Get PVZ details from DB
-            $db = Factory::getContainer()->get('DatabaseDriver');
-
-            // Quote each ID for safe IN clause
-            $quotedIds = array_map(function($id) use ($db) {
-                return $db->quote($id);
-            }, $pvzIds);
-
-            $q = $db->getQuery(true)
-                ->select(['id', 'provider', 'ext_id', 'title', 'address', 'lat', 'lon', 'inactive_count'])
-                ->from($db->quoteName('#__radicalmart_apiship_points'))
-                ->where($db->quoteName('ext_id') . ' IN (' . implode(',', $quotedIds) . ')')
-                ->where($db->quoteName('inactive_count') . ' < 10'); // Skip permanently inactive
-            $points = $db->setQuery($q)->loadAssocList('ext_id') ?: [];
-
-            $results = [];
-            $inactiveToMark = [];
-
-            foreach ($pvzIds as $extId) {
-                if (!isset($points[$extId])) {
-                    $results[$extId] = null; // Point not found or inactive
-                    continue;
-                }
-
-                $point = $points[$extId];
-                $provider = $point['provider'];
-
-                // Calculate tariff
-                try {
-                    $tariffResult = ApiShipIntegrationHelper::calculateTariff($shippingId, $cart, $extId, $provider);
-                    $tariffs = $tariffResult['tariffs'] ?? [];
-                    $debug = $tariffResult['__debug'] ?? null;
-
-                    if (!empty($tariffs)) {
-                        // Find minimum price
-                        $minPrice = PHP_INT_MAX;
-                        $tariffList = [];
-                        foreach ($tariffs as $t) {
-                            $cost = (float)($t->deliveryCost ?? 0);
-                            if ($cost < $minPrice) {
-                                $minPrice = $cost;
-                            }
-                            $tariffList[] = [
-                                'id' => (string)$t->tariffId,
-                                'name' => $t->tariffName ?? '',
-                                'cost' => $cost,
-                                'days_min' => (int)($t->daysMin ?? 0),
-                                'days_max' => (int)($t->daysMax ?? 0),
-                            ];
-                        }
-
-                        $results[$extId] = [
-                            'min_price' => $minPrice === PHP_INT_MAX ? 0 : $minPrice,
-                            'tariffs' => $tariffList,
-                            'provider' => $provider,
-                            '_debug' => $debug, // Include debug info
-                        ];
-
-                        // Reset inactive counter if point has tariffs
-                        if ((int)$point['inactive_count'] > 0) {
-                            $this->resetPvzInactiveCount($extId, $provider);
-                        }
-                    } else {
-                        // No tariffs - include debug info to understand why
-                        $results[$extId] = [
-                            'error' => 'no_tariffs',
-                            'provider' => $provider,
-                            '_debug' => $debug,
-                        ];
-                        $inactiveToMark[] = ['ext_id' => $extId, 'provider' => $provider];
-                    }
-                } catch (\Throwable $e) {
-                    Log::add("[tariffs] Error calculating for $extId: " . $e->getMessage(), Log::WARNING, 'com_radicalmart.telegram');
-                    $results[$extId] = [
-                        'error' => $e->getMessage(),
-                        'provider' => $provider,
-                    ];
-                    $inactiveToMark[] = ['ext_id' => $extId, 'provider' => $provider];
+            // Handle inactive marking via PvzService
+            if (!empty($result['inactive_to_mark'])) {
+                $pvzSvc = new PvzService();
+                foreach ($result['inactive_to_mark'] as $item) {
+                    $pvzSvc->incrementInactiveCount($item['ext_id'], $item['provider'], $chat);
                 }
             }
 
-            // Increment inactive counts for points without tariffs
-            foreach ($inactiveToMark as $item) {
-                $this->incrementPvzInactiveCount($item['ext_id'], $item['provider'], $chat);
-            }
-
-            echo new JsonResponse(['results' => $results]);
+            echo new JsonResponse(['results' => $result['results']]);
             $app->close();
-
         } catch (\Throwable $e) {
             Log::add("[tariffs] Exception: " . $e->getMessage(), Log::ERROR, 'com_radicalmart.telegram');
             echo new JsonResponse(null, $e->getMessage(), true);
@@ -1809,7 +1610,7 @@ class ApiController extends BaseController
 
         $extId = $app->input->getString('ext_id', '');
         $provider = $app->input->getString('provider', '');
-        $active = $app->input->getInt('active', 0); // 0 = inactive (increment), 1 = active (reset)
+        $active = $app->input->getInt('active', 0);
 
         if (empty($extId) || empty($provider)) {
             echo new JsonResponse(null, 'Missing ext_id or provider', true);
@@ -1817,98 +1618,18 @@ class ApiController extends BaseController
         }
 
         try {
+            $svc = new PvzService();
             if ($active === 1) {
-                $this->resetPvzInactiveCount($extId, $provider);
+                $svc->resetInactiveCount($extId, $provider);
             } else {
-                $this->incrementPvzInactiveCount($extId, $provider, $chat);
+                $svc->incrementInactiveCount($extId, $provider, $chat);
             }
-
             echo new JsonResponse(['ok' => true]);
             $app->close();
-
         } catch (\Throwable $e) {
             echo new JsonResponse(null, $e->getMessage(), true);
             $app->close();
         }
-    }
-
-    /**
-     * Increment inactive count for a PVZ point
-     * Uses chat_id to prevent multiple increments from same user
-     */
-    private function incrementPvzInactiveCount(string $extId, string $provider, int $chatId): void
-    {
-        $db = Factory::getContainer()->get('DatabaseDriver');
-
-        // Check if this chat already reported this PVZ (using nonces table with scope 'pvz_inactive')
-        $scope = 'pvz_inactive';
-        $nonce = $extId . '_' . $provider;
-
-        // Check for existing report from this chat (within 24 hours)
-        $q = $db->getQuery(true)
-            ->select('COUNT(*)')
-            ->from($db->quoteName('#__radicalmart_telegram_nonces'))
-            ->where($db->quoteName('chat_id') . ' = :chat')
-            ->where($db->quoteName('scope') . ' = :scope')
-            ->where($db->quoteName('nonce') . ' = :nonce')
-            ->where($db->quoteName('created') . ' > DATE_SUB(NOW(), INTERVAL 24 HOUR)')
-            ->bind(':chat', $chatId)
-            ->bind(':scope', $scope)
-            ->bind(':nonce', $nonce);
-
-        if ((int)$db->setQuery($q)->loadResult() > 0) {
-            return; // Already reported by this user
-        }
-
-        // Record this report
-        $obj = (object)[
-            'chat_id' => $chatId,
-            'scope' => $scope,
-            'nonce' => $nonce,
-            'created' => (new \DateTime())->format('Y-m-d H:i:s'),
-        ];
-        $db->insertObject('#__radicalmart_telegram_nonces', $obj);
-
-        // Increment inactive_count
-        $q2 = $db->getQuery(true)
-            ->update($db->quoteName('#__radicalmart_apiship_points'))
-            ->set($db->quoteName('inactive_count') . ' = ' . $db->quoteName('inactive_count') . ' + 1')
-            ->where($db->quoteName('ext_id') . ' = :ext')
-            ->where($db->quoteName('provider') . ' = :prov')
-            ->bind(':ext', $extId)
-            ->bind(':prov', $provider);
-        $db->setQuery($q2)->execute();
-
-        Log::add("[markpvz] Incremented inactive_count for $provider:$extId by chat $chatId", Log::DEBUG, 'com_radicalmart.telegram');
-    }
-
-    /**
-     * Reset inactive count for a PVZ point (when tariff is found)
-     */
-    private function resetPvzInactiveCount(string $extId, string $provider): void
-    {
-        $db = Factory::getContainer()->get('DatabaseDriver');
-
-        $q = $db->getQuery(true)
-            ->update($db->quoteName('#__radicalmart_apiship_points'))
-            ->set($db->quoteName('inactive_count') . ' = 0')
-            ->where($db->quoteName('ext_id') . ' = :ext')
-            ->where($db->quoteName('provider') . ' = :prov')
-            ->bind(':ext', $extId)
-            ->bind(':prov', $provider);
-        $db->setQuery($q)->execute();
-
-        // Clean up nonces for this PVZ
-        $scope = 'pvz_inactive';
-        $nonce = $extId . '_' . $provider;
-
-        $q2 = $db->getQuery(true)
-            ->delete($db->quoteName('#__radicalmart_telegram_nonces'))
-            ->where($db->quoteName('scope') . ' = :scope')
-            ->where($db->quoteName('nonce') . ' = :nonce')
-            ->bind(':scope', $scope)
-            ->bind(':nonce', $nonce);
-        $db->setQuery($q2)->execute();
     }
 
     /**

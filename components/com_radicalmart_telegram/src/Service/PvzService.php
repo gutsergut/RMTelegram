@@ -1,7 +1,7 @@
 <?php
 /**
  * @package     com_radicalmart_telegram (site)
- * Сервис ПВЗ - getPvzList(), markPvz()
+ * Сервис ПВЗ - getPvzList(), markPvz(), incrementInactiveCount(), resetInactiveCount()
  */
 
 namespace Joomla\Component\RadicalMartTelegram\Site\Service;
@@ -10,55 +10,112 @@ namespace Joomla\Component\RadicalMartTelegram\Site\Service;
 
 use Joomla\CMS\Factory;
 use Joomla\CMS\Log\Log;
+use Joomla\Component\RadicalMartTelegram\Site\Helper\ApiShipIntegrationHelper;
 
 class PvzService
 {
-    public function getPvzList(array $bounds, array $providers = [], int $limit = 500): array
+    /**
+     * Get PVZ list via ApiShipIntegrationHelper
+     */
+    public function getPvzList(string $bbox, string $providers = '', int $limit = 1000): array
     {
-        $db = Factory::getContainer()->get('DatabaseDriver');
-        $minLat = (float) ($bounds['sw']['lat'] ?? 0);
-        $maxLat = (float) ($bounds['ne']['lat'] ?? 0);
-        $minLon = (float) ($bounds['sw']['lon'] ?? 0);
-        $maxLon = (float) ($bounds['ne']['lon'] ?? 0);
-        $query = $db->getQuery(true)
-            ->select(['id', 'ext_id', 'provider', 'name', 'address', 'city', 'lat', 'lon', 'schedule', 'is_active'])
-            ->from($db->quoteName('#__radicalmart_telegram_pvz'))
-            ->where($db->quoteName('lat') . ' BETWEEN :minLat AND :maxLat')
-            ->where($db->quoteName('lon') . ' BETWEEN :minLon AND :maxLon')
-            ->bind(':minLat', $minLat)
-            ->bind(':maxLat', $maxLat)
-            ->bind(':minLon', $minLon)
-            ->bind(':maxLon', $maxLon);
-        if (!empty($providers)) {
-            $query->whereIn($db->quoteName('provider'), $providers, \Joomla\Database\ParameterType::STRING);
-        }
-        $query->order($db->quoteName('is_active') . ' DESC, ' . $db->quoteName('name') . ' ASC');
-        $rows = $db->setQuery($query, 0, $limit)->loadObjectList();
-        $points = [];
-        $inactiveCount = 0;
-        foreach ($rows as $row) {
-            if (empty($row->is_active)) {
-                $inactiveCount++;
-            }
-            $points[] = [
-                'id' => (string) $row->ext_id,
-                'provider' => (string) $row->provider,
-                'name' => (string) $row->name,
-                'address' => (string) $row->address,
-                'city' => (string) $row->city,
-                'lat' => (float) $row->lat,
-                'lon' => (float) $row->lon,
-                'schedule' => (string) $row->schedule,
-                'is_active' => !empty($row->is_active)
-            ];
-        }
-        return [
-            'points' => $points,
-            'total' => count($points),
-            'inactive_count' => $inactiveCount
-        ];
+        return ApiShipIntegrationHelper::getPvzList($bbox, $providers, $limit);
     }
 
+    /**
+     * Increment inactive count for a PVZ point
+     * Uses chat_id to prevent multiple increments from same user
+     */
+    public function incrementInactiveCount(string $extId, string $provider, int $chatId): void
+    {
+        $db = Factory::getContainer()->get('DatabaseDriver');
+
+        // Check if this chat already reported this PVZ (within 24 hours)
+        $scope = 'pvz_inactive';
+        $nonce = $extId . '_' . $provider;
+
+        $q = $db->getQuery(true)
+            ->select('COUNT(*)')
+            ->from($db->quoteName('#__radicalmart_telegram_nonces'))
+            ->where($db->quoteName('chat_id') . ' = :chat')
+            ->where($db->quoteName('scope') . ' = :scope')
+            ->where($db->quoteName('nonce') . ' = :nonce')
+            ->where($db->quoteName('created') . ' > DATE_SUB(NOW(), INTERVAL 24 HOUR)')
+            ->bind(':chat', $chatId)
+            ->bind(':scope', $scope)
+            ->bind(':nonce', $nonce);
+
+        if ((int) $db->setQuery($q)->loadResult() > 0) {
+            return; // Already reported by this user
+        }
+
+        // Record this report
+        $obj = (object)[
+            'chat_id' => $chatId,
+            'scope' => $scope,
+            'nonce' => $nonce,
+            'created' => (new \DateTime())->format('Y-m-d H:i:s'),
+        ];
+        $db->insertObject('#__radicalmart_telegram_nonces', $obj);
+
+        // Increment inactive_count
+        $q2 = $db->getQuery(true)
+            ->update($db->quoteName('#__radicalmart_apiship_points'))
+            ->set($db->quoteName('inactive_count') . ' = ' . $db->quoteName('inactive_count') . ' + 1')
+            ->where($db->quoteName('ext_id') . ' = :ext')
+            ->where($db->quoteName('provider') . ' = :prov')
+            ->bind(':ext', $extId)
+            ->bind(':prov', $provider);
+        $db->setQuery($q2)->execute();
+
+        Log::add("[PvzService] Incremented inactive_count for $provider:$extId by chat $chatId", Log::DEBUG, 'com_radicalmart.telegram');
+    }
+
+    /**
+     * Reset inactive count for a PVZ point (when tariff is found)
+     */
+    public function resetInactiveCount(string $extId, string $provider): void
+    {
+        $db = Factory::getContainer()->get('DatabaseDriver');
+
+        $q = $db->getQuery(true)
+            ->update($db->quoteName('#__radicalmart_apiship_points'))
+            ->set($db->quoteName('inactive_count') . ' = 0')
+            ->where($db->quoteName('ext_id') . ' = :ext')
+            ->where($db->quoteName('provider') . ' = :prov')
+            ->bind(':ext', $extId)
+            ->bind(':prov', $provider);
+        $db->setQuery($q)->execute();
+    }
+
+    /**
+     * Get point details from DB
+     */
+    public function getPoints(array $extIds): array
+    {
+        if (empty($extIds)) {
+            return [];
+        }
+
+        $db = Factory::getContainer()->get('DatabaseDriver');
+
+        $quotedIds = array_map(function($id) use ($db) {
+            return $db->quote($id);
+        }, $extIds);
+
+        $q = $db->getQuery(true)
+            ->select(['id', 'provider', 'ext_id', 'title', 'address', 'lat', 'lon', 'inactive_count'])
+            ->from($db->quoteName('#__radicalmart_apiship_points'))
+            ->where($db->quoteName('ext_id') . ' IN (' . implode(',', $quotedIds) . ')')
+            ->where($db->quoteName('inactive_count') . ' < 10'); // Skip permanently inactive
+
+        return $db->setQuery($q)->loadAssocList('ext_id') ?: [];
+    }
+
+    /**
+     * Mark PVZ as active or inactive
+     * @deprecated Use incrementInactiveCount/resetInactiveCount instead
+     */
     public function markPvz(string $provider, string $extId, bool $active): bool
     {
         $db = Factory::getContainer()->get('DatabaseDriver');
