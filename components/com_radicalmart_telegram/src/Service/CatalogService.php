@@ -723,4 +723,344 @@ class CatalogService
         }
         return '';
     }
+
+    /**
+     * Получить детальную информацию о товаре для WebApp
+     * @param int $productId ID товара
+     * @return array Данные товара для API
+     * @throws \RuntimeException если товар не найден
+     */
+    public function getProduct(int $productId): array
+    {
+        if ($productId <= 0) {
+            throw new \RuntimeException('Product ID required', 400);
+        }
+
+        $model = new \Joomla\Component\RadicalMart\Site\Model\ProductModel();
+        $model->setState('product.id', $productId);
+        $model->setState('filter.published', [1, 2]);
+        $product = $model->getItem($productId);
+
+        if (empty($product) || empty($product->id)) {
+            throw new \RuntimeException('Product not found', 404);
+        }
+
+        $data = [
+            'id' => (int) $product->id,
+            'title' => (string) ($product->title ?? ''),
+            'type' => (string) ($product->type ?? 'product'),
+            'state' => (int) ($product->state ?? 0),
+            'in_stock' => !empty($product->in_stock),
+        ];
+
+        // Image
+        $data['image'] = '';
+        if (!empty($product->image) && is_string($product->image)) {
+            $data['image'] = $product->image;
+        } elseif (!empty($product->media)) {
+            try {
+                $media = is_string($product->media)
+                    ? new \Joomla\Registry\Registry($product->media)
+                    : new \Joomla\Registry\Registry((array) $product->media);
+                $data['image'] = (string) $media->get('image', '');
+            } catch (\Throwable $e) {}
+        }
+
+        // Gallery
+        $data['gallery'] = [];
+        if (!empty($product->gallery) && is_array($product->gallery)) {
+            foreach ($product->gallery as $g) {
+                if (is_object($g) && !empty($g->src)) {
+                    $data['gallery'][] = (string) $g->src;
+                } elseif (is_array($g) && !empty($g['src'])) {
+                    $data['gallery'][] = (string) $g['src'];
+                } elseif (is_string($g)) {
+                    $data['gallery'][] = $g;
+                }
+            }
+        }
+
+        // Categories
+        $data['categories'] = [];
+        if (!empty($product->categories)) {
+            foreach ($product->categories as $cat) {
+                $data['categories'][] = [
+                    'id' => (int) ($cat->id ?? 0),
+                    'title' => (string) ($cat->title ?? ''),
+                    'link' => (string) ($cat->link ?? ''),
+                ];
+            }
+        }
+
+        // Category
+        if (!empty($product->category) && is_object($product->category)) {
+            $data['category'] = [
+                'id' => (int) ($product->category->id ?? 0),
+                'title' => (string) ($product->category->title ?? ''),
+            ];
+        }
+
+        // Manufacturers
+        $data['manufacturers'] = [];
+        if (!empty($product->manufacturers)) {
+            foreach ($product->manufacturers as $m) {
+                $data['manufacturers'][] = [
+                    'id' => (int) ($m->id ?? 0),
+                    'title' => (string) ($m->title ?? ''),
+                    'link' => (string) ($m->link ?? ''),
+                ];
+            }
+        }
+
+        // Price
+        if (!empty($product->price) && is_array($product->price)) {
+            $data['price'] = [
+                'final' => (float) ($product->price['final'] ?? 0),
+                'final_string' => (string) ($product->price['final_string'] ?? ''),
+                'base' => (float) ($product->price['base'] ?? 0),
+                'base_string' => (string) ($product->price['base_string'] ?? ''),
+                'discount_enable' => !empty($product->price['discount_enable']),
+                'discount_string' => (string) ($product->price['discount_string'] ?? ''),
+            ];
+        }
+
+        // Cashback
+        $config = self::getCashbackConfig();
+        $data['cashback'] = 0;
+        $data['cashback_percent'] = $config['percent'] ?? 0;
+        if ($config['enabled'] && !empty($product->price)) {
+            $priceFor = $config['from'] === 'base'
+                ? (float) ($product->price['base'] ?? $product->price['final'] ?? 0)
+                : (float) ($product->price['final'] ?? 0);
+            $data['cashback'] = self::calculateCashback($priceFor, $config['from'] !== 'base');
+        }
+
+        // Texts
+        $data['introtext'] = (string) ($product->introtext ?? '');
+        $data['fulltext'] = (string) ($product->fulltext ?? '');
+
+        // Fieldsets
+        $data['fieldsets'] = [];
+        if (!empty($product->fieldsets)) {
+            foreach ($product->fieldsets as $fsAlias => $fieldset) {
+                if ($fieldset->alias === 'root') continue;
+                $fs = [
+                    'alias' => (string) ($fieldset->alias ?? $fsAlias),
+                    'title' => (string) ($fieldset->title ?? ''),
+                    'fields' => [],
+                ];
+                if (!empty($fieldset->fields)) {
+                    foreach ($fieldset->fields as $fAlias => $field) {
+                        $fs['fields'][$fAlias] = [
+                            'alias' => (string) ($field->alias ?? $fAlias),
+                            'title' => (string) ($field->title ?? ''),
+                            'value' => $field->value ?? null,
+                            'rawvalue' => $field->rawvalue ?? null,
+                        ];
+                    }
+                }
+                $data['fieldsets'][$fsAlias] = $fs;
+            }
+        }
+
+        // Badges
+        $data['badges'] = [];
+        if (!empty($product->badges)) {
+            foreach ($product->badges as $badge) {
+                $data['badges'][] = [
+                    'id' => (int) ($badge->id ?? 0),
+                    'title' => (string) ($badge->title ?? ''),
+                    'link' => (string) ($badge->link ?? ''),
+                ];
+            }
+        }
+
+        // Variability
+        $data['variability'] = null;
+        if (!empty($product->type) && $product->type === 'variability') {
+            try {
+                $variability = $model->getVariability();
+                if (!empty($variability) && !empty($variability->products)) {
+                    $data['variability'] = [
+                        'fields' => array_keys($variability->fields ?? []),
+                        'products' => [],
+                    ];
+                    foreach ($variability->products as $vp) {
+                        $data['variability']['products'][] = [
+                            'id' => (int) ($vp->id ?? 0),
+                            'title' => (string) ($vp->title ?? ''),
+                            'link' => (string) ($vp->link ?? ''),
+                            'fields' => $vp->fieldsVariability ?? [],
+                        ];
+                    }
+                }
+            } catch (\Throwable $e) {}
+        }
+
+        // Quantity
+        if (!empty($product->quantity)) {
+            $data['quantity'] = [
+                'min' => (int) ($product->quantity['min'] ?? 1),
+                'max' => (int) ($product->quantity['max'] ?? 0),
+                'step' => (int) ($product->quantity['step'] ?? 1),
+            ];
+        }
+
+        return $data;
+    }
+
+    /**
+     * Получить динамические опции фильтров (facets) для текущих товаров
+     * @param array $filters Текущие фильтры ['in_stock'=>bool, 'price'=>['from'=>'', 'to'=>''], 'fields'=>[...]]
+     * @return array ['facets' => [alias => [{value, label, count}, ...]]]
+     */
+    public function getFacets(array $filters = []): array
+    {
+        $app = Factory::getApplication();
+        $db = Factory::getContainer()->get('DatabaseDriver');
+
+        $inStock = !empty($filters['in_stock']);
+        $priceFrom = trim((string) ($filters['price']['from'] ?? ''));
+        $priceTo = trim((string) ($filters['price']['to'] ?? ''));
+        $selectedFields = $filters['fields'] ?? [];
+
+        // Load field metadata from config
+        $params = $app->getParams('com_radicalmart_telegram');
+        $cfg = (array) ($params->get('filters_fields') ?: []);
+        $fieldIds = [];
+        foreach ($cfg as $row) {
+            if (is_object($row)) { $row = get_object_vars($row); }
+            if (!is_array($row)) { continue; }
+            if (!empty($row['enabled']) && (int)$row['enabled'] === 1 && !empty($row['field_id'])) {
+                $fieldIds[] = (int)$row['field_id'];
+            }
+        }
+
+        $fieldsMeta = [];
+        if (!empty($fieldIds)) {
+            $q = $db->getQuery(true)
+                ->select($db->quoteName(['id', 'title', 'alias', 'plugin', 'params', 'options']))
+                ->from($db->quoteName('#__radicalmart_fields'))
+                ->where($db->quoteName('state') . ' = 1')
+                ->where($db->quoteName('area') . ' = ' . $db->quote('products'))
+                ->whereIn($db->quoteName('id'), $fieldIds);
+            $rows = (array) $db->setQuery($q)->loadObjectList();
+
+            foreach ($rows as $r) {
+                $opts = [];
+                try {
+                    $pp = json_decode((string)$r->params, true) ?: [];
+                    if (isset($pp['options']) && is_array($pp['options'])) { $opts = $pp['options']; }
+                    elseif (isset($pp['values']) && is_array($pp['values'])) { $opts = $pp['values']; }
+                    elseif (isset($pp['choices']) && is_array($pp['choices'])) { $opts = $pp['choices']; }
+                    elseif (isset($pp['variations']) && is_array($pp['variations'])) { $opts = $pp['variations']; }
+                    $colOpts = json_decode((string)$r->options, true);
+                    if (is_array($colOpts) && !empty($colOpts)) { $opts = $colOpts; }
+                } catch (\Throwable $e) {}
+
+                // Normalize options
+                $norm = [];
+                foreach ($opts as $k => $v) {
+                    if (is_array($v)) {
+                        $val = (string) ($v['value'] ?? $v['val'] ?? $v['id'] ?? $k);
+                        $lab = (string) ($v['label'] ?? $v['text'] ?? $v['title'] ?? $val);
+                    } elseif (is_object($v)) {
+                        $val = (string) ($v->value ?? $v->val ?? $v->id ?? $k);
+                        $lab = (string) ($v->label ?? $v->text ?? $v->title ?? $val);
+                    } else {
+                        $val = is_int($k) ? (string)$v : (string)$k;
+                        $lab = (string)$v;
+                    }
+                    if ($val !== '') { $norm[] = ['value' => $val, 'label' => $lab]; }
+                }
+                $fieldsMeta[(int)$r->id] = ['alias' => (string)$r->alias, 'title' => (string)$r->title, 'options' => $norm];
+            }
+        }
+
+        // Build base WHERE conditions
+        $langTag = $app->getLanguage()->getTag();
+        $where = ['p.state = 1', 'p.language IN (' . $db->quote($langTag) . ', ' . $db->quote('*') . ')', 'p.in_stock = 1'];
+        $binds = [];
+
+        // Price filter
+        if ($priceFrom !== '' || $priceTo !== '') {
+            $currency = \Joomla\Component\RadicalMart\Administrator\Helper\PriceHelper::getCurrency(null);
+            $group = $currency['group'];
+            $priceExpr = 'CAST(JSON_VALUE(p.prices, ' . $db->quote('$."' . $group . '".final') . ') as double)';
+            if ($priceFrom !== '') { $where[] = $priceExpr . ' >= :pf'; $binds[':pf'] = (float) $priceFrom; }
+            if ($priceTo !== '') { $where[] = $priceExpr . ' <= :pt'; $binds[':pt'] = (float) $priceTo; }
+        }
+
+        // Field filters
+        foreach ($selectedFields as $alias => $val) {
+            $path = '$."' . $alias . '"';
+            if (is_array($val)) {
+                if (isset($val['from']) || isset($val['to'])) {
+                    if (isset($val['from']) && $val['from'] !== '') {
+                        $where[] = 'CAST(JSON_VALUE(p.fields, ' . $db->quote($path) . ') as double) >= :f_' . md5($alias . 'from');
+                        $binds[':f_' . md5($alias . 'from')] = (float) $val['from'];
+                    }
+                    if (isset($val['to']) && $val['to'] !== '') {
+                        $where[] = 'CAST(JSON_VALUE(p.fields, ' . $db->quote($path) . ') as double) <= :t_' . md5($alias . 'to');
+                        $binds[':t_' . md5($alias . 'to')] = (float) $val['to'];
+                    }
+                } else {
+                    $orParts = [];
+                    foreach ($val as $mv) {
+                        $mv = trim((string)$mv);
+                        if ($mv === '') continue;
+                        $orParts[] = '(JSON_VALUE(p.fields, ' . $db->quote($path) . ') = ' . $db->quote($mv)
+                            . ' OR JSON_CONTAINS(p.fields, ' . $db->quote('"' . $db->escape($mv, true) . '"') . ', ' . $db->quote($path) . '))';
+                    }
+                    if ($orParts) { $where[] = '(' . implode(' OR ', $orParts) . ')'; }
+                }
+            } else {
+                $v = trim((string)$val);
+                if ($v === '') continue;
+                $where[] = '(JSON_VALUE(p.fields, ' . $db->quote($path) . ') = :sv_' . md5($alias)
+                    . ' OR JSON_CONTAINS(p.fields, :js_' . md5($alias) . ', ' . $db->quote($path) . '))';
+                $binds[':sv_' . md5($alias)] = $v;
+                $binds[':js_' . md5($alias)] = '"' . $db->escape($v, true) . '"';
+            }
+        }
+
+        // Build facets
+        $facets = [];
+        foreach ($cfg as $row) {
+            if (is_object($row)) { $row = get_object_vars($row); }
+            if (!is_array($row)) { continue; }
+            if (empty($row['enabled']) || (int)$row['enabled'] !== 1) continue;
+            $fid = (int) ($row['field_id'] ?? 0);
+            if ($fid <= 0 || empty($fieldsMeta[$fid]['alias'])) continue;
+
+            $alias = $fieldsMeta[$fid]['alias'];
+            $options = $fieldsMeta[$fid]['options'] ?? [];
+            if (empty($options)) continue;
+
+            $list = [];
+            foreach ($options as $op) {
+                $val = (string) ($op['value'] ?? '');
+                if ($val === '') continue;
+                $label = (string) ($op['label'] ?? $val);
+
+                $q = $db->getQuery(true)->select('COUNT(*)')->from($db->quoteName('#__radicalmart_products', 'p'));
+                if (!empty($where)) { $q->where(implode(' AND ', $where)); }
+                $path = '$."' . $alias . '"';
+                $cond = '(JSON_VALUE(p.fields, ' . $db->quote($path) . ') = :cv_' . md5($alias . $val)
+                    . ' OR JSON_CONTAINS(p.fields, :cj_' . md5($alias . $val) . ', ' . $db->quote($path) . '))';
+                $q->where($cond);
+
+                foreach ($binds as $k => $bv) { $q->bind($k, $bv); }
+                $q->bind(':cv_' . md5($alias . $val), $val);
+                $jsonVal = '"' . $db->escape($val, true) . '"';
+                $q->bind(':cj_' . md5($alias . $val), $jsonVal);
+
+                $cnt = (int) $db->setQuery($q)->loadResult();
+                if ($cnt > 0) { $list[] = ['value' => $val, 'label' => $label, 'count' => $cnt]; }
+            }
+            $facets[$alias] = $list;
+        }
+
+        return ['facets' => $facets];
+    }
 }
