@@ -1145,6 +1145,15 @@ class ApiController extends BaseController
                 if (!isset($allowed[$paymentId])) { throw new \RuntimeException(Text::_('COM_RADICALMART_TELEGRAM_ERR_PAYMENT_UNAVAILABLE'), 400); }
                 $sessionData['payment']['id'] = $paymentId;
             }
+
+            // Merge PVZ address data from stored checkout data
+            if (!empty($storedCheckoutData['shipping'])) {
+                $sessionData['shipping'] = array_replace_recursive(
+                    $sessionData['shipping'] ?? [],
+                    $storedCheckoutData['shipping']
+                );
+            }
+
             $app->setUserState('com_radicalmart.checkout.data', $sessionData);
 
             // Create order via CheckoutModel
@@ -1153,6 +1162,8 @@ class ApiController extends BaseController
             $model->setState('cart.id', (int) $cart->id);
             $model->setState('cart.code', (string) $cart->code);
 
+            // Build orderData with shipping and payment IDs
+            // RadicalMart expects these in $data for createOrder
             $orderData = [
                 'created_by' => $userId,
                 'contacts' => [
@@ -1162,7 +1173,15 @@ class ApiController extends BaseController
                     'phone' => $phone,
                     'email' => $email,
                 ],
+                'shipping' => $sessionData['shipping'] ?? [],
+                'payment' => $sessionData['payment'] ?? [],
             ];
+
+            Log::add('[checkout] Creating order with data: ' . json_encode([
+                'created_by' => $orderData['created_by'],
+                'shipping_id' => $orderData['shipping']['id'] ?? 'none',
+                'payment_id' => $orderData['payment']['id'] ?? 'none',
+            ]), Log::DEBUG, 'com_radicalmart.telegram');
 
             if (!$order = $model->createOrder($orderData)) {
                 $errors = $model->getErrors();
