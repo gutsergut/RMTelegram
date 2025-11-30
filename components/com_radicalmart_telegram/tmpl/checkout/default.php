@@ -285,6 +285,9 @@ foreach ($pvzIcons as $k => $v) {
                     return;
                 }
 
+                // Save cart globally for later use (e.g., preserving shipping info)
+                window.currentCart = cart;
+
                 renderSummary(cart);
                 renderMethods(methodsRes);
                 prefillProfile(profileRes);
@@ -299,20 +302,59 @@ foreach ($pvzIcons as $k => $v) {
             }
         }
 
+        // Helper to parse number from string with separators like "3 600" or "3600"
+        function parseNumber(val) {
+            if (typeof val === 'number') return val;
+            if (typeof val === 'string') {
+                // Remove spaces and non-breaking spaces, replace comma with dot
+                const cleaned = val.replace(/[\s\u00A0]/g, '').replace(',', '.');
+                return parseFloat(cleaned) || 0;
+            }
+            return 0;
+        }
+
         function renderSummary(cart) {
             const el = document.getElementById('checkout-summary-block');
             if (!cart.total) return;
-            // Fallback for sum_string if undefined (use final_string if no discount/shipping, or calculate?)
-            // Actually cart.total usually has 'sum_string' (subtotal). If not, check 'sum_formatted' or similar.
-            // If undefined, we hide the row or show final.
-            const sumStr = cart.total.sum_string || cart.total.final_string;
 
-            el.innerHTML = `
-                <div class="uk-flex uk-flex-between"><span>Товары (${cart.total.quantity}):</span> <span>${sumStr}</span></div>
-                ${cart.total.discount_string ? `<div class="uk-flex uk-flex-between uk-text-success"><span>Скидка:</span> <span>${cart.total.discount_string}</span></div>` : ''}
-                ${cart.total.shipping_string ? `<div class="uk-flex uk-flex-between"><span>Доставка:</span> <span>${cart.total.shipping_string}</span></div>` : ''}
-                <div class="checkout-summary uk-flex uk-flex-between"><span>Итого:</span> <span>${cart.total.final_string}</span></div>
-            `;
+            console.log('renderSummary called, cart.total:', JSON.stringify(cart.total));
+
+            // Subtotal (before discounts)
+            const sumStr = cart.total.sum_string || cart.total.base_string || cart.total.final_string;
+
+            let html = `<div class="uk-flex uk-flex-between"><span>Товары (${cart.total.quantity}):</span> <span>${sumStr}</span></div>`;
+
+            // Promo code discount (from plugins.bonuses if available)
+            if (cart.plugins?.bonuses?.codes_discount_string) {
+                html += `<div class="uk-flex uk-flex-between uk-text-success"><span>Промокод:</span> <span>-${cart.plugins.bonuses.codes_discount_string}</span></div>`;
+            }
+
+            // Points discount
+            if (cart.plugins?.bonuses?.points_discount_string) {
+                html += `<div class="uk-flex uk-flex-between uk-text-success"><span>Баллы:</span> <span>-${cart.plugins.bonuses.points_discount_string}</span></div>`;
+            }
+
+            // General discount (may include promo if not separated)
+            if (cart.total.discount_string && !cart.plugins?.bonuses?.codes_discount_string) {
+                html += `<div class="uk-flex uk-flex-between uk-text-success"><span>Скидка:</span> <span>-${cart.total.discount_string}</span></div>`;
+            }
+
+            // Shipping
+            const shippingCost = parseNumber(cart.total.shipping);
+            if (cart.total.shipping_string) {
+                html += `<div class="uk-flex uk-flex-between"><span>Доставка:</span> <span>${cart.total.shipping_string}</span></div>`;
+            }
+
+            // Total = final (товары - скидка) + shipping
+            const finalAmount = parseNumber(cart.total.final);
+            const grandTotal = finalAmount + shippingCost;
+            const grandTotalStr = grandTotal.toLocaleString('ru-RU') + ' ₽';
+
+            console.log('renderSummary: finalAmount=', finalAmount, 'shippingCost=', shippingCost, 'grandTotal=', grandTotal);
+
+            html += `<div class="checkout-summary uk-flex uk-flex-between uk-margin-small-top" style="font-size:1.2em;font-weight:bold;border-top:1px solid #eee;padding-top:8px;"><span>Итого:</span> <span>${grandTotalStr}</span></div>`;
+
+            el.innerHTML = html;
         }
 
         let mapInstance = null;
@@ -324,6 +366,8 @@ foreach ($pvzIcons as $k => $v) {
         let allPvzFeatures = []; // Cache all loaded PVZ features
         let availableProviders = {}; // Available providers with names: { code: name }
         let hidePostamats = true; // Hide postamats by default (pvz_type === '2')
+        let boundsChangeDebounceTimer = null; // Debounce timer for map bounds change
+        const BOUNDS_CHANGE_DEBOUNCE_MS = 5000; // 5 seconds debounce for tariff calculation
 
         // Tariff cache in sessionStorage
         const TARIFF_CACHE_KEY = 'rmt_tariff_cache';
@@ -636,7 +680,20 @@ foreach ($pvzIcons as $k => $v) {
             });
 
             mapInstance.events.add('boundschange', (e) => {
-                fetchPvz(e.get('newBounds'));
+                // Debounce: load PVZ immediately, but delay tariff calculation
+                const newBounds = e.get('newBounds');
+                fetchPvzWithoutTariffs(newBounds);
+
+                // Clear previous timer
+                if (boundsChangeDebounceTimer) {
+                    clearTimeout(boundsChangeDebounceTimer);
+                }
+
+                // Set new timer for tariff calculation after 5 seconds of no map movement
+                boundsChangeDebounceTimer = setTimeout(() => {
+                    console.log('[Map] Debounce complete, processing tariff queue...');
+                    processTariffQueue();
+                }, BOUNDS_CHANGE_DEBOUNCE_MS);
             });
 
             // Initial fetch
@@ -747,6 +804,119 @@ foreach ($pvzIcons as $k => $v) {
                             provider: f.properties.data?.provider || 'unknown'
                         }));
                         queueTariffFetch(newItems);
+                    }
+                }
+            } catch(e) { console.error(e); }
+        }
+
+        // Fetch PVZ without triggering tariff calculation (for debounced map movement)
+        async function fetchPvzWithoutTariffs(bounds) {
+            if (!bounds) return;
+            // Send bbox as lon1,lat1,lon2,lat2 (Yandex returns [lat,lon])
+            const bbox = [bounds[0][1], bounds[0][0], bounds[1][1], bounds[1][0]].join(',');
+            try {
+                const res = await api('pvz', { bbox: bbox, limit: 500 });
+                if (res.items) {
+                    // Collect available providers
+                    res.items.forEach(p => {
+                        if (p.provider && !availableProviders[p.provider]) {
+                            availableProviders[p.provider] = p.provider_name || p.provider;
+                        }
+                    });
+                    updateProviderFilters();
+
+                    const features = res.items.map(p => {
+                        // Skip postamats if hidePostamats is enabled
+                        if (hidePostamats && p.pvz_type === '2') {
+                            return null;
+                        }
+
+                        // Get icon by provider (if configured)
+                        const iconHref = pvzIcons[p.provider] || '';
+
+                        // Check cached tariff for this PVZ
+                        const cachedTariff = getCachedTariff(p.id);
+                        const minPrice = (cachedTariff && cachedTariff.min_price !== undefined) ? cachedTariff.min_price : null;
+                        const priceLabel = minPrice !== null ? `<div style="margin-bottom:8px;color:#4CAF50;font-weight:600;">Доставка от ${minPrice} ₽</div>` : '';
+
+                        // Build balloon content with provider icon and type info
+                        const providerIcon = iconHref ? `<img src="${iconHref}" alt="${p.provider_name || p.provider}" style="width:24px;height:24px;vertical-align:middle;margin-right:6px;">` : '';
+                        const providerName = p.provider_name || p.provider || '';
+                        const typeLabel = p.pvz_type === '2' ? 'Постамат' : 'Пункт выдачи заказов';
+                        const typeClass = p.pvz_type === '2' ? 'postamat' : 'pvz';
+
+                        // Build complete balloon content (header + body in one, no standard footer)
+                        const balloonContent = `
+                            <div style="font-weight:600;font-size:14px;margin-bottom:8px;">${p.title}</div>
+                            <div style="margin-bottom: 10px; display: flex; align-items: center;">
+                                ${providerIcon}
+                                <span style="font-weight: 500;">${providerName}</span>
+                            </div>
+                            <div style="margin-bottom: 8px;">
+                                <span class="pvz-type-label ${typeClass}">${typeLabel}</span>
+                            </div>
+                            ${priceLabel}
+                            <div style="margin-bottom: 10px; color: #666;">${p.address}</div>
+                            <button class="uk-button uk-button-small uk-button-primary select-pvz-btn" onclick="event.stopPropagation(); handlePvzSelect('${p.id}')">Выбрать этот пункт</button>
+                        `;
+
+                        // Build hint with price if available
+                        let hintText = p.title + (p.provider_name ? ' (' + p.provider_name + ')' : '');
+                        if (minPrice !== null) {
+                            hintText += ' — от ' + minPrice + ' ₽';
+                        }
+
+                        const feature = {
+                            type: 'Feature',
+                            id: p.id,
+                            geometry: { type: 'Point', coordinates: [p.lat, p.lon] },
+                            properties: {
+                                balloonContentBody: balloonContent,
+                                hintContent: hintText,
+                                data: p,
+                                _minPrice: minPrice,
+                                _hasTariff: minPrice !== null,
+                                _inactive: cachedTariff === null ? false : (cachedTariff && !cachedTariff.tariffs)
+                            }
+                        };
+
+                        // Add custom icon if available
+                        if (iconHref) {
+                            feature.options = {
+                                iconLayout: 'default#image',
+                                iconImageHref: iconHref,
+                                iconImageSize: [32, 32],
+                                iconImageOffset: [-16, -32]
+                            };
+                        }
+
+                        return feature;
+                    });
+
+                    // Cache features with deduplication by id (filter out nulls from postamats)
+                    const validFeatures = features.filter(f => f !== null);
+                    const existingIds = new Set(allPvzFeatures.map(f => f.id));
+                    const newFeatures = validFeatures.filter(f => !existingIds.has(f.id));
+                    allPvzFeatures = allPvzFeatures.concat(newFeatures);
+                    applyProviderFilter();
+
+                    // NOTE: Unlike fetchPvz(), we do NOT queue tariff fetching here
+                    // Tariffs will be fetched after debounce timer completes
+                    if (newFeatures.length > 0) {
+                        // Just add to queue without processing (processTariffQueue will be called by debounce timer)
+                        const newItems = newFeatures.map(f => ({
+                            id: f.id,
+                            provider: f.properties.data?.provider || 'unknown'
+                        }));
+                        // Add to queue but don't process
+                        const cache = getTariffCache();
+                        const itemsToQueue = newItems.filter(item =>
+                            !cache[item.id] && !tariffFetchQueue.find(q => q.id === item.id)
+                        );
+                        if (itemsToQueue.length > 0) {
+                            console.log(`[Tariff] Queued ${itemsToQueue.length} PVZ (debounced, waiting for map to stop)`);
+                            tariffFetchQueue.push(...itemsToQueue);
+                        }
                     }
                 }
             } catch(e) { console.error(e); }
@@ -942,7 +1112,18 @@ foreach ($pvzIcons as $k => $v) {
 
                 // Update full summary block if order data available
                 if (res.order) {
-                    renderSummary({ total: res.order.total });
+                    // Parse shipping value from string if not provided as number
+                    if (res.order.total.shipping_string && !res.order.total.shipping) {
+                        res.order.total.shipping = parseNumber(res.order.total.shipping_string);
+                    }
+                    renderSummary({ total: res.order.total, plugins: window.currentCart?.plugins });
+                    // Save shipping info to currentCart for later use (e.g., after promo apply)
+                    if (!window.currentCart) window.currentCart = { total: {} };
+                    if (!window.currentCart.total) window.currentCart.total = {};
+                    if (res.order.total.shipping_string) {
+                        window.currentCart.total.shipping_string = res.order.total.shipping_string;
+                        window.currentCart.total.shipping = parseNumber(res.order.total.shipping_string);
+                    }
                 } else if (res.order_total) {
                     // Fallback: just update total line
                     const el = document.querySelector('.checkout-summary span:last-child');
@@ -1007,7 +1188,19 @@ foreach ($pvzIcons as $k => $v) {
 
                 // Update full summary block if order data available
                 if (res.order) {
-                    renderSummary({ total: res.order.total });
+                    // Parse shipping value from string if not provided as number
+                    if (res.order.total.shipping_string && !res.order.total.shipping) {
+                        res.order.total.shipping = parseNumber(res.order.total.shipping_string);
+                    }
+                    const orderData = { total: res.order.total, plugins: window.currentCart?.plugins };
+                    renderSummary(orderData);
+                    // Save shipping info to currentCart for later use (e.g., after promo apply)
+                    if (!window.currentCart) window.currentCart = { total: {} };
+                    if (!window.currentCart.total) window.currentCart.total = {};
+                    if (res.order.total.shipping_string) {
+                        window.currentCart.total.shipping_string = res.order.total.shipping_string;
+                        window.currentCart.total.shipping = parseNumber(res.order.total.shipping_string);
+                    }
                 } else if (res.order_total) {
                     // Fallback: just update total line
                     const el = document.querySelector('.checkout-summary span:last-child');
@@ -1177,6 +1370,14 @@ foreach ($pvzIcons as $k => $v) {
                     Telegram.WebApp.ready();
                     Telegram.WebApp.expand();
 
+                    // BackButton - navigate to cart
+                    try {
+                        Telegram.WebApp.BackButton.show();
+                        Telegram.WebApp.BackButton.onClick(function() {
+                            window.location.href = '<?php echo $root; ?>/index.php?option=com_radicalmart_telegram&view=cart' + (window.TG_CHAT_ID ? '&chat=' + window.TG_CHAT_ID : '');
+                        });
+                    } catch(e) { console.log('BackButton error:', e); }
+
                     const tgUser = Telegram.WebApp.initDataUnsafe?.user;
                     const chatId = tgUser?.id;
                     console.log('[Checkout] TG User:', tgUser, 'chatId:', chatId);
@@ -1313,6 +1514,7 @@ foreach ($pvzIcons as $k => $v) {
         async function applyPromo() {
             const promoInput = document.getElementById('promo-code-input');
             const promoResult = document.getElementById('promo-result');
+            const applyBtn = document.getElementById('apply-promo-btn');
             const code = promoInput?.value?.trim() || '';
 
             if (!code) {
@@ -1324,31 +1526,84 @@ foreach ($pvzIcons as $k => $v) {
 
             try {
                 promoResult.hidden = true;
+                if (applyBtn) {
+                    applyBtn.disabled = true;
+                    applyBtn.innerHTML = '<span uk-spinner="ratio: 0.5"></span>';
+                }
 
                 const chatId = window.TG_CHAT_ID || qs('chat') || 0;
-                const url = `<?php echo $root; ?>/index.php?option=com_radicalmart_telegram&task=checkout.applyPromo&format=json&chat=${chatId}&code=${encodeURIComponent(code)}`;
+                const url = `<?php echo $root; ?>/index.php?option=com_radicalmart_telegram&task=api.applyPromo&format=json&chat=${chatId}&code=${encodeURIComponent(code)}`;
 
                 const res = await fetch(url).then(r => r.json());
 
-                if (res.success) {
+                // Handle Joomla JsonResponse format: {success: true, data: {success: false, ...}}
+                const result = res.data || res;
+                const isSuccess = result.success === true;
+
+                if (isSuccess) {
+                    // Build detailed message with discount info from response
+                    let msg = '<strong>✓ Промокод применён!</strong>';
+                    if (result.discount_string) {
+                        msg += `<br><span class="uk-text-bold">Скидка: -${result.discount_string}</span>`;
+                    } else if (result.discount && result.discount > 0) {
+                        const discountType = result.discount_type === 'percent' ? '%' : ' ₽';
+                        msg += `<br><span class="uk-text-bold">Скидка: -${result.discount}${discountType}</span>`;
+                    }
+                    msg += `<br><span class="uk-text-muted uk-text-small">Код: ${code}</span>`;
+
                     promoResult.className = 'uk-alert uk-alert-success uk-padding-small';
-                    promoResult.innerHTML = res.message || '<?php echo Text::_('COM_RADICALMART_TELEGRAM_PROMO_APPLIED'); ?>';
+                    promoResult.innerHTML = msg;
                     promoResult.hidden = false;
 
-                    // Update summary if we got new totals
-                    if (res.cart) {
-                        renderSummary(res.cart);
+                    // Disable input and change button
+                    if (promoInput) promoInput.disabled = true;
+                    if (applyBtn) {
+                        applyBtn.innerHTML = '✓';
+                        applyBtn.disabled = true;
+                        applyBtn.classList.remove('uk-button-default');
+                        applyBtn.classList.add('uk-button-success');
+                    }
+
+                    // Reload cart to get updated totals with promo discount
+                    try {
+                        // Save current shipping info before reload
+                        const savedShipping = window.currentCart?.total?.shipping_string || null;
+                        const savedShippingValue = parseFloat(window.currentCart?.total?.shipping) || 0;
+
+                        console.log('Before cart reload: savedShipping=', savedShipping, 'savedShippingValue=', savedShippingValue);
+
+                        const cartRes = await api('cart');
+                        if (cartRes && cartRes.cart) {
+                            // Preserve shipping info if it was selected before
+                            if (savedShippingValue > 0) {
+                                cartRes.cart.total.shipping_string = savedShipping || (savedShippingValue.toLocaleString('ru-RU') + ' ₽');
+                                cartRes.cart.total.shipping = savedShippingValue;
+                                console.log('Restored shipping:', cartRes.cart.total.shipping, cartRes.cart.total.shipping_string);
+                            }
+                            window.currentCart = cartRes.cart;
+                            renderSummary(cartRes.cart);
+                        }
+                    } catch(e) {
+                        console.error('Failed to reload cart after promo:', e);
                     }
                 } else {
                     promoResult.className = 'uk-alert uk-alert-danger uk-padding-small';
-                    promoResult.innerHTML = res.message || '<?php echo Text::_('COM_RADICALMART_TELEGRAM_ERR_PROMO_NOT_FOUND'); ?>';
+                    promoResult.innerHTML = result.message || '<?php echo Text::_('COM_RADICALMART_TELEGRAM_ERR_PROMO_NOT_FOUND'); ?>';
                     promoResult.hidden = false;
+                    if (applyBtn) {
+                        applyBtn.disabled = false;
+                        applyBtn.innerHTML = '<?php echo Text::_('COM_RADICALMART_TELEGRAM_APPLY'); ?>';
+                    }
                 }
             } catch(e) {
                 console.error('Apply promo error:', e);
                 promoResult.className = 'uk-alert uk-alert-danger uk-padding-small';
                 promoResult.innerHTML = '<?php echo Text::_('COM_RADICALMART_TELEGRAM_ERROR'); ?>';
                 promoResult.hidden = false;
+                if (applyBtn) {
+                    applyBtn.disabled = false;
+                    applyBtn.innerHTML = '<?php echo Text::_('COM_RADICALMART_TELEGRAM_APPLY'); ?>';
+                }
             }
         }
         // ========== END BONUSES ==========

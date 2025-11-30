@@ -1,12 +1,4 @@
 <?php
-/**
- * Referrals view template
- * @version 2025-11-29-v10
- */
-// Clear OPCache for this file
-if (function_exists('opcache_invalidate')) {
-    @opcache_invalidate(__FILE__, true);
-}
 defined('_JEXEC') or die;
 
 use Joomla\CMS\Language\Text;
@@ -14,43 +6,11 @@ use Joomla\CMS\Uri\Uri;
 use Joomla\CMS\HTML\HTMLHelper;
 use Joomla\CMS\Factory;
 
-// Helper function to get translation with fallback
-function rmt_text($key, $fallback = null) {
-    $text = Text::_($key);
-    // If not translated (returns same key), use fallback
-    if ($text === $key && $fallback !== null) {
-        return $fallback;
-    }
-    return $text;
-}
-
-// Fallback translations
-$fallbacks = [
-    'COM_RADICALMART_TELEGRAM_REFERRALS' => 'Реферальная программа',
-    'COM_RADICALMART_TELEGRAM_REFERRALS_LOGIN_REQUIRED' => 'Войдите в систему для просмотра реферальной программы',
-    'COM_RADICALMART_TELEGRAM_REFERRALS_NOT_IN_PROGRAM' => 'Вы ещё не участвуете в программе',
-    'COM_RADICALMART_TELEGRAM_REFERRALS_NOT_IN_PROGRAM_DESC' => 'Приглашайте друзей по реферальной ссылке и получайте бонусы за их покупки!',
-    'COM_RADICALMART_TELEGRAM_REFERRALS_COUNT' => 'Рефералов',
-    'COM_RADICALMART_TELEGRAM_REFERRALS_EARNED_POINTS' => 'Заработано баллов',
-    'COM_RADICALMART_TELEGRAM_REFERRALS_MY_CODES' => 'Мои реферальные коды',
-    'COM_RADICALMART_TELEGRAM_REFERRALS_NO_CODES' => 'У вас пока нет реферальных кодов',
-    'COM_RADICALMART_TELEGRAM_REFERRALS_MY_REFERRALS' => 'Мои рефералы',
-    'COM_RADICALMART_TELEGRAM_REFERRALS_NO_REFERRALS' => 'У вас пока нет рефералов',
-    'COM_RADICALMART_TELEGRAM_REFERRALS_INVITED_BY' => 'Кто меня пригласил',
-    'COM_RADICALMART_TELEGRAM_REFERRALS_SHARE_CODE_HINT' => 'Поделитесь реферальной ссылкой с друзьями!',
-];
-
-// Custom text function with fallback
-$T = function($key) use ($fallbacks) {
-    $text = Text::_($key);
-    if ($text === $key && isset($fallbacks[$key])) {
-        return $fallbacks[$key];
-    }
-    return $text;
-};
+// Explicitly load language file
+Factory::getLanguage()->load('com_radicalmart_telegram', JPATH_SITE);
 
 $root = rtrim(Uri::root(), '/');
-$app = Factory::getApplication();
+$app = \Joomla\CMS\Factory::getApplication();
 $chat = $app->input->getInt('chat', 0);
 $chatId = $this->tgUser['chat_id'] ?? $chat;
 $baseQuery = $chatId > 0 ? '&chat=' . $chatId : '';
@@ -69,9 +29,6 @@ $baseQuery = $chatId > 0 ? '&chat=' . $chatId : '';
         html, body { background: #ffffff !important; color: #222 !important; margin: 0; padding: 0; }
         body { padding-bottom: 52px; }
         body.contentpane { padding: 0 !important; margin: 0 !important; }
-
-        /* Cart badge */
-        #cart-badge, .cart-badge { position: absolute; top: 2px; right: 6px; background: #f0506e; color: white; border-radius: 10px; padding: 2px 6px; font-size: 10px; font-weight: bold; min-width: 18px; text-align: center; }
 
         /* Bottom nav - same as app page */
         #app-bottom-nav { position: fixed; left: 0; right: 0; bottom: 0; z-index: 10005; }
@@ -124,20 +81,20 @@ $baseQuery = $chatId > 0 ? '&chat=' . $chatId : '';
 <div id="referrals-app" class="uk-container uk-container-small uk-padding-small">
     <div class="uk-flex uk-flex-middle uk-margin-small-bottom">
         <a href="<?php echo $root; ?>/index.php?option=com_radicalmart_telegram&view=profile<?php echo $baseQuery; ?>" class="uk-margin-small-right" uk-icon="icon: arrow-left"></a>
-        <h1 class="uk-h3 uk-margin-remove"><?php echo $T('COM_RADICALMART_TELEGRAM_REFERRALS'); ?></h1>
+        <h1 class="uk-h3 uk-margin-remove"><?php echo Text::_('COM_RADICALMART_TELEGRAM_REFERRALS'); ?></h1>
     </div>
 
     <?php if (!$this->userId): ?>
     <div class="uk-card uk-card-default uk-card-body uk-text-center">
         <span uk-icon="icon: lock; ratio: 2" class="uk-text-muted"></span>
-        <p class="uk-margin-small-top"><?php echo $T('COM_RADICALMART_TELEGRAM_REFERRALS_LOGIN_REQUIRED'); ?></p>
+        <p class="uk-margin-small-top"><?php echo Text::_('COM_RADICALMART_TELEGRAM_REFERRALS_LOGIN_REQUIRED'); ?></p>
     </div>
 
     <?php elseif (!$this->inChain): ?>
     <div class="uk-card uk-card-default uk-card-body uk-text-center">
         <span uk-icon="icon: users; ratio: 2" class="uk-text-muted"></span>
-        <h3 class="uk-margin-small-top"><?php echo $T('COM_RADICALMART_TELEGRAM_REFERRALS_NOT_IN_PROGRAM'); ?></h3>
-        <p class="uk-text-muted"><?php echo $T('COM_RADICALMART_TELEGRAM_REFERRALS_NOT_IN_PROGRAM_DESC'); ?></p>
+        <h3 class="uk-margin-small-top"><?php echo Text::_('COM_RADICALMART_TELEGRAM_REFERRALS_NOT_IN_PROGRAM'); ?></h3>
+        <p class="uk-text-muted"><?php echo Text::_('COM_RADICALMART_TELEGRAM_REFERRALS_NOT_IN_PROGRAM_DESC'); ?></p>
     </div>
 
     <?php else: ?>
@@ -412,9 +369,8 @@ $baseQuery = $chatId > 0 ? '&chat=' . $chatId : '';
                 </a>
             </li>
             <li>
-                <a href="<?php echo $root; ?>index.php?option=com_radicalmart_telegram&view=cart<?php echo $baseQuery; ?>" class="tg-safe-text" style="position:relative;">
+                <a href="<?php echo $root; ?>index.php?option=com_radicalmart_telegram&view=cart<?php echo $baseQuery; ?>" class="tg-safe-text">
                     <span class="bottom-tab"><span uk-icon="icon: cart"></span><span class="caption tg-safe-text"><?php echo Text::_('COM_RADICALMART_TELEGRAM_CART'); ?></span></span>
-                    <span class="cart-badge" style="display:none;">0</span>
                 </a>
             </li>
             <li>
@@ -599,46 +555,7 @@ document.addEventListener('DOMContentLoaded', function() {
             } catch(e) { console.log('BackButton error:', e); }
         }
     } catch(e) {}
-
-    // Load cart count
-    refreshCart();
 });
-</script>
-
-<script>
-async function refreshCart() {
-    try {
-        const url = new URL(location.origin + '/index.php');
-        url.searchParams.set('option', 'com_radicalmart_telegram');
-        url.searchParams.set('task', 'api.cart');
-        var chat = new URLSearchParams(location.search).get('chat');
-        if (chat) url.searchParams.set('chat', chat);
-        try {
-            if (window.Telegram && Telegram.WebApp && Telegram.WebApp.initData) {
-                url.searchParams.set('tg_init', encodeURIComponent(Telegram.WebApp.initData));
-            }
-        } catch(e) {}
-
-        const res = await fetch(url.toString(), { credentials: 'same-origin' });
-        const json = await res.json();
-        const cart = json.data?.cart;
-
-        if (!cart || !cart.products || Object.keys(cart.products).length === 0) {
-            document.querySelectorAll('.cart-badge').forEach(b => b.style.display = 'none');
-            return;
-        }
-
-        const count = (cart.total && cart.total.quantity) ? parseInt(cart.total.quantity, 10) : Object.keys(cart.products).length;
-        document.querySelectorAll('.cart-badge').forEach(badge => {
-            if (count > 0) {
-                badge.style.display = 'inline-block';
-                badge.textContent = String(count);
-            } else {
-                badge.style.display = 'none';
-            }
-        });
-    } catch(e) { console.error('refreshCart error:', e); }
-}
 </script>
 
 <!-- Bottom fixed nav -->
@@ -651,9 +568,8 @@ async function refreshCart() {
                 </a>
             </li>
             <li>
-                <a href="<?php echo $root; ?>/index.php?option=com_radicalmart_telegram&view=cart<?php echo $baseQuery; ?>" class="tg-safe-text" style="position:relative;">
+                <a href="<?php echo $root; ?>/index.php?option=com_radicalmart_telegram&view=cart<?php echo $baseQuery; ?>" class="tg-safe-text">
                     <span class="bottom-tab"><span uk-icon="icon: cart"></span><span class="caption tg-safe-text"><?php echo Text::_('COM_RADICALMART_TELEGRAM_CART'); ?></span></span>
-                    <span id="cart-badge" class="cart-badge" style="display:none;">0</span>
                 </a>
             </li>
             <li>

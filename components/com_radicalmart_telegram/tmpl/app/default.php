@@ -7,9 +7,15 @@
 use Joomla\CMS\Uri\Uri;
 use Joomla\CMS\Language\Text;
 use Joomla\CMS\Factory;
+use Joomla\Component\RadicalMartTelegram\Site\Helper\TelegramUserHelper;
 
 $root = rtrim(Uri::root(), '/');
 $storeTitle = isset($this->params) ? (string) $this->params->get('store_title', 'магазин Cacao.Land') : 'магазин Cacao.Land';
+
+// Данные пользователя из View (через TelegramUserHelper)
+$tgUser = $this->tgUser ?? null;
+$userId = $tgUser['user_id'] ?? 0;
+$chatId = $tgUser['chat_id'] ?? 0;
 ?>
 <!DOCTYPE html>
 <html lang="ru">
@@ -947,7 +953,7 @@ $storeTitle = isset($this->params) ? (string) $this->params->get('store_title', 
                                                                     </div>
                                                                     <div class=\"uk-flex uk-flex-between uk-margin-small-top\">
                                                                         <button class=\"uk-button uk-button-primary js-add\" data-vid=\"${first.id}\"><?php echo Text::_('COM_RADICALMART_TELEGRAM_ADD_TO_CART'); ?></button>
-                                                                        <a class=\"uk-button uk-button-default js-link\" href=\"<?php echo $root; ?>/index.php?option=com_radicalmart&view=product&id=${first.id}\" target=\"_blank\"><?php echo Text::_('COM_RADICALMART_TELEGRAM_MORE'); ?></a>
+                                                                        <a class=\"uk-button uk-button-default js-link\" href=\"<?php echo $root; ?>/index.php?option=com_radicalmart_telegram&view=product&id=${first.id}<?php echo $chatId ? '&chat=' . $chatId : ''; ?>\"><?php echo Text::_('COM_RADICALMART_TELEGRAM_MORE'); ?></a>
                                                                     </div>
                                                                 </div>
                                                             </div>
@@ -1021,7 +1027,7 @@ $storeTitle = isset($this->params) ? (string) $this->params->get('store_title', 
                                                         }
 
                                                         addBtn.dataset.vid = ch.id;
-                                                        linkEl.href = `<?php echo $root; ?>/index.php?option=com_radicalmart&view=product&id=${ch.id}`;
+                                                        linkEl.href = `<?php echo $root; ?>/index.php?option=com_radicalmart_telegram&view=product&id=${ch.id}<?php echo $chatId ? '&chat=' . $chatId : ''; ?>`;
                                                     }
                                                 // Применяем первый вариант и выделяем его кнопку
                                                 if (window.RMT_DEBUG) console.log('[INIT] Applying first variant:', {id: first.id, price_final: first.price_final, base_string: first.base_string, discount_enable: first.discount_enable, children: children.length});
@@ -1663,6 +1669,37 @@ $storeTitle = isset($this->params) ? (string) $this->params->get('store_title', 
                 document.cookie = 'tg_webapp=1; path=/; max-age=7200; SameSite=Lax';
                 console.log('WebApp cookie set');
             } catch(e) { console.log('Cookie set error:', e); }
+
+            // Initialize Telegram WebApp and update navigation links with chat param
+            try {
+                if (window.Telegram && window.Telegram.WebApp) {
+                    Telegram.WebApp.ready();
+                    Telegram.WebApp.expand();
+
+                    const tgUser = Telegram.WebApp.initDataUnsafe?.user;
+                    const chatId = tgUser?.id;
+                    console.log('[TG] User:', tgUser, 'chatId:', chatId);
+
+                    // Store globally for other scripts
+                    window.TG_CHAT_ID = chatId || 0;
+                    window.TG_USER = tgUser || null;
+
+                    // Update all navigation links to include chat parameter
+                    if (chatId) {
+                        document.querySelectorAll('#app-bottom-nav a, a[href*="com_radicalmart_telegram"]').forEach(link => {
+                            try {
+                                const url = new URL(link.href);
+                                if (!url.searchParams.has('chat')) {
+                                    url.searchParams.set('chat', chatId);
+                                    link.href = url.toString();
+                                }
+                            } catch(e) {}
+                        });
+                        console.log('[TG] Updated navigation links with chat=' + chatId);
+                    }
+                }
+            } catch(e) { console.log('[TG] Init error:', e); }
+
             // Remove Joomla's contentpane class to avoid unwanted paddings
             try { document.body.classList.remove('contentpane'); } catch(e){}
             try { RMT_DEBUG_ICONS && RMT_DEBUG_ICONS(); } catch(e){}

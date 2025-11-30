@@ -11,14 +11,123 @@ use Joomla\CMS\Factory;
 use Joomla\CMS\Log\Log;
 use Joomla\Component\RadicalMart\Site\Model\ProductsModel;
 use Joomla\Component\RadicalMart\Site\Model\MetasModel;
+use Joomla\Component\RadicalMart\Administrator\Helper\ParamsHelper;
+use Joomla\Component\RadicalMartBonuses\Administrator\Helper\PointsHelper;
 
 class CatalogService
 {
     private $factory;
 
+    /**
+     * Кэш конфигурации кэшбэка
+     * @var array|null
+     */
+    private static ?array $cashbackConfig = null;
+
     public function __construct()
     {
         $this->factory = Factory::getApplication()->bootComponent('com_radicalmart')->getMVCFactory();
+    }
+
+    /**
+     * Получить конфигурацию кэшбэка из настроек RadicalMart
+     * @return array ['enabled'=>bool, 'formula'=>string, 'from'=>'base'|'final', 'currency'=>string]
+     */
+    public static function getCashbackConfig(): array
+    {
+        if (self::$cashbackConfig !== null) {
+            return self::$cashbackConfig;
+        }
+
+        self::$cashbackConfig = [
+            'enabled' => false,
+            'formula' => '',
+            'from' => 'final',
+            'currency' => 'RUB',
+            'percent' => 0,
+        ];
+
+        try {
+            if (!class_exists(ParamsHelper::class)) {
+                return self::$cashbackConfig;
+            }
+
+            $params = ParamsHelper::getComponentParams();
+
+            // Проверяем включены ли баллы
+            if ((int) $params->get('bonuses_points_enabled', 0) !== 1) {
+                return self::$cashbackConfig;
+            }
+
+            // Получаем текущую валюту
+            $currency = \Joomla\Component\RadicalMart\Administrator\Helper\PriceHelper::getCurrency(null);
+            $currencyGroup = $currency['group'] ?? 'RUB';
+
+            // Формула начисления баллов
+            $formula = (string) $params->get('bonuses_points_accrual_formula_' . $currencyGroup, '');
+            if ($formula === '') {
+                return self::$cashbackConfig;
+            }
+
+            // От какой цены считать: base или final
+            $from = (string) $params->get('bonuses_points_accrual_formula_from', 'base');
+            if ($from !== 'base' && $from !== 'final') {
+                $from = 'final';
+            }
+
+            // Вычисляем процент кэшбэка для отображения
+            $percent = 0;
+            if (strpos($formula, '%') !== false) {
+                $percent = (float) preg_replace('/[^0-9.,]/', '', $formula);
+            } elseif (strpos($formula, '=') !== false) {
+                // Формат "1=100" означает 1 балл за 100 рублей = 1%
+                list($points, $per) = explode('=', $formula, 2);
+                $points = (float) $points;
+                $per = (float) $per;
+                if ($per > 0) {
+                    $percent = ($points / $per) * 100;
+                }
+            }
+
+            self::$cashbackConfig = [
+                'enabled' => true,
+                'formula' => $formula,
+                'from' => $from,
+                'currency' => $currencyGroup,
+                'percent' => round($percent, 1),
+            ];
+        } catch (\Throwable $e) {
+            // Логируем ошибку, но не ломаем работу
+            Log::add('CatalogService::getCashbackConfig error: ' . $e->getMessage(), Log::WARNING, 'com_radicalmart.telegram');
+        }
+
+        return self::$cashbackConfig;
+    }
+
+    /**
+     * Рассчитать кэшбэк (баллы) для цены
+     * @param float $price Цена товара
+     * @param bool $isFinal Это финальная цена (после скидки) или базовая
+     * @return float Количество баллов
+     */
+    public static function calculateCashback(float $price, bool $isFinal = true): float
+    {
+        $config = self::getCashbackConfig();
+        if (!$config['enabled'] || $config['formula'] === '' || $price <= 0) {
+            return 0;
+        }
+
+        // Если настройка "от базовой цены", а передали финальную — возвращаем как есть
+        // Логика: мы всегда передаём нужную цену, а здесь просто считаем
+        try {
+            if (class_exists(PointsHelper::class)) {
+                return PointsHelper::calculatePoints($price, $config['formula'], $config['currency']);
+            }
+        } catch (\Throwable $e) {
+            Log::add('CatalogService::calculateCashback error: ' . $e->getMessage(), Log::WARNING, 'com_radicalmart.telegram');
+        }
+
+        return 0;
     }
 
     public function listProducts(int $page = 1, int $limit = 5, array $filters = []): array
@@ -232,7 +341,16 @@ class CatalogService
                 }
             }
 
-            $out[]=['id'=>(int)($m->id??0),'title'=>(string)($m->title??''),'type'=>(string)($m->type??''),'image'=>$image,'category'=>$category,'price_min'=>$priceMin,'price_max'=>$priceMax,'price_final'=>$priceMin,'min_price_raw'=>$minPriceRaw,'children'=>$children,'is_meta'=>true]; }
+            // Определяем наличие мета-товара: есть хотя бы один вариант в наличии
+            $metaInStock = false;
+            foreach ($children as $child) {
+                if (!empty($child['in_stock'])) {
+                    $metaInStock = true;
+                    break;
+                }
+            }
+
+            $out[]=['id'=>(int)($m->id??0),'title'=>(string)($m->title??''),'type'=>(string)($m->type??''),'image'=>$image,'category'=>$category,'price_min'=>$priceMin,'price_max'=>$priceMax,'price_final'=>$priceMin,'min_price_raw'=>$minPriceRaw,'children'=>$children,'is_meta'=>true,'in_stock'=>$metaInStock]; }
 
         // Применяем сортировку к массиву $out после фильтрации детей
         if ($sortType === 'price_asc') {
@@ -247,6 +365,22 @@ class CatalogService
                 $priceB = $b['min_price_raw'] ?? 0;
                 return $priceB <=> $priceA;
             });
+        } elseif ($sortType === 'default' && !$hasAnyFilter) {
+            // При отсутствии фильтров: сначала товары в наличии, потом остальные
+            // Используем стабильную сортировку для сохранения исходного порядка (ordering) внутри каждой группы
+            $inStock = [];
+            $outOfStock = [];
+            foreach ($out as $item) {
+                if (!empty($item['in_stock'])) {
+                    $inStock[] = $item;
+                } else {
+                    $outOfStock[] = $item;
+                }
+            }
+            $out = array_merge($inStock, $outOfStock);
+            if ($debug) {
+                Log::add('listMetas: stock sort applied - in_stock=' . count($inStock) . ' out_of_stock=' . count($outOfStock), Log::DEBUG, 'radicalmart_telegram_catalog');
+            }
         }
         // Для 'new' сортировка уже применена к MetasModel, для 'default' тоже
 
@@ -433,6 +567,24 @@ class CatalogService
             Log::add('mapProductForMeta DEBUG: id='.(int)$it->id.' title='.(string)($it->title??'').' weightAlias='.$weightFieldAlias.' weightVal='.$weightVal.' formattedWeight='.$formattedWeight.' fieldsKeys=['.implode(',',$fieldsKeys).'] ves='.$vesValue, Log::DEBUG,'com_radicalmart.telegram');
         }
         if($extendedEnabled){ foreach($selectedValues as $k=>$v){ if(!array_key_exists($k,$out)) $out[$k]=$v; } }
+
+        // Расчёт кэшбэка (баллов) для товара
+        $cashbackConfig = self::getCashbackConfig();
+        $out['cashback'] = 0;
+        $out['cashback_percent'] = $cashbackConfig['percent'] ?? 0;
+        if ($cashbackConfig['enabled'] && $priceFinalRaw > 0) {
+            // Выбираем цену в зависимости от настройки (base или final)
+            $priceForCashback = $priceFinalRaw;
+            if ($cashbackConfig['from'] === 'base' && $priceBase !== '') {
+                $baseNum = preg_replace('/[^0-9.,]/', '', $priceBase);
+                $baseNum = str_replace(',', '.', $baseNum);
+                if (is_numeric($baseNum) && (float)$baseNum > 0) {
+                    $priceForCashback = (float)$baseNum;
+                }
+            }
+            $out['cashback'] = (int) self::calculateCashback($priceForCashback);
+        }
+
         return $out;
     }
 

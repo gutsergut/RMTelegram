@@ -417,8 +417,418 @@ class ApiController extends BaseController
 
         $svc  = new CartService();
         $cart = $svc->getCart($chat);
-        echo new JsonResponse(['cart' => $cart]);
+
+        // Применяем скидку промокода к корзине
+        $promoInfo = $this->applyPromoToCart($cart);
+
+        // Добавляем информацию о потенциальном кэшбэке
+        $cashbackInfo = $this->calculateCartCashback($cart);
+
+        // Проверяем привязан ли пользователь (для показа сообщения о кэшбэке гостям)
+        $isLinked = false;
+        try {
+            $db = Factory::getContainer()->get('DatabaseDriver');
+            $query = $db->getQuery(true)
+                ->select('user_id')
+                ->from($db->quoteName('#__radicalmart_telegram_users'))
+                ->where($db->quoteName('chat_id') . ' = ' . (int) $chat);
+            $userId = (int) $db->setQuery($query)->loadResult();
+            $isLinked = ($userId > 0);
+        } catch (\Throwable $e) {}
+
+        echo new JsonResponse([
+            'cart' => $cart,
+            'cashback' => $cashbackInfo,
+            'is_linked' => $isLinked,
+            'promo' => $promoInfo
+        ]);
         $app->close();
+    }
+
+    /**
+     * Apply promo code discount to cart object
+     * Modifies cart totals and products based on applied promo from session
+     * @param object|null $cart Cart object to modify
+     * @return array Promo info: ['applied'=>bool, 'code'=>string, 'discount'=>float, 'discount_string'=>string]
+     */
+    protected function applyPromoToCart(&$cart): array
+    {
+        $result = [
+            'applied' => false,
+            'code' => '',
+            'discount' => 0,
+            'discount_type' => '',
+            'discount_string' => ''
+        ];
+
+        if (!$cart || empty($cart->products) || empty($cart->total)) {
+            return $result;
+        }
+
+        try {
+            $app = Factory::getApplication();
+            $sessionData = $app->getUserState('com_radicalmart.checkout.data', []);
+            $appliedCode = $sessionData['plugins']['bonuses']['codes'] ?? '';
+
+            if (empty($appliedCode) || !class_exists(CodesHelper::class)) {
+                return $result;
+            }
+
+            // Get code data
+            $codeData = CodesHelper::find($appliedCode);
+            if (!$codeData || empty($codeData->discount)) {
+                return $result;
+            }
+
+            // Parse discount value
+            $discountRaw = $codeData->discount ?? '';
+            $isPercent = (strpos($discountRaw, '%') !== false);
+            $discountValue = (float) preg_replace('/[^0-9.]/', '', $discountRaw);
+
+            if ($discountValue <= 0) {
+                return $result;
+            }
+
+            $result['applied'] = true;
+            $result['code'] = $appliedCode;
+            $result['discount_type'] = $isPercent ? 'percent' : 'fixed';
+
+            // Calculate total discount
+            $baseTotal = (float) ($cart->total['base'] ?? 0);
+            $discountAmount = 0;
+
+            if ($isPercent) {
+                $discountAmount = $baseTotal * ($discountValue / 100);
+                $result['discount_string'] = $discountValue . '%';
+            } else {
+                $discountAmount = min($discountValue, $baseTotal); // Don't exceed base total
+                $result['discount_string'] = number_format($discountValue, 0, '', ' ') . ' ₽';
+            }
+
+            $discountAmount = round($discountAmount, 0);
+            $result['discount'] = $discountAmount;
+
+            // Format discount string for display
+            $discountAmountString = number_format($discountAmount, 0, '', ' ') . ' ₽';
+
+            // Update cart totals (final = base - discount, shipping is separate)
+            // RadicalMart stores shipping separately, not in total.final
+            $cart->total['discount'] = $discountAmount;
+            $cart->total['discount_string'] = $discountAmountString;
+            $finalAmount = max(0, $baseTotal - $discountAmount);
+            $cart->total['final'] = $finalAmount;
+            $cart->total['final_string'] = number_format($finalAmount, 0, '', ' ') . ' ₽';
+
+            // Store promo info in cart plugins (format expected by frontend renderSummary)
+            if (!isset($cart->plugins) || !is_array($cart->plugins)) {
+                $cart->plugins = [];
+            }
+            $cart->plugins['bonuses'] = [
+                'codes' => [$codeData->id],
+                'code_string' => $appliedCode,
+                'discount' => $discountAmount,
+                'codes_discount_string' => $discountAmountString  // Frontend expects this key
+            ];
+
+            Log::add('applyPromoToCart: code=' . $appliedCode . ' discount=' . $discountAmount . ' base=' . $baseTotal . ' final=' . $cart->total['final'], Log::DEBUG, 'com_radicalmart.telegram');
+
+        } catch (\Throwable $e) {
+            Log::add('applyPromoToCart error: ' . $e->getMessage(), Log::WARNING, 'com_radicalmart.telegram');
+        }
+
+        return $result;
+    }
+
+    /**
+     * Рассчитать потенциальный кэшбэк для корзины
+     * Учитывает реферальные промокоды (если применён — кэшбэк не начисляется)
+     * @param object|null $cart Объект корзины
+     * @return array ['enabled'=>bool, 'total'=>int, 'has_referral'=>bool, 'percent'=>float]
+     */
+    protected function calculateCartCashback($cart): array
+    {
+        $result = [
+            'enabled' => false,
+            'total' => 0,
+            'has_referral' => false,
+            'percent' => 0,
+            'message' => ''
+        ];
+
+        try {
+            $config = CatalogService::getCashbackConfig();
+            if (!$config['enabled']) {
+                return $result;
+            }
+
+            $result['enabled'] = true;
+            $result['percent'] = $config['percent'];
+
+            if (!$cart || empty($cart->products)) {
+                return $result;
+            }
+
+            // Проверяем наличие реферального промокода
+            $hasReferral = false;
+
+            // 1) Проверка в данных продуктов корзины
+            foreach ($cart->products as $product) {
+                if (!empty($product->order['plugins']['bonuses']['referral'])) {
+                    $hasReferral = true;
+                    break;
+                }
+            }
+
+            // 2) Проверка применённого промокода из сессии
+            if (!$hasReferral) {
+                $app = Factory::getApplication();
+                $sessionData = $app->getUserState('com_radicalmart.checkout.data', []);
+                $appliedCode = $sessionData['plugins']['bonuses']['codes'] ?? '';
+
+                if ($appliedCode !== '' && class_exists(CodesHelper::class)) {
+                    $codeData = CodesHelper::find($appliedCode);
+                    if ($codeData && !empty($codeData->referral) && (int) $codeData->referral === 1) {
+                        $hasReferral = true;
+                    }
+                }
+            }
+
+            $result['has_referral'] = $hasReferral;
+
+            if ($hasReferral) {
+                // Если применён реферальный промокод — кэшбэк не начисляется
+                $result['total'] = 0;
+                $result['message'] = Text::_('COM_RADICALMART_TELEGRAM_CASHBACK_DISABLED_REFERRAL');
+                return $result;
+            }
+
+            // Считаем общий кэшбэк
+            $totalCashback = 0;
+            foreach ($cart->products as $product) {
+                $qty = (float) ($product->order['quantity'] ?? 1);
+                $priceForCashback = 0;
+
+                // Выбираем цену в зависимости от настройки (base или final)
+                if ($config['from'] === 'base' && !empty($product->price['base'])) {
+                    $priceForCashback = (float) $product->price['base'];
+                } elseif (!empty($product->price['final'])) {
+                    $priceForCashback = (float) $product->price['final'];
+                }
+
+                if ($priceForCashback > 0) {
+                    $productCashback = CatalogService::calculateCashback($priceForCashback);
+                    $totalCashback += $productCashback * $qty;
+                }
+            }
+
+            $result['total'] = (int) $totalCashback;
+
+        } catch (\Throwable $e) {
+            Log::add('ApiController::calculateCartCashback error: ' . $e->getMessage(), Log::WARNING, 'com_radicalmart.telegram');
+        }
+
+        return $result;
+    }
+
+    /**
+     * Детальная карточка товара (product detail) для WebApp.
+     * Параметры: id (int) - ID товара (обязательный)
+     * Возвращает полную информацию о товаре включая fieldsets для графиков.
+     */
+    public function product(): void
+    {
+        $app = Factory::getApplication();
+        $this->guardInitData();
+        $this->guardRateLimitDb('product', 60);
+
+        $id = $app->input->getInt('id', 0);
+        if ($id <= 0) {
+            echo new JsonResponse(null, 'Product ID required', true);
+            $app->close();
+        }
+
+        try {
+            // Используем ProductModel для получения полной информации
+            $model = new \Joomla\Component\RadicalMart\Site\Model\ProductModel();
+            $model->setState('product.id', $id);
+            $model->setState('filter.published', [1, 2]);
+            $product = $model->getItem($id);
+
+            if (empty($product) || empty($product->id)) {
+                echo new JsonResponse(null, 'Product not found', true);
+                $app->close();
+            }
+
+            // Формируем данные для WebApp
+            $data = [
+                'id' => (int) $product->id,
+                'title' => (string) ($product->title ?? ''),
+                'type' => (string) ($product->type ?? 'product'),
+                'state' => (int) ($product->state ?? 0),
+                'in_stock' => !empty($product->in_stock),
+            ];
+
+            // Изображения
+            $data['image'] = '';
+            if (!empty($product->image) && is_string($product->image)) {
+                $data['image'] = $product->image;
+            } elseif (!empty($product->media)) {
+                try {
+                    $media = is_string($product->media)
+                        ? new \Joomla\Registry\Registry($product->media)
+                        : new \Joomla\Registry\Registry((array) $product->media);
+                    $data['image'] = (string) $media->get('image', '');
+                } catch (\Throwable $e) {}
+            }
+
+            // Галерея
+            $data['gallery'] = [];
+            if (!empty($product->gallery) && is_array($product->gallery)) {
+                foreach ($product->gallery as $g) {
+                    if (is_object($g) && !empty($g->src)) {
+                        $data['gallery'][] = (string) $g->src;
+                    } elseif (is_array($g) && !empty($g['src'])) {
+                        $data['gallery'][] = (string) $g['src'];
+                    } elseif (is_string($g)) {
+                        $data['gallery'][] = $g;
+                    }
+                }
+            }
+
+            // Категории
+            $data['categories'] = [];
+            if (!empty($product->categories)) {
+                foreach ($product->categories as $cat) {
+                    $data['categories'][] = [
+                        'id' => (int) ($cat->id ?? 0),
+                        'title' => (string) ($cat->title ?? ''),
+                        'link' => (string) ($cat->link ?? ''),
+                    ];
+                }
+            }
+
+            // Категория
+            if (!empty($product->category) && is_object($product->category)) {
+                $data['category'] = [
+                    'id' => (int) ($product->category->id ?? 0),
+                    'title' => (string) ($product->category->title ?? ''),
+                ];
+            }
+
+            // Производители
+            $data['manufacturers'] = [];
+            if (!empty($product->manufacturers)) {
+                foreach ($product->manufacturers as $m) {
+                    $data['manufacturers'][] = [
+                        'id' => (int) ($m->id ?? 0),
+                        'title' => (string) ($m->title ?? ''),
+                        'link' => (string) ($m->link ?? ''),
+                    ];
+                }
+            }
+
+            // Цена
+            if (!empty($product->price) && is_array($product->price)) {
+                $data['price'] = [
+                    'final' => (float) ($product->price['final'] ?? 0),
+                    'final_string' => (string) ($product->price['final_string'] ?? ''),
+                    'base' => (float) ($product->price['base'] ?? 0),
+                    'base_string' => (string) ($product->price['base_string'] ?? ''),
+                    'discount_enable' => !empty($product->price['discount_enable']),
+                    'discount_string' => (string) ($product->price['discount_string'] ?? ''),
+                ];
+            }
+
+            // Кэшбек
+            $config = CatalogService::getCashbackConfig();
+            $data['cashback'] = 0;
+            $data['cashback_percent'] = $config['percent'] ?? 0;
+            if ($config['enabled'] && !empty($product->price)) {
+                $priceFor = $config['from'] === 'base'
+                    ? (float) ($product->price['base'] ?? $product->price['final'] ?? 0)
+                    : (float) ($product->price['final'] ?? 0);
+                $data['cashback'] = CatalogService::calculateCashback($priceFor, $config['from'] !== 'base');
+            }
+
+            // Introtext и fulltext
+            $data['introtext'] = (string) ($product->introtext ?? '');
+            $data['fulltext'] = (string) ($product->fulltext ?? '');
+
+            // Fieldsets с полями (для графиков)
+            $data['fieldsets'] = [];
+            if (!empty($product->fieldsets)) {
+                foreach ($product->fieldsets as $fsAlias => $fieldset) {
+                    if ($fieldset->alias === 'root') continue;
+                    $fs = [
+                        'alias' => (string) ($fieldset->alias ?? $fsAlias),
+                        'title' => (string) ($fieldset->title ?? ''),
+                        'fields' => [],
+                    ];
+                    if (!empty($fieldset->fields)) {
+                        foreach ($fieldset->fields as $fAlias => $field) {
+                            $fs['fields'][$fAlias] = [
+                                'alias' => (string) ($field->alias ?? $fAlias),
+                                'title' => (string) ($field->title ?? ''),
+                                'value' => $field->value ?? null,
+                                'rawvalue' => $field->rawvalue ?? null,
+                            ];
+                        }
+                    }
+                    $data['fieldsets'][$fsAlias] = $fs;
+                }
+            }
+
+            // Badges
+            $data['badges'] = [];
+            if (!empty($product->badges)) {
+                foreach ($product->badges as $badge) {
+                    $data['badges'][] = [
+                        'id' => (int) ($badge->id ?? 0),
+                        'title' => (string) ($badge->title ?? ''),
+                        'link' => (string) ($badge->link ?? ''),
+                    ];
+                }
+            }
+
+            // Variability (варианты для мета-товаров)
+            $data['variability'] = null;
+            if (!empty($product->type) && $product->type === 'variability') {
+                try {
+                    $variability = $model->getVariability();
+                    if (!empty($variability) && !empty($variability->products)) {
+                        $data['variability'] = [
+                            'fields' => array_keys($variability->fields ?? []),
+                            'products' => [],
+                        ];
+                        foreach ($variability->products as $vp) {
+                            $data['variability']['products'][] = [
+                                'id' => (int) ($vp->id ?? 0),
+                                'title' => (string) ($vp->title ?? ''),
+                                'link' => (string) ($vp->link ?? ''),
+                                'fields' => $vp->fieldsVariability ?? [],
+                            ];
+                        }
+                    }
+                } catch (\Throwable $e) {}
+            }
+
+            // Quantity
+            if (!empty($product->quantity)) {
+                $data['quantity'] = [
+                    'min' => (int) ($product->quantity['min'] ?? 1),
+                    'max' => (int) ($product->quantity['max'] ?? 0),
+                    'step' => (int) ($product->quantity['step'] ?? 1),
+                ];
+            }
+
+            echo new JsonResponse($data);
+            $app->close();
+
+        } catch (\Throwable $e) {
+            Log::add('ApiController::product error: ' . $e->getMessage(), Log::WARNING, 'com_radicalmart.telegram');
+            echo new JsonResponse(null, $e->getMessage(), true);
+            $app->close();
+        }
     }
 
     /**
@@ -1189,36 +1599,43 @@ class ApiController extends BaseController
 
                 // RadicalMart's final:
                 // - If RM calculated shipping: final INCLUDES shipping already
-                // - If RM did NOT calculate shipping: final is products only (need to ADD shipping)
+                // - If RM did NOT calculate shipping: final is products only
                 $rmFinal = (float)($order->total['final'] ?? 0);
                 $baseSum = (float)($order->total['base'] ?? 0);
 
                 if ($rmShippingCalculated) {
                     // RM's final already includes shipping, so products = final - shipping
                     $productsSum = $rmFinal - $shippingPrice;
-                    $finalTotal = $rmFinal;
                 } else {
-                    // RM's final is products only, need to ADD shipping
+                    // RM's final is products only
                     $productsSum = $rmFinal;
-                    $finalTotal = $rmFinal + $shippingPrice;
                 }
 
-                $productsSumString = number_format($productsSum, 0, '', ' ') . ' ₽';
-                $orderTotal = number_format($finalTotal, 0, '', ' ') . ' ₽';
+                // finalTotal for order_total display = products + shipping
+                $finalTotal = $productsSum + $shippingPrice;
+
+                $productsSumString = number_format($productsSum, 0, '', ' ') . ' ₽';
+                $orderTotal = number_format($finalTotal, 0, '', ' ') . ' ₽';
 
                 // Discount on products = base - productsSum
                 $productDiscount = $baseSum - $productsSum;
                 $discountString = ($productDiscount > 0)
-                    ? number_format($productDiscount, 0, '', ' ') . ' ₽'
+                    ? number_format($productDiscount, 0, '', ' ') . ' ₽'
                     : '';
 
+                // IMPORTANT: "final" in orderData is WITHOUT shipping (to match cart API format)
+                // Frontend will add shipping separately in renderSummary
                 $orderData = [
                     'total' => [
                         'quantity'        => $order->total['quantity'] ?? 0,
-                        'sum_string'      => $productsSumString,  // Products sum (after discount, before shipping)
-                        'final_string'    => $orderTotal,          // Final total with shipping
-                        'discount_string' => $discountString,      // Product discount only
-                        'shipping_string' => $shippingString,      // Shipping cost
+                        'sum'             => $productsSum,             // Products sum (numeric, without shipping)
+                        'sum_string'      => $productsSumString,       // Products sum string
+                        'final'           => $productsSum,             // Final products (numeric, WITHOUT shipping)
+                        'final_string'    => $productsSumString,       // Final products string (without shipping)
+                        'discount'        => $productDiscount,         // Product discount (numeric)
+                        'discount_string' => $discountString,          // Product discount only
+                        'shipping'        => $shippingPrice,           // Shipping cost (numeric)
+                        'shipping_string' => $shippingString,          // Shipping cost
                     ]
                 ];
             }
@@ -1730,14 +2147,9 @@ class ApiController extends BaseController
                 return;
             }
 
-            // Get customer_id
-            $db = Factory::getContainer()->get('DatabaseDriver');
-            $query = $db->getQuery(true)
-                ->select('id')
-                ->from($db->quoteName('#__radicalmart_customers'))
-                ->where($db->quoteName('user_id') . ' = ' . (int) $userId);
-            $db->setQuery($query);
-            $customerId = (int) $db->loadResult();
+            // In RadicalMart, customer_id equals user_id directly
+            // The #__radicalmart_customers table has 'id' column which matches user_id
+            $customerId = (int) $userId;
 
             if ($customerId <= 0) {
                 echo new JsonResponse(['success' => false, 'message' => Text::_('COM_RADICALMART_ERROR_CUSTOMER_NOT_FOUND')]);
@@ -1792,7 +2204,7 @@ class ApiController extends BaseController
 
     /**
      * Apply promo code to cart/order
-     * Called via AJAX from checkout: task=checkout.applyPromo
+     * Called via AJAX from checkout: task=api.applyPromo
      */
     public function applyPromo(): void
     {
@@ -1800,6 +2212,11 @@ class ApiController extends BaseController
 
         try {
             $this->guardInitData();
+
+            // Load language file for translations AFTER guardInitData (both paths)
+            $lang = $app->getLanguage();
+            $lang->load('com_radicalmart_telegram', JPATH_SITE . '/components/com_radicalmart_telegram');
+            $lang->load('com_radicalmart_telegram', JPATH_SITE);
 
             $code = trim($app->input->getString('code', ''));
             $chatId = $app->input->getInt('chat', 0);
@@ -1815,33 +2232,101 @@ class ApiController extends BaseController
             $userId = $tgUser['user_id'] ?? 0;
 
             // Get customer_id if user is logged in
-            $customerId = 0;
-            if ($userId > 0) {
-                $db = Factory::getContainer()->get('DatabaseDriver');
-                $query = $db->getQuery(true)
-                    ->select('id')
-                    ->from($db->quoteName('#__radicalmart_customers'))
-                    ->where($db->quoteName('user_id') . ' = ' . (int) $userId);
-                $db->setQuery($query);
-                $customerId = (int) $db->loadResult();
+            // In RadicalMart, customer_id equals user_id directly
+            $customerId = ($userId > 0) ? (int) $userId : 0;
+
+            // Check if CodesHelper is available
+            if (!class_exists(CodesHelper::class)) {
+                echo new JsonResponse(['success' => false, 'message' => 'Bonuses component not available']);
+                $app->close();
+                return;
             }
 
-            // Validate promo code via CodesHelper
-            $codeData = null;
-            if (class_exists(CodesHelper::class)) {
-                try {
-                    $codeData = CodesHelper::checkCode($code, 'RUB', $customerId);
-                } catch (\Throwable $e) {
-                    echo new JsonResponse(['success' => false, 'message' => Text::_('COM_RADICALMART_TELEGRAM_ERR_PROMO_NOT_FOUND')]);
+            // Validate promo code via CodesHelper::find()
+            $codeData = CodesHelper::find($code, 'code');
+
+            // Code not found in database
+            if (empty($codeData) || $codeData === false) {
+                echo new JsonResponse([
+                    'success' => false,
+                    'message' => Text::_('COM_RADICALMART_TELEGRAM_ERR_PROMO_NOT_FOUND'),
+                    'debug' => 'Code not found in database'
+                ]);
+                $app->close();
+                return;
+            }
+
+            // Check expiration
+            if (!empty($codeData->expires) && $codeData->expires !== '0000-00-00 00:00:00') {
+                $now = new \DateTime();
+                $expires = new \DateTime($codeData->expires);
+                if ($now > $expires) {
+                    echo new JsonResponse([
+                        'success' => false,
+                        'message' => Text::_('COM_RADICALMART_TELEGRAM_ERR_PROMO_EXPIRED'),
+                        'debug' => 'Code expired on ' . $codeData->expires
+                    ]);
                     $app->close();
                     return;
                 }
             }
 
-            if (empty($codeData) || empty($codeData->id)) {
-                echo new JsonResponse(['success' => false, 'message' => Text::_('COM_RADICALMART_TELEGRAM_ERR_PROMO_NOT_FOUND')]);
+            // Check registered_only
+            if (!empty($codeData->registered_only) && $customerId <= 0) {
+                echo new JsonResponse([
+                    'success' => false,
+                    'message' => Text::_('COM_RADICALMART_TELEGRAM_ERR_PROMO_REGISTERED_ONLY'),
+                    'debug' => 'Code requires registration'
+                ]);
                 $app->close();
                 return;
+            }
+
+            // Check customers_limit (one-time use codes)
+            if (!empty($codeData->customers_limit) && (int) $codeData->customers_limit > 0) {
+                $customers = $codeData->customers ?? [];
+                if (!is_array($customers)) {
+                    $customers = !empty($customers) ? array_filter(array_map('intval', explode(',', $customers))) : [];
+                }
+                // If limit reached and current customer not in list
+                if (count($customers) >= (int) $codeData->customers_limit && !in_array($customerId, $customers)) {
+                    echo new JsonResponse([
+                        'success' => false,
+                        'message' => Text::_('COM_RADICALMART_TELEGRAM_ERR_PROMO_LIMIT_REACHED'),
+                        'debug' => 'Customers limit reached: ' . count($customers) . '/' . $codeData->customers_limit
+                    ]);
+                    $app->close();
+                    return;
+                }
+            }
+
+            // Check currency match (if code has currency restriction)
+            if (!empty($codeData->currency) && $codeData->currency !== 'RUB') {
+                echo new JsonResponse([
+                    'success' => false,
+                    'message' => Text::_('COM_RADICALMART_TELEGRAM_ERR_PROMO_CURRENCY_MISMATCH'),
+                    'debug' => 'Code currency: ' . $codeData->currency . ', expected: RUB'
+                ]);
+                $app->close();
+                return;
+            }
+
+            // Bind customer to code if logged in (add to customers array in DB)
+            if ($customerId > 0) {
+                $customers = $codeData->customers ?? [];
+                if (!is_array($customers)) {
+                    $customers = !empty($customers) ? array_filter(array_map('intval', explode(',', $customers))) : [];
+                }
+                if (!in_array($customerId, $customers)) {
+                    $customers[] = $customerId;
+                    // Update code in database
+                    $db = Factory::getContainer()->get('DatabaseDriver');
+                    $update = (object) [
+                        'id' => $codeData->id,
+                        'customers' => implode(',', array_unique(array_filter($customers)))
+                    ];
+                    $db->updateObject('#__radicalmart_bonuses_codes', $update, 'id');
+                }
             }
 
             // Store code in RadicalMart session (com_radicalmart.checkout.data)
@@ -1856,23 +2341,200 @@ class ApiController extends BaseController
             $sessionData['plugins']['bonuses']['codes'] = $code;
             $app->setUserState('com_radicalmart.checkout.data', $sessionData);
 
+            // Also set cookie for RadicalMart Bonuses
+            try {
+                CodesHelper::setCookieCode($code);
+            } catch (\Throwable $e) {
+                // Cookie setting may fail, not critical
+            }
+
+            // Parse discount value - it's stored as "20%" or "100" string
+            $discountRaw = $codeData->discount ?? '';
+            $isPercent = (strpos($discountRaw, '%') !== false);
+            $discountValue = (float) preg_replace('/[^0-9.]/', '', $discountRaw);
+            $discountType = $isPercent ? 'percent' : 'fixed';
+
             // Build success message
             $discountText = '';
-            if (!empty($codeData->discount)) {
-                $discountText = ': -' . $codeData->discount;
-                if (!empty($codeData->discount_type) && $codeData->discount_type === 'percent') {
-                    $discountText .= '%';
-                } else {
-                    $discountText .= ' ₽';
+            if ($discountValue > 0) {
+                $discountText = $isPercent ? "{$discountValue}%" : "{$discountValue} ₽";
+            }
+
+            echo new JsonResponse([
+                'success' => true,
+                'message' => Text::_('COM_RADICALMART_TELEGRAM_PROMO_APPLIED'),
+                'code' => $code,
+                'discount' => $discountValue,
+                'discount_type' => $discountType,
+                'discount_string' => $discountText,
+                'code_id' => $codeData->id ?? 0
+            ]);
+
+        } catch (\Throwable $e) {
+            echo new JsonResponse(['success' => false, 'message' => $e->getMessage(), 'trace' => $e->getTraceAsString()]);
+        }
+
+        $app->close();
+    }
+
+    /**
+     * Remove promo code from session
+     * Called via AJAX from checkout: task=api.removePromo
+     */
+    public function removePromo(): void
+    {
+        $app = Factory::getApplication();
+
+        try {
+            $this->guardInitData();
+
+            // Clear promo from session
+            $sessionData = $app->getUserState('com_radicalmart.checkout.data', []);
+            if (isset($sessionData['plugins']['bonuses']['codes'])) {
+                unset($sessionData['plugins']['bonuses']['codes']);
+                $app->setUserState('com_radicalmart.checkout.data', $sessionData);
+            }
+
+            // Clear cookie
+            try {
+                if (class_exists(CodesHelper::class)) {
+                    CodesHelper::setCookieCode('');
+                }
+            } catch (\Throwable $e) {}
+
+            echo new JsonResponse([
+                'success' => true,
+                'message' => Text::_('COM_RADICALMART_TELEGRAM_PROMO_REMOVED')
+            ]);
+
+        } catch (\Throwable $e) {
+            echo new JsonResponse(['success' => false, 'message' => $e->getMessage()]);
+        }
+
+        $app->close();
+    }
+
+    /**
+     * Create a new referral code for the user
+     * Called via AJAX from referrals page: task=api.createReferralCode
+     */
+    public function createReferralCode(): void
+    {
+        $app = Factory::getApplication();
+
+        try {
+            $this->guardInitData();
+
+            $customCode = trim($app->input->getString('code', ''));
+            $chatId = $app->input->getInt('chat', 0);
+
+            // Get user
+            $tgUser = \Joomla\Component\RadicalMartTelegram\Site\Helper\TelegramUserHelper::getCurrentUser();
+            $userId = $tgUser['user_id'] ?? 0;
+
+            if ($userId <= 0) {
+                echo new JsonResponse(['success' => false, 'message' => Text::_('COM_RADICALMART_TELEGRAM_REFERRALS_LOGIN_REQUIRED')]);
+                $app->close();
+                return;
+            }
+
+            // Check if user is in referral chain
+            if (!class_exists(\Joomla\Component\RadicalMartBonuses\Administrator\Helper\ReferralHelper::class)) {
+                echo new JsonResponse(['success' => false, 'message' => 'Bonuses component not available']);
+                $app->close();
+                return;
+            }
+
+            $inChain = \Joomla\Component\RadicalMartBonuses\Administrator\Helper\ReferralHelper::inChain($userId);
+            if (!$inChain) {
+                echo new JsonResponse(['success' => false, 'message' => Text::_('COM_RADICALMART_TELEGRAM_REFERRALS_NOT_IN_PROGRAM')]);
+                $app->close();
+                return;
+            }
+
+            // Get RadicalMart params
+            $rmParams = \Joomla\Component\RadicalMart\Administrator\Helper\ParamsHelper::getComponentParams();
+
+            // Check if referral codes are enabled
+            if ((int) $rmParams->get('bonuses_referral_codes_enabled', 1) === 0) {
+                echo new JsonResponse(['success' => false, 'message' => Text::_('COM_RADICALMART_TELEGRAM_REFERRALS_CODES_DISABLED')]);
+                $app->close();
+                return;
+            }
+
+            // Check codes limit
+            $codesLimit = (int) $rmParams->get('bonuses_referral_codes_limit', 1);
+            if ($codesLimit > 0) {
+                $db = Factory::getContainer()->get('DatabaseDriver');
+                $query = $db->getQuery(true)
+                    ->select('COUNT(*)')
+                    ->from($db->quoteName('#__radicalmart_bonuses_codes'))
+                    ->where($db->quoteName('referral') . ' = 1')
+                    ->where($db->quoteName('created_by') . ' = ' . (int) $userId);
+                $currentCount = (int) $db->setQuery($query)->loadResult();
+
+                if ($currentCount >= $codesLimit) {
+                    echo new JsonResponse(['success' => false, 'message' => Text::_('COM_RADICALMART_TELEGRAM_REFERRALS_CODES_LIMIT_REACHED')]);
+                    $app->close();
+                    return;
+                }
+            }
+
+            // Check if custom code is allowed
+            $canCustomCode = ((int) $rmParams->get('bonuses_referral_codes_custom_code', 1) === 1);
+            if (!$canCustomCode) {
+                $customCode = ''; // Force auto-generation
+            }
+
+            // Use ReferralsModel to create the code
+            /** @var \Joomla\Component\RadicalMartBonuses\Site\Model\ReferralsModel $model */
+            $model = $app->bootComponent('com_radicalmart_bonuses')
+                ->getMVCFactory()
+                ->createModel('Referrals', 'Site', ['ignore_request' => true]);
+
+            $model->setState('user.id', $userId);
+
+            $code = $model->createCode($customCode, 'RUB');
+
+            if ($code === false) {
+                $errors = $model->getErrors();
+                $errorMsg = !empty($errors) ? implode(', ', $errors) : Text::_('COM_RADICALMART_TELEGRAM_REFERRALS_CODE_CREATE_ERROR');
+                echo new JsonResponse(['success' => false, 'message' => $errorMsg]);
+                $app->close();
+                return;
+            }
+
+            // Get the created code details
+            $linkEnabled = ((int) $rmParams->get('bonuses_codes_cookies_enabled', 1) === 1);
+            $linkPrefix = $rmParams->get('bonuses_codes_cookies_selector', 'rbc');
+            $link = $linkEnabled ? Uri::root() . '?' . $linkPrefix . '=' . $code : '';
+
+            // Get discount from template
+            $templateId = (int) $rmParams->get('bonuses_referral_codes_template_RUB', 0);
+            $discount = '';
+            if ($templateId > 0) {
+                $db = Factory::getContainer()->get('DatabaseDriver');
+                $query = $db->getQuery(true)
+                    ->select(['discount'])
+                    ->from($db->quoteName('#__radicalmart_bonuses_codes'))
+                    ->where($db->quoteName('id') . ' = ' . $templateId);
+                $template = $db->setQuery($query)->loadObject();
+                if ($template && !empty($template->discount)) {
+                    $cleanDiscount = \Joomla\Component\RadicalMart\Administrator\Helper\PriceHelper::cleanAdjustmentValue($template->discount);
+                    if (strpos($cleanDiscount, '%') !== false) {
+                        $discount = $cleanDiscount;
+                    } else {
+                        $discount = \Joomla\Component\RadicalMart\Administrator\Helper\PriceHelper::toString($cleanDiscount, 'RUB');
+                    }
                 }
             }
 
             echo new JsonResponse([
                 'success' => true,
-                'message' => Text::_('COM_RADICALMART_TELEGRAM_PROMO_APPLIED') . $discountText,
+                'message' => Text::_('COM_RADICALMART_TELEGRAM_REFERRALS_CODE_CREATED'),
                 'code' => $code,
-                'discount' => $codeData->discount ?? 0,
-                'discount_type' => $codeData->discount_type ?? 'fixed'
+                'link' => $link,
+                'discount' => $discount
             ]);
 
         } catch (\Throwable $e) {

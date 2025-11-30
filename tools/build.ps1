@@ -106,6 +106,7 @@ if (Test-Path $SiteLangSrc) {
 $PluginsAllow = @{
     'plugins\system\radicalmart_telegram' = @('radicalmart_telegram.xml','radicalmart_telegram.php','services','src','language');
     'plugins\task\radicalmart_telegram_fetch' = @('radicalmart_telegram_fetch.xml','services','src','language');
+    'plugins\task\radicalmart_telegram_expiring' = @('radicalmart_telegram_expiring.xml','services','src','language');
     'plugins\radicalmart_payment\telegramcards' = @('telegramcards.xml','telegramcards.php','language');
     'plugins\radicalmart_payment\telegramstars' = @('telegramstars.xml','telegramstars.php','language');
     'plugins\radicalmart\telegram_notifications' = @('telegram_notifications.xml','services','src','language');
@@ -146,6 +147,7 @@ Write-Host ""
 Zip-Child -SrcDir $AdminDst -ZipName 'com_radicalmart_telegram.zip' -SevenZipExe $Seven -StageDir $PackagesDir
 Zip-Child -SrcDir (Join-Path $Stage 'plugins\system\radicalmart_telegram') -ZipName 'plg_system_radicalmart_telegram.zip' -SevenZipExe $Seven -StageDir $PackagesDir
 Zip-Child -SrcDir (Join-Path $Stage 'plugins\task\radicalmart_telegram_fetch') -ZipName 'plg_task_radicalmart_telegram_fetch.zip' -SevenZipExe $Seven -StageDir $PackagesDir
+Zip-Child -SrcDir (Join-Path $Stage 'plugins\task\radicalmart_telegram_expiring') -ZipName 'plg_task_radicalmart_telegram_expiring.zip' -SevenZipExe $Seven -StageDir $PackagesDir
 Zip-Child -SrcDir (Join-Path $Stage 'plugins\radicalmart_payment\telegramcards') -ZipName 'plg_radicalmart_payment_telegramcards.zip' -SevenZipExe $Seven -StageDir $PackagesDir
 Zip-Child -SrcDir (Join-Path $Stage 'plugins\radicalmart_payment\telegramstars') -ZipName 'plg_radicalmart_payment_telegramstars.zip' -SevenZipExe $Seven -StageDir $PackagesDir
 Zip-Child -SrcDir (Join-Path $Stage 'plugins\radicalmart\telegram_notifications') -ZipName 'plg_radicalmart_telegram_notifications.zip' -SevenZipExe $Seven -StageDir $PackagesDir

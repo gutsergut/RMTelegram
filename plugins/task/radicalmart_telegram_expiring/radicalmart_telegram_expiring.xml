@@ -1,0 +1,31 @@
+<?xml version="1.0" encoding="utf-8"?>
+<extension type="plugin" group="task" method="upgrade">
+    <name>plg_task_radicalmart_telegram_expiring</name>
+    <author>RadicalMart Telegram</author>
+    <creationDate>2025-11</creationDate>
+    <copyright>Copyright (C) 2025</copyright>
+    <license>GNU General Public License version 2 or later</license>
+    <version>0.1.0</version>
+    <description>PLG_TASK_RADICALMART_TELEGRAM_EXPIRING_DESC</description>
+    <namespace path="src">Joomla\Plugin\Task\RadicalmartTelegramExpiring</namespace>
+    <files>
+        <folder plugin="radicalmart_telegram_expiring">services</folder>
+        <folder>src</folder>
+        <folder>language</folder>
+    </files>
+    <languages folder="language">
+        <language tag="en-GB">en-GB/plg_task_radicalmart_telegram_expiring.ini</language>
+        <language tag="en-GB">en-GB/plg_task_radicalmart_telegram_expiring.sys.ini</language>
+        <language tag="ru-RU">ru-RU/plg_task_radicalmart_telegram_expiring.ini</language>
+        <language tag="ru-RU">ru-RU/plg_task_radicalmart_telegram_expiring.sys.ini</language>
+    </languages>
+    <config>
+        <fields name="params">
+            <fieldset name="basic">
+                <field name="days_before" type="number" default="7" min="1" max="30"
+                    label="PLG_TASK_RADICALMART_TELEGRAM_EXPIRING_DAYS_BEFORE"
+                    description="PLG_TASK_RADICALMART_TELEGRAM_EXPIRING_DAYS_BEFORE_DESC" />
+            </fieldset>
+        </fields>
+    </config>
+</extension>

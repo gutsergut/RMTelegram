@@ -11,41 +11,125 @@
       const box = document.getElementById('profile-box');
       if (!box) return;
       const u = data.user || null;
+      const isLinked = !!u;
       let html = '';
-      if (!u) { html += '<p class="uk-text-meta">'+(L.COM_RADICALMART_TELEGRAM_PROFILE_NO_USER||'')+'</p>'; }
-      else {
+
+      // Блок пользователя
+      if (!u) {
+        html += '<p class="uk-text-meta">'+(L.COM_RADICALMART_TELEGRAM_PROFILE_NO_USER||'Нет данных пользователя')+'</p>';
+      } else {
         html += '<div class="uk-margin-small"><strong>'+(u.name||u.username||'')+'</strong></div>';
         html += '<div class="uk-text-meta">ID: '+u.id+'</div>';
         if (u.email) html += '<div class="uk-text-meta">'+(L.COM_RADICALMART_TELEGRAM_EMAIL||'Email')+': '+u.email+'</div>';
-        if (u.phone) html += '<div class="uk-text-meta">'+(L.COM_RADICALMART_TELEGRAM_PHONE||'Phone')+': '+u.phone+'</div>';
+        if (u.phone) html += '<div class="uk-text-meta">'+(L.COM_RADICALMART_TELEGRAM_PHONE||'Телефон')+': '+u.phone+'</div>';
       }
-      html += '<div class="uk-margin-small"><span class="uk-label uk-label-success">'+(L.COM_RADICALMART_TELEGRAM_PROFILE_POINTS||'')+': '+(data.points||0)+'</span></div>';
+
+      // Блок баллов и реферальной программы
+      html += '<div class="uk-card uk-card-default uk-card-small uk-card-body uk-margin-small">';
+      html += '<h4 class="uk-card-title uk-margin-remove-top">💰 '+(L.COM_RADICALMART_TELEGRAM_POINTS_AND_REFERRALS||'Баллы и рефералы')+'</h4>';
+
+      // Баланс баллов
+      const points = data.points || 0;
+      if (isLinked) {
+        html += '<div class="uk-margin-small">';
+        html += '<span class="uk-label uk-label-success" style="font-size:1.1em;">'+points+' '+(L.COM_RADICALMART_TELEGRAM_POINTS_UNIT||'баллов')+'</span>';
+        html += ' <a href="#" onclick="openPointsHistory();return false;" class="uk-link uk-text-small">'+(L.COM_RADICALMART_TELEGRAM_VIEW_HISTORY||'История')+'</a>';
+        html += '</div>';
+      } else {
+        html += '<div class="uk-margin-small">';
+        html += '<span class="uk-label" style="background:#ccc;">0 '+(L.COM_RADICALMART_TELEGRAM_POINTS_UNIT||'баллов')+'</span>';
+        html += '<div class="uk-text-warning uk-text-small uk-margin-xsmall-top">'+(L.COM_RADICALMART_TELEGRAM_POINTS_LOGIN_HINT||'Авторизуйтесь, чтобы копить баллы')+'</div>';
+        html += '</div>';
+      }
+
+      // Реферальная информация
       if (data.referrals_info && data.referrals_info.in_chain){
         const ri = data.referrals_info;
-        html += '<div class="uk-text-meta">'+(L.COM_RADICALMART_TELEGRAM_PROFILE_REFERRALS||'Referrals')+': '+(ri.referrals_count||0)+(ri.parent?(' · '+(L.COM_RADICALMART_TELEGRAM_PROFILE_PARENT||'Parent')+': '+(ri.parent.name||ri.parent.username||ri.parent.id)):'')+'</div>';
+        html += '<div class="uk-text-meta uk-margin-small">'+(L.COM_RADICALMART_TELEGRAM_PROFILE_REFERRALS||'Рефералы')+': '+(ri.referrals_count||0);
+        if (ri.parent) {
+          html += ' · '+(L.COM_RADICALMART_TELEGRAM_PROFILE_PARENT||'Пригласил')+': '+(ri.parent.name||ri.parent.username||ri.parent.id);
+        }
+        html += '</div>';
       }
+
+      // Реферальные коды
       const codes = Array.isArray(data.referral_codes)?data.referral_codes:[];
       if (codes.length){
-        html += '<ul class="uk-list uk-list-divider">'+codes.map(function(c){
-          return '<li>'+(c.code||'')+' — '+(c.discount||'')
-            +(c.link ? ' <a href="'+c.link+'" target="_blank" class="uk-link">'+(L.JLINK||'Link')+'</a>' : '')
-            +(c.expires && c.expires!=='0000-00-00 00:00:00' ? ' <span class="uk-text-meta">'+(L.COM_RADICALMART_TELEGRAM_PROFILE_EXPIRES_UNTIL||'Until')+' '+c.expires+'</span>' : '')
-            +'</li>';
+        html += '<div class="uk-margin-small"><strong>'+(L.COM_RADICALMART_TELEGRAM_PROFILE_CODES||'Ваши коды')+':</strong></div>';
+        html += '<ul class="uk-list uk-list-divider uk-margin-remove">'+codes.map(function(c){
+          let item = '<li class="uk-padding-small-left">';
+          item += '<div class="uk-flex uk-flex-between uk-flex-middle">';
+          item += '<div>';
+          item += '<span class="uk-text-bold">'+(c.code||'')+'</span>';
+          item += ' — '+(c.discount||'');
+          if (c.expires && c.expires!=='0000-00-00 00:00:00') {
+            item += ' <span class="uk-text-meta">'+(L.COM_RADICALMART_TELEGRAM_PROFILE_EXPIRES_UNTIL||'до')+' '+c.expires+'</span>';
+          }
+          item += '</div>';
+          if (c.link) {
+            item += '<button type="button" class="uk-button uk-button-small uk-button-primary" onclick="shareReferralLink(\''+c.link+'\', \''+c.code+'\');return false;" title="'+(L.COM_RADICALMART_TELEGRAM_SHARE||'Поделиться')+'">';
+            item += '📤 '+(L.COM_RADICALMART_TELEGRAM_SHARE||'Поделиться');
+            item += '</button>';
+          }
+          item += '</div>';
+          item += '</li>';
+          return item;
         }).join('') + '</ul>';
-      } else {
-        html += '<p class="uk-text-meta">'+(L.COM_RADICALMART_TELEGRAM_PROFILE_CODES_EMPTY||'No codes')+'</p>';
+      } else if (isLinked) {
+        html += '<p class="uk-text-meta uk-margin-small">'+(L.COM_RADICALMART_TELEGRAM_PROFILE_CODES_EMPTY||'Реферальных кодов нет')+'</p>';
       }
+
+      // Форма создания кода
       if (data.can_create_code){
-        html += '<div class="uk-margin"><form onsubmit="createReferralCode(event)">\n'
+        html += '<div class="uk-margin-small"><form onsubmit="createReferralCode(event)">\n'
           +'<div class="uk-grid-small" uk-grid>'
-          +(data.create_mode==='custom' ? '<div class="uk-width-1-2"><input class="uk-input" type="text" name="ref_code" placeholder="'+(L.COM_RADICALMART_TELEGRAM_PROFILE_CODE_PLACEHOLDER||'Code')+'"></div>' : '')
-          +'<div class="uk-width-1-2"><input class="uk-input" type="text" name="ref_currency" placeholder="'+(L.COM_RADICALMART_TELEGRAM_PROFILE_CURRENCY_PLACEHOLDER||'Currency')+'"></div>'
-          +'<div class="uk-width-1-1"><button class="uk-button uk-button-primary uk-button-small" type="submit">'+(L.COM_RADICALMART_TELEGRAM_PROFILE_CREATE_CODE||'Create')+'</button></div>'
+          +(data.create_mode==='custom' ? '<div class="uk-width-1-2"><input class="uk-input uk-form-small" type="text" name="ref_code" placeholder="'+(L.COM_RADICALMART_TELEGRAM_PROFILE_CODE_PLACEHOLDER||'Код')+'"></div>' : '')
+          +'<div class="uk-width-1-2"><input class="uk-input uk-form-small" type="text" name="ref_currency" placeholder="'+(L.COM_RADICALMART_TELEGRAM_PROFILE_CURRENCY_PLACEHOLDER||'Валюта')+'"></div>'
+          +'<div class="uk-width-1-1"><button class="uk-button uk-button-primary uk-button-small" type="submit">'+(L.COM_RADICALMART_TELEGRAM_PROFILE_CREATE_CODE||'Создать код')+'</button></div>'
           +'</div></form></div>';
       }
+
+      html += '</div>'; // закрываем карточку
+
       box.innerHTML = html;
-    } catch(e) { /* ignore */ }
+    } catch(e) { console.error('loadProfile error:', e); }
   }
+
+  // Открыть страницу истории баллов
+  function openPointsHistory(){
+    const root = window.RMT_ROOT || '';
+    const chat = new URLSearchParams(location.search).get('chat') || '';
+    let url = root + '/index.php?option=com_radicalmart_telegram&view=points&tmpl=component';
+    if (chat) url += '&chat=' + encodeURIComponent(chat);
+    // Попробуем открыть в том же окне или через Telegram
+    if (window.Telegram && window.Telegram.WebApp && window.Telegram.WebApp.openLink) {
+      window.Telegram.WebApp.openLink(url);
+    } else {
+      window.location.href = url;
+    }
+  }
+
+  // Поделиться реферальной ссылкой через Telegram
+  function shareReferralLink(link, code){
+    const L = window.RMT_LANG || {};
+    // Текст для шаринга
+    const shareText = (L.COM_RADICALMART_TELEGRAM_SHARE_TEXT || 'Используй мой промокод {code} и получи скидку!').replace('{code}', code);
+    
+    // Формируем URL для Telegram share
+    const shareUrl = 'https://t.me/share/url?url=' + encodeURIComponent(link) + '&text=' + encodeURIComponent(shareText);
+    
+    // Пробуем открыть через Telegram WebApp API
+    if (window.Telegram && window.Telegram.WebApp && window.Telegram.WebApp.openTelegramLink) {
+      window.Telegram.WebApp.openTelegramLink(shareUrl);
+    } else if (window.Telegram && window.Telegram.WebApp && window.Telegram.WebApp.openLink) {
+      window.Telegram.WebApp.openLink(shareUrl);
+    } else {
+      // Fallback — открыть в новом окне
+      window.open(shareUrl, '_blank');
+    }
+  }
+  window.shareReferralLink = shareReferralLink;
+  window.openPointsHistory = openPointsHistory;
 
   let SEARCH_TIMER=null; let LAST_SEARCH_Q='';
   window.openSearch = function(){ UIkit.modal('#search-modal').show(); document.getElementById('search-input')?.focus(); };

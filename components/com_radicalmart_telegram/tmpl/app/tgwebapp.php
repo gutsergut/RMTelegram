@@ -89,6 +89,9 @@ $storeTitle = isset($this->params) ? (string) $this->params->get('store_title', 
             #app-bottom-nav .uk-icon > svg { width: 18px; height: 18px; }
         </style>
         <script>
+            // Корневой URL сайта
+            window.RMT_ROOT = '<?php echo $root; ?>';
+
             // Переводы для внешнего JS
             window.RMT_LANG = {
                 COM_RADICALMART_TELEGRAM_PROFILE_NO_USER: '<?php echo Text::_('COM_RADICALMART_TELEGRAM_PROFILE_NO_USER'); ?>',
@@ -97,6 +100,7 @@ $storeTitle = isset($this->params) ? (string) $this->params->get('store_title', 
                 COM_RADICALMART_TELEGRAM_PROFILE_POINTS: '<?php echo Text::_('COM_RADICALMART_TELEGRAM_PROFILE_POINTS'); ?>',
                 COM_RADICALMART_TELEGRAM_PROFILE_REFERRALS: '<?php echo Text::_('COM_RADICALMART_TELEGRAM_PROFILE_REFERRALS'); ?>',
                 COM_RADICALMART_TELEGRAM_PROFILE_PARENT: '<?php echo Text::_('COM_RADICALMART_TELEGRAM_PROFILE_PARENT'); ?>',
+                COM_RADICALMART_TELEGRAM_PROFILE_CODES: '<?php echo Text::_('COM_RADICALMART_TELEGRAM_PROFILE_CODES'); ?>',
                 JLINK: '<?php echo Text::_('JLINK'); ?>',
                 COM_RADICALMART_TELEGRAM_PROFILE_EXPIRES_UNTIL: '<?php echo Text::_('COM_RADICALMART_TELEGRAM_PROFILE_EXPIRES_UNTIL'); ?>',
                 COM_RADICALMART_TELEGRAM_PROFILE_CODES_EMPTY: '<?php echo Text::_('COM_RADICALMART_TELEGRAM_PROFILE_CODES_EMPTY'); ?>',
@@ -108,7 +112,13 @@ $storeTitle = isset($this->params) ? (string) $this->params->get('store_title', 
                 COM_RADICALMART_TELEGRAM_SEARCH_ENTER_QUERY: '<?php echo Text::_('COM_RADICALMART_TELEGRAM_SEARCH_ENTER_QUERY'); ?>',
                 COM_RADICALMART_TELEGRAM_SEARCH_NO_RESULTS: '<?php echo Text::_('COM_RADICALMART_TELEGRAM_SEARCH_NO_RESULTS'); ?>',
                 COM_RADICALMART_TELEGRAM_ADD_TO_CART: '<?php echo Text::_('COM_RADICALMART_TELEGRAM_ADD_TO_CART'); ?>',
-                COM_RADICALMART_TELEGRAM_SEARCH_ERROR: '<?php echo Text::_('COM_RADICALMART_TELEGRAM_SEARCH_ERROR'); ?>'
+                COM_RADICALMART_TELEGRAM_SEARCH_ERROR: '<?php echo Text::_('COM_RADICALMART_TELEGRAM_SEARCH_ERROR'); ?>',
+                COM_RADICALMART_TELEGRAM_POINTS_AND_REFERRALS: '<?php echo Text::_('COM_RADICALMART_TELEGRAM_POINTS_AND_REFERRALS'); ?>',
+                COM_RADICALMART_TELEGRAM_POINTS_UNIT: '<?php echo Text::_('COM_RADICALMART_TELEGRAM_POINTS_UNIT'); ?>',
+                COM_RADICALMART_TELEGRAM_VIEW_HISTORY: '<?php echo Text::_('COM_RADICALMART_TELEGRAM_VIEW_HISTORY'); ?>',
+                COM_RADICALMART_TELEGRAM_POINTS_LOGIN_HINT: '<?php echo Text::_('COM_RADICALMART_TELEGRAM_POINTS_LOGIN_HINT'); ?>',
+                COM_RADICALMART_TELEGRAM_SHARE: '<?php echo Text::_('COM_RADICALMART_TELEGRAM_SHARE'); ?>',
+                COM_RADICALMART_TELEGRAM_SHARE_TEXT: '<?php echo Text::_('COM_RADICALMART_TELEGRAM_SHARE_TEXT'); ?>'
             };
 
             // Icons debug helper: expose a function to inspect the state
@@ -942,6 +952,7 @@ $storeTitle = isset($this->params) ? (string) $this->params->get('store_title', 
                                                                         <div class=\"js-price-base uk-text-muted uk-text-small\" style=\"text-decoration:line-through;display:none;\"></div>
                                                                         <div class=\"js-price-final\" style=\"font-size:1.1em;\"><strong></strong></div>
                                                                         <div class=\"js-price-discount uk-text-danger uk-text-small\" style=\"display:none;\"></div>
+                                                                        <div class=\"js-cashback uk-text-success uk-text-small\" style=\"display:none;\"></div>
                                                                     </div>
                                                                     <div class=\"uk-flex uk-flex-between uk-margin-small-top\">
                                                                         <button class=\"uk-button uk-button-primary js-add\" data-vid=\"${first.id}\"><?php echo Text::_('COM_RADICALMART_TELEGRAM_ADD_TO_CART'); ?></button>
@@ -955,6 +966,7 @@ $storeTitle = isset($this->params) ? (string) $this->params->get('store_title', 
                                                 const priceFinalEl = card.querySelector('.js-price-final');
                                                 const priceDiscEl = card.querySelector('.js-price-discount');
                                                 const priceBaseEl = card.querySelector('.js-price-base');
+                                                const cashbackEl = card.querySelector('.js-cashback');
                                                 const addBtn = card.querySelector('.js-add');
                                                 const linkEl = card.querySelector('.js-link');
 
@@ -1007,6 +1019,34 @@ $storeTitle = isset($this->params) ? (string) $this->params->get('store_title', 
                                                             priceBaseEl.textContent='';
                                                             priceDiscEl.style.display='none';
                                                             priceDiscEl.textContent='';
+                                                        }
+
+                                                        // Отображаем кэшбэк (если есть)
+                                                        if (cashbackEl) {
+                                                            const cashback = ch.cashback || 0;
+                                                            const cashbackPercent = ch.cashback_percent || 0;
+                                                            if (cashback > 0) {
+                                                                // Показываем кэшбэк для всех, но гостям добавляем призыв
+                                                                if (IS_USER_LINKED) {
+                                                                    cashbackEl.innerHTML = `🎁 +${cashback} <?php echo Text::_('COM_RADICALMART_TELEGRAM_POINTS_SHORT'); ?> (≈${cashback} ₽)`;
+                                                                } else {
+                                                                    cashbackEl.innerHTML = `🎁 +${cashback} <?php echo Text::_('COM_RADICALMART_TELEGRAM_POINTS_SHORT'); ?><br><span class="uk-text-warning" style="font-size:10px"><?php echo Text::_('COM_RADICALMART_TELEGRAM_CASHBACK_LOGIN_SHORT'); ?></span>`;
+                                                                }
+                                                                cashbackEl.style.display = 'block';
+                                                                // Добавляем бейдж кэшбэка если его еще нет
+                                                                if (cashbackPercent > 0 && !badgesContainer.querySelector('.rmt-cashback-badge')) {
+                                                                    const cashbackBadge = document.createElement('div');
+                                                                    cashbackBadge.className = 'rmt-card-badge rmt-cashback-badge';
+                                                                    cashbackBadge.style.cssText = 'background:#32d296;color:#fff;font-size:11px;padding:2px 6px;border-radius:4px;line-height:1;';
+                                                                    cashbackBadge.textContent = `🎁 ${cashbackPercent}%`;
+                                                                    badgesContainer.appendChild(cashbackBadge);
+                                                                }
+                                                            } else {
+                                                                cashbackEl.style.display = 'none';
+                                                                // Удаляем бейдж кэшбэка если он есть
+                                                                const existingBadge = badgesContainer.querySelector('.rmt-cashback-badge');
+                                                                if (existingBadge) existingBadge.remove();
+                                                            }
                                                         }
 
                                                         // Обновляем кнопку в зависимости от наличия
@@ -1188,10 +1228,12 @@ $storeTitle = isset($this->params) ? (string) $this->params->get('store_title', 
             });
         }
         let CART_COUNT = 0;
+        let IS_USER_LINKED = false; // Пользователь привязал телефон
         async function refreshCart(){
             try {
-                const { cart } = await api('cart');
-                console.log('refreshCart: cart data', cart);
+                const { cart, cashback, is_linked } = await api('cart');
+                console.log('refreshCart: cart data', cart, 'cashback', cashback, 'is_linked', is_linked);
+                IS_USER_LINKED = !!is_linked;
                 const box = document.getElementById('cart-box');
                 if (!cart || !cart.products || Object.keys(cart.products).length === 0) {
                     CART_COUNT = 0;
@@ -1210,6 +1252,22 @@ $storeTitle = isset($this->params) ? (string) $this->params->get('store_title', 
                 }
                 html += '</ul>';
                 if (cart.total && cart.total.final_string) html += `<p><strong><?php echo Text::_('COM_RADICALMART_TELEGRAM_TOTAL'); ?>: ${cart.total.final_string}</strong></p>`;
+
+                // Отображение кэшбэка за заказ
+                if (cashback && cashback.enabled) {
+                    if (cashback.has_referral) {
+                        // Реферальный промокод применён — кэшбэк не начисляется
+                        html += `<p class="uk-text-muted uk-text-small"><span uk-icon="icon:info;ratio:0.8"></span> <?php echo Text::_('COM_RADICALMART_TELEGRAM_CASHBACK_DISABLED_REFERRAL'); ?></p>`;
+                    } else if (!IS_USER_LINKED && cashback.total > 0) {
+                        // Гость — показываем кэшбэк с призывом авторизоваться
+                        html += `<p class="uk-text-success uk-text-small">🎁 <?php echo Text::_('COM_RADICALMART_TELEGRAM_CASHBACK_ORDER'); ?>: +${cashback.total} <?php echo Text::_('COM_RADICALMART_TELEGRAM_POINTS_SHORT'); ?> (≈${cashback.total} ₽)</p>`;
+                        html += `<p class="uk-text-warning uk-text-small"><span uk-icon="icon:info;ratio:0.8"></span> <?php echo Text::_('COM_RADICALMART_TELEGRAM_CASHBACK_LOGIN_HINT'); ?></p>`;
+                    } else if (cashback.total > 0) {
+                        // Авторизованный пользователь — показываем кэшбэк
+                        html += `<p class="uk-text-success uk-text-small">🎁 <?php echo Text::_('COM_RADICALMART_TELEGRAM_CASHBACK_ORDER'); ?>: +${cashback.total} <?php echo Text::_('COM_RADICALMART_TELEGRAM_POINTS_SHORT'); ?> (≈${cashback.total} ₽)</p>`;
+                    }
+                }
+
                 if (box) box.innerHTML = html;
                 CART_COUNT = (cart.total && cart.total.quantity) ? parseInt(cart.total.quantity, 10) : (i-1);
                 console.log('refreshCart: CART_COUNT=', CART_COUNT, 'cart.total=', cart.total);
@@ -1588,7 +1646,7 @@ $storeTitle = isset($this->params) ? (string) $this->params->get('store_title', 
                         html += `<li><button class="uk-button uk-button-default uk-width-1-1 tariff-select-btn" data-tariff-id="${t.tariffId}">${t.tariffName}</button></li>`;
                     });
                     html += '</ul><button class="uk-modal-close-default" type="button" uk-close></button></div>';
-                    
+
                     const modal = UIkit.modal.dialog(html);
                     modal.$el.addEventListener('click', async (e) => {
                         const tbtn = e.target.closest('.tariff-select-btn');

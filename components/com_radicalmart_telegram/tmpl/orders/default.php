@@ -32,25 +32,38 @@ $baseQuery = $chatId > 0 ? '&chat=' . $chatId : '';
     <meta charset="utf-8">
     <meta name="viewport" content="width=device-width, initial-scale=1">
     <title><?php echo Text::_('COM_RADICALMART_TELEGRAM_ORDERS'); ?></title>
-    <script src="https://telegram.org/js/telegram-web-app.js"></script>
     <link rel="stylesheet" href="<?php echo $root; ?>/templates/yootheme/css/theme.css">
     <script src="<?php echo $root; ?>/templates/yootheme/vendor/assets/uikit/dist/js/uikit.min.js"></script>
     <script src="<?php echo $root; ?>/templates/yootheme/vendor/assets/uikit/dist/js/uikit-icons.min.js"></script>
-    <!-- CDN fallback for icons -->
-    <script>if(!window.UIkit||!UIkit.icon)document.write('<script src="https://cdn.jsdelivr.net/npm/uikit@3.21.6/dist/js/uikit-icons.min.js"><\/script>');</script>
+    <script src="https://telegram.org/js/telegram-web-app.js"></script>
     <style>
-        html, body { background: #f8f8f8; color: #222; margin: 0; padding: 0; }
-        body { padding-bottom: 70px; }
+        html, body { background: #ffffff !important; color: #222 !important; margin: 0; padding: 0; }
+        body { padding-bottom: 52px; }
         body.contentpane { padding: 0 !important; margin: 0 !important; }
 
-        /* Bottom nav */
-        #app-bottom-nav { position: fixed; bottom: 0; left: 0; right: 0; z-index: 1000; background: #fff; border-top: 1px solid #e5e5e5; padding-bottom: env(safe-area-inset-bottom); }
-        #app-bottom-nav .uk-navbar-nav > li > a { min-height: 56px; padding: 8px 12px; font-size: 11px; line-height: 1.2; text-transform: none; color: #999; }
-        #app-bottom-nav .uk-navbar-nav > li.uk-active > a { color: #1e87f0; }
-        #app-bottom-nav .bottom-tab { display: flex; flex-direction: column; align-items: center; justify-content: center; width: 100%; }
-        #app-bottom-nav .uk-icon { margin-bottom: 2px; }
-        #app-bottom-nav .caption { font-size: 10px; }
+        /* Cart badge */
+        #cart-badge { position: absolute; top: 2px; right: 6px; background: #f0506e; color: white; border-radius: 10px; padding: 2px 6px; font-size: 10px; font-weight: bold; min-width: 18px; text-align: center; }
+
+        /* Bottom nav - same as app page */
+        #app-bottom-nav { position: fixed; left: 0; right: 0; bottom: 0; z-index: 10005; }
+        #app-bottom-nav .uk-navbar-nav > li > a { padding: 4px 8px; line-height: 1.05; min-height: 50px; position: relative; }
+        #app-bottom-nav .tg-safe-text { display: inline-flex; align-items: center; }
+        #app-bottom-nav .bottom-tab { display: flex; flex-direction: column; align-items: center; justify-content: center; font-size: 10px; }
+        #app-bottom-nav .bottom-tab .caption { display: block; margin-top: 1px; font-size: 10px; }
+        #app-bottom-nav .uk-icon > svg { width: 18px; height: 18px; }
     </style>
+    <script>
+        // Force light theme
+        (function(){
+            document.documentElement.style.setProperty('--tg-theme-bg-color', '#ffffff');
+            document.documentElement.style.setProperty('--tg-theme-text-color', '#222222');
+            document.documentElement.style.setProperty('--tg-theme-hint-color', '#999999');
+            document.documentElement.style.setProperty('--tg-theme-link-color', '#2678b6');
+            document.documentElement.style.setProperty('--tg-theme-button-color', '#3390ec');
+            document.documentElement.style.setProperty('--tg-theme-button-text-color', '#ffffff');
+            document.documentElement.style.setProperty('--tg-theme-secondary-bg-color', '#f5f5f5');
+        })();
+    </script>
 </head>
 <body>
     <div class="uk-container uk-container-small uk-padding-small">
@@ -87,25 +100,30 @@ $baseQuery = $chatId > 0 ? '&chat=' . $chatId : '';
                         <div class="uk-grid-small uk-flex-middle" uk-grid>
                             <div class="uk-width-expand">
                                 <h3 class="uk-card-title uk-margin-remove-bottom uk-text-bold">
-                                    <?php echo $order->title; ?>
+                                    Заказ №<?php echo $order->number ?: $order->id; ?>
                                 </h3>
                                 <p class="uk-text-meta uk-margin-remove-top">
                                     <?php echo HTMLHelper::date($order->created, Text::_('DATE_FORMAT_LC4')); ?>
                                 </p>
                             </div>
                             <div class="uk-width-auto">
-                                <?php if ($order->status):
-                                    $statusClass = $order->status->params->get('class_site', 'uk-label-warning');
-                                    // Convert Bootstrap classes to UIkit
+                                <?php
+                                $statusTitle = 'Неизвестно';
+                                $statusClass = '';
+
+                                if (!empty($order->status) && is_object($order->status)) {
+                                    $statusTitle = $order->status->title ?? $order->status->rawtitle ?? 'Статус';
+                                    if (strpos($statusTitle, 'COM_') === 0) {
+                                        $statusTitle = $order->status->rawtitle ?? $statusTitle;
+                                    }
+                                    $statusClass = $order->status->params ? $order->status->params->get('class_site', '') : '';
                                     $statusClass = str_replace(['bg-success', 'bg-danger', 'bg-warning', 'bg-info', 'bg-secondary', 'bg-primary'],
                                                                ['uk-label-success', 'uk-label-danger', 'uk-label-warning', 'uk-label-warning', '', ''], $statusClass);
+                                }
                                 ?>
                                 <span class="uk-label <?php echo $statusClass; ?>">
-                                    <?php echo $order->status->title; ?>
+                                    <?php echo $statusTitle; ?>
                                 </span>
-                                <?php else: ?>
-                                <span class="uk-label"><?php echo Text::_('COM_RADICALMART_TELEGRAM_STATUS_UNKNOWN'); ?></span>
-                                <?php endif; ?>
                             </div>
                         </div>
                     </div>
@@ -118,7 +136,12 @@ $baseQuery = $chatId > 0 ? '&chat=' . $chatId : '';
                             <?php if ($order->shipping && $order->shipping->get('title')): ?>
                             <div class="uk-grid-small" uk-grid>
                                 <dt class="uk-width-1-2"><?php echo Text::_('COM_RADICALMART_SHIPPING'); ?></dt>
-                                <dd class="uk-width-1-2 uk-text-right"><?php echo $order->shipping->get('title'); ?></dd>
+                                <dd class="uk-width-1-2 uk-text-right">
+                                    <?php echo $order->shipping->get('title'); ?>
+                                    <?php if ($shippingCost = $order->shipping->get('final_string')): ?>
+                                    <span class="uk-text-muted"> (<?php echo $shippingCost; ?>)</span>
+                                    <?php endif; ?>
+                                </dd>
                             </div>
                             <?php endif; ?>
                             <?php if ($order->payment && $order->payment->get('title')): ?>
@@ -151,23 +174,24 @@ $baseQuery = $chatId > 0 ? '&chat=' . $chatId : '';
         <div class="uk-navbar-center uk-width-1-1 uk-flex uk-flex-center">
             <ul class="uk-navbar-nav">
                 <li>
-                    <a href="<?php echo $root; ?>/index.php?option=com_radicalmart_telegram&view=app<?php echo $baseQuery; ?>">
-                        <span class="bottom-tab"><span uk-icon="icon: thumbnails"></span><span class="caption"><?php echo Text::_('COM_RADICALMART_TELEGRAM_CATALOG'); ?></span></span>
+                    <a href="<?php echo $root; ?>/index.php?option=com_radicalmart_telegram&view=app<?php echo $baseQuery; ?>" class="tg-safe-text">
+                        <span class="bottom-tab"><span uk-icon="icon: thumbnails"></span><span class="caption tg-safe-text"><?php echo Text::_('COM_RADICALMART_TELEGRAM_CATALOG'); ?></span></span>
                     </a>
                 </li>
                 <li>
-                    <a href="<?php echo $root; ?>/index.php?option=com_radicalmart_telegram&view=cart<?php echo $baseQuery; ?>">
-                        <span class="bottom-tab"><span uk-icon="icon: cart"></span><span class="caption"><?php echo Text::_('COM_RADICALMART_TELEGRAM_CART'); ?></span></span>
+                    <a href="<?php echo $root; ?>/index.php?option=com_radicalmart_telegram&view=cart<?php echo $baseQuery; ?>" class="tg-safe-text" style="position:relative;">
+                        <span class="bottom-tab"><span uk-icon="icon: cart"></span><span class="caption tg-safe-text"><?php echo Text::_('COM_RADICALMART_TELEGRAM_CART'); ?></span></span>
+                        <span id="cart-badge" style="display:none;">0</span>
                     </a>
                 </li>
                 <li class="uk-active">
-                    <a href="<?php echo $root; ?>/index.php?option=com_radicalmart_telegram&view=orders<?php echo $baseQuery; ?>">
-                        <span class="bottom-tab"><span uk-icon="icon: list"></span><span class="caption"><?php echo Text::_('COM_RADICALMART_TELEGRAM_ORDERS'); ?></span></span>
+                    <a href="<?php echo $root; ?>/index.php?option=com_radicalmart_telegram&view=orders<?php echo $baseQuery; ?>" class="tg-safe-text">
+                        <span class="bottom-tab"><span uk-icon="icon: list"></span><span class="caption tg-safe-text"><?php echo Text::_('COM_RADICALMART_TELEGRAM_ORDERS'); ?></span></span>
                     </a>
                 </li>
                 <li>
-                    <a href="<?php echo $root; ?>/index.php?option=com_radicalmart_telegram&view=profile<?php echo $baseQuery; ?>">
-                        <span class="bottom-tab"><span uk-icon="icon: user"></span><span class="caption"><?php echo Text::_('COM_RADICALMART_TELEGRAM_PROFILE'); ?></span></span>
+                    <a href="<?php echo $root; ?>/index.php?option=com_radicalmart_telegram&view=profile<?php echo $baseQuery; ?>" class="tg-safe-text">
+                        <span class="bottom-tab"><span uk-icon="icon: user"></span><span class="caption tg-safe-text"><?php echo Text::_('COM_RADICALMART_TELEGRAM_PROFILE'); ?></span></span>
                     </a>
                 </li>
             </ul>
@@ -175,23 +199,38 @@ $baseQuery = $chatId > 0 ? '&chat=' . $chatId : '';
     </div>
 
     <script>
-        // Initialize Telegram WebApp
         document.addEventListener('DOMContentLoaded', function() {
-            try { document.body.classList.remove('contentpane'); } catch(e){}
+            // Force light theme again after DOM loaded
+            document.documentElement.style.setProperty('--tg-theme-bg-color', '#ffffff');
+            document.documentElement.style.setProperty('--tg-theme-text-color', '#222222');
+            document.body.style.backgroundColor = '#ffffff';
+            document.body.style.color = '#222222';
 
-            // Set WebApp cookie
+            // Initialize UIkit icons
+            if (typeof UIkit !== 'undefined') {
+                UIkit.update(document.body);
+            }
+
+            try { document.body.classList.remove('contentpane'); } catch(e){}
             try { document.cookie = 'tg_webapp=1; path=/; max-age=7200; SameSite=Lax'; } catch(e) {}
 
-            // Initialize Telegram
             try {
                 if (window.Telegram && window.Telegram.WebApp) {
                     Telegram.WebApp.ready();
                     Telegram.WebApp.expand();
 
+                    // Setup BackButton
+                    Telegram.WebApp.BackButton.show();
+                    Telegram.WebApp.BackButton.onClick(function() {
+                        const chat = new URLSearchParams(location.search).get('chat') || '';
+                        let url = '<?php echo $root; ?>/index.php?option=com_radicalmart_telegram&view=app';
+                        if (chat) url += '&chat=' + encodeURIComponent(chat);
+                        window.location.href = url;
+                    });
+
                     const chatId = Telegram.WebApp.initDataUnsafe?.user?.id;
                     window.TG_CHAT_ID = chatId || 0;
 
-                    // Auto-reload with chat parameter if missing
                     if (chatId) {
                         const url = new URL(window.location.href);
                         if (!url.searchParams.has('chat')) {
@@ -199,7 +238,6 @@ $baseQuery = $chatId > 0 ? '&chat=' . $chatId : '';
                             window.location.replace(url.toString());
                             return;
                         }
-                        // Update all links
                         document.querySelectorAll('a[href*="com_radicalmart_telegram"]').forEach(link => {
                             try {
                                 const linkUrl = new URL(link.href);
@@ -213,14 +251,43 @@ $baseQuery = $chatId > 0 ? '&chat=' . $chatId : '';
                 }
             } catch(e) { console.log('[Orders] TG error:', e); }
 
-            // Force UIkit icons (with delay to ensure icons script is loaded)
-            try {
-                if (window.UIkit) {
-                    UIkit.update();
-                    setTimeout(function() { UIkit.update(); }, 100);
-                }
-            } catch(e) {}
+            // Load cart count
+            refreshCart();
         });
+
+        async function refreshCart() {
+            try {
+                const url = new URL(location.origin + '/index.php');
+                url.searchParams.set('option', 'com_radicalmart_telegram');
+                url.searchParams.set('task', 'api.cart');
+                if (window.TG_CHAT_ID) url.searchParams.set('chat', window.TG_CHAT_ID);
+                try {
+                    if (window.Telegram && Telegram.WebApp && Telegram.WebApp.initData) {
+                        url.searchParams.set('tg_init', encodeURIComponent(Telegram.WebApp.initData));
+                    }
+                } catch(e) {}
+
+                const res = await fetch(url.toString(), { credentials: 'same-origin' });
+                const json = await res.json();
+                const cart = json.data?.cart;
+                const badge = document.getElementById('cart-badge');
+
+                if (!cart || !cart.products || Object.keys(cart.products).length === 0) {
+                    if (badge) badge.style.display = 'none';
+                    return;
+                }
+
+                const count = (cart.total && cart.total.quantity) ? parseInt(cart.total.quantity, 10) : Object.keys(cart.products).length;
+                if (badge) {
+                    if (count > 0) {
+                        badge.style.display = 'inline-block';
+                        badge.textContent = String(count);
+                    } else {
+                        badge.style.display = 'none';
+                    }
+                }
+            } catch(e) { console.error('refreshCart error:', e); }
+        }
 
         function filterByStatus(statusId) {
             const url = new URL(window.location.href);
@@ -232,5 +299,61 @@ $baseQuery = $chatId > 0 ? '&chat=' . $chatId : '';
             window.location.href = url.toString();
         }
     </script>
+
+    <script>
+    // --- UIkit Icons Fix (from cart) ---
+    function RMT_EXTRACT_ICON_NAME(attr){
+        if (!attr) return '';
+        let s = String(attr);
+        const m = s.match(/icon\s*:\s*([^;]+)/);
+        if (m && m[1]) return m[1].trim();
+        return s.trim();
+    }
+    function RMT_FORCE_UKIT_ICONS(){
+        try{
+            if (!window.UIkit || !UIkit.icon) return false;
+            const nodes = document.querySelectorAll('[uk-icon]');
+            let forced = 0;
+            nodes.forEach(el => {
+                if (el.querySelector('svg')) return;
+                const name = RMT_EXTRACT_ICON_NAME(el.getAttribute('uk-icon'));
+                try { UIkit.icon(el, { icon: name }); forced++; } catch(_){}
+            });
+            if (forced>0) console.log('[RMT][icons] UIkit.icon forced for', forced, 'elements');
+            try { UIkit.update(); } catch(_){}
+            return forced>0;
+        }catch(e){ return false; }
+    }
+
+    // Observe DOM changes to force icons
+    let RMT_ICON_OBSERVER = null;
+    function RMT_OBSERVE_ICONS(){
+        try{
+            if (RMT_ICON_OBSERVER) return;
+            RMT_ICON_OBSERVER = new MutationObserver((mutations) => {
+                let needsCheck = false;
+                for (const m of mutations){
+                    if (m.type === 'childList'){
+                        if (m.target && (m.target.hasAttribute?.('uk-icon') || m.target.querySelector?.('[uk-icon]'))) {
+                            needsCheck = true; break;
+                        }
+                        for (const n of m.addedNodes){
+                            if (n.nodeType === 1 && ((n.hasAttribute && n.hasAttribute('uk-icon')) || n.querySelector?.('[uk-icon]'))) { needsCheck = true; break; }
+                        }
+                    }
+                    if (needsCheck) break;
+                }
+                if (needsCheck) { try { RMT_FORCE_UKIT_ICONS(); } catch(e){} }
+            });
+            RMT_ICON_OBSERVER.observe(document.documentElement || document.body, { childList: true, subtree: true });
+        }catch(e){}
+    }
+
+    document.addEventListener('DOMContentLoaded', function(){
+        RMT_FORCE_UKIT_ICONS();
+        RMT_OBSERVE_ICONS();
+    });
+    </script>
+
 </body>
 </html>
