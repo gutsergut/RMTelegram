@@ -30,24 +30,30 @@ class BonusesService
             throw new \RuntimeException(Text::_('COM_RADICALMART_TELEGRAM_ERR_USER_NOT_LINKED'));
         }
         $available = (float) PointsHelper::getCustomerPoints($userId);
+        
+        // Use SessionStore for persistent storage by chat_id
+        $sessionStore = new SessionStore();
+        $checkoutData = $sessionStore->getCheckoutData($chatId);
+        
         if ($amount <= 0) {
-            $sessionData = $app->getUserState('com_radicalmart.checkout.data', []);
-            $sessionData['bonuses'] = ['points' => 0];
-            $app->setUserState('com_radicalmart.checkout.data', $sessionData);
+            $checkoutData['bonuses'] = ['points' => 0];
+            $sessionStore->setCheckoutData($chatId, $checkoutData);
+            $this->syncToJoomlaSession($checkoutData);
             return ['applied' => 0, 'available' => $available];
         }
         if ($amount > $available) {
             throw new \RuntimeException(Text::sprintf('COM_RADICALMART_TELEGRAM_ERR_INSUFFICIENT_POINTS', $available));
         }
-        $sessionData = $app->getUserState('com_radicalmart.checkout.data', []);
-        $sessionData['bonuses'] = ['points' => $amount];
-        $app->setUserState('com_radicalmart.checkout.data', $sessionData);
+        
+        $checkoutData['bonuses'] = ['points' => $amount];
+        $sessionStore->setCheckoutData($chatId, $checkoutData);
+        $this->syncToJoomlaSession($checkoutData);
+        
         return ['applied' => $amount, 'available' => $available - $amount];
     }
 
     public function applyPromo(int $chatId, string $code): array
     {
-        $app = Factory::getApplication();
         $cartService = new CartService();
         $cart = $cartService->getCart($chatId);
         if (!$cart || empty($cart->id)) {
@@ -57,9 +63,14 @@ class BonusesService
         if (!$validationResult['valid']) {
             throw new \RuntimeException($validationResult['error']);
         }
-        $sessionData = $app->getUserState('com_radicalmart.checkout.data', []);
-        $sessionData['code'] = $code;
-        $app->setUserState('com_radicalmart.checkout.data', $sessionData);
+        
+        // Use SessionStore for persistent storage by chat_id
+        $sessionStore = new SessionStore();
+        $checkoutData = $sessionStore->getCheckoutData($chatId);
+        $checkoutData['code'] = $code;
+        $sessionStore->setCheckoutData($chatId, $checkoutData);
+        $this->syncToJoomlaSession($checkoutData);
+        
         return [
             'code' => $code,
             'discount' => $validationResult['discount'] ?? '',
@@ -69,16 +80,18 @@ class BonusesService
 
     public function removePromo(int $chatId): array
     {
-        $app = Factory::getApplication();
-        $sessionData = $app->getUserState('com_radicalmart.checkout.data', []);
-        unset($sessionData['code']);
-        $app->setUserState('com_radicalmart.checkout.data', $sessionData);
+        // Use SessionStore for persistent storage by chat_id
+        $sessionStore = new SessionStore();
+        $checkoutData = $sessionStore->getCheckoutData($chatId);
+        unset($checkoutData['code']);
+        $sessionStore->setCheckoutData($chatId, $checkoutData);
+        $this->syncToJoomlaSession($checkoutData);
+        
         return ['removed' => true];
     }
 
     public function getBonusesData(int $chatId): array
     {
-        $app = Factory::getApplication();
         $db = Factory::getContainer()->get('DatabaseDriver');
         $query = $db->getQuery(true)
             ->select('user_id')
@@ -90,14 +103,38 @@ class BonusesService
         if ($userId > 0 && class_exists(PointsHelper::class)) {
             $points = (float) PointsHelper::getCustomerPoints($userId);
         }
-        $sessionData = $app->getUserState('com_radicalmart.checkout.data', []);
-        $appliedPoints = (float) ($sessionData['bonuses']['points'] ?? 0);
-        $appliedCode = (string) ($sessionData['code'] ?? '');
+        
+        // Use SessionStore for persistent storage by chat_id
+        $sessionStore = new SessionStore();
+        $checkoutData = $sessionStore->getCheckoutData($chatId);
+        $appliedPoints = (float) ($checkoutData['bonuses']['points'] ?? 0);
+        $appliedCode = (string) ($checkoutData['code'] ?? '');
+        
         return [
             'available_points' => $points,
             'applied_points' => $appliedPoints,
             'promo_code' => $appliedCode
         ];
+    }
+    
+    /**
+     * Sync checkout data to Joomla session for RadicalMart compatibility
+     */
+    private function syncToJoomlaSession(array $checkoutData): void
+    {
+        $app = Factory::getApplication();
+        $sessionData = $app->getUserState('com_radicalmart.checkout.data', []);
+        
+        if (isset($checkoutData['bonuses'])) {
+            $sessionData['bonuses'] = $checkoutData['bonuses'];
+        }
+        if (isset($checkoutData['code'])) {
+            $sessionData['code'] = $checkoutData['code'];
+        } elseif (array_key_exists('code', $checkoutData) && $checkoutData['code'] === null) {
+            unset($sessionData['code']);
+        }
+        
+        $app->setUserState('com_radicalmart.checkout.data', $sessionData);
     }
 
     private function validatePromoCode(string $code, object $cart): array

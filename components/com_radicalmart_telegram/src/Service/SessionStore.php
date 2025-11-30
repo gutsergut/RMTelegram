@@ -120,4 +120,80 @@ class SessionStore
             $db->insertObject('#__radicalmart_telegram_sessions', $obj);
         }
     }
+
+    /**
+     * Get checkout data from payload (stored by chat_id, not HTTP session)
+     */
+    public function getCheckoutData(int $chatId): array
+    {
+        $row = $this->get($chatId);
+        if (!$row || empty($row['payload'])) {
+            return [];
+        }
+        $payload = json_decode((string)$row['payload'], true);
+        return is_array($payload) && isset($payload['checkout']) ? (array)$payload['checkout'] : [];
+    }
+
+    /**
+     * Set checkout data in payload (stored by chat_id, persists across requests)
+     */
+    public function setCheckoutData(int $chatId, array $checkoutData): void
+    {
+        $db  = $this->db;
+        $now = (new \Joomla\CMS\Date\Date())->toSql();
+
+        // Get current payload
+        $row = $this->get($chatId);
+        $payload = [];
+        if ($row && !empty($row['payload'])) {
+            $payload = json_decode((string)$row['payload'], true) ?: [];
+        }
+        
+        // Merge checkout data into payload
+        $payload['checkout'] = $checkoutData;
+        $payloadJson = json_encode($payload, JSON_UNESCAPED_UNICODE);
+
+        // Try update first
+        $query = $db->getQuery(true)
+            ->update($db->quoteName('#__radicalmart_telegram_sessions'))
+            ->set($db->quoteName('payload') . ' = :payload')
+            ->set($db->quoteName('updated_at') . ' = :updated')
+            ->where($db->quoteName('chat_id') . ' = :cid')
+            ->bind(':payload', $payloadJson)
+            ->bind(':updated', $now)
+            ->bind(':cid', $chatId, ParameterType::INTEGER);
+
+        $db->setQuery($query)->execute();
+        if ($db->getAffectedRows() === 0) {
+            // Insert new session row
+            $obj = (object) [
+                'chat_id' => $chatId,
+                'state' => 'idle',
+                'payload' => $payloadJson,
+                'cart_snapshot' => null,
+                'expires_at' => null,
+                'updated_at' => $now,
+                'last_update_id' => 0,
+            ];
+            $db->insertObject('#__radicalmart_telegram_sessions', $obj);
+        }
+    }
+
+    /**
+     * Merge checkout data (update specific keys without overwriting all)
+     */
+    public function mergeCheckoutData(int $chatId, array $data): void
+    {
+        $current = $this->getCheckoutData($chatId);
+        $merged = array_replace_recursive($current, $data);
+        $this->setCheckoutData($chatId, $merged);
+    }
+
+    /**
+     * Clear checkout data (after order created)
+     */
+    public function clearCheckoutData(int $chatId): void
+    {
+        $this->setCheckoutData($chatId, []);
+    }
 }

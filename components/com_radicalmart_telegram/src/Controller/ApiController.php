@@ -1014,6 +1014,12 @@ class ApiController extends BaseController
             $app->close();
         }
 
+        // Load checkout data from SessionStore and sync to Joomla session
+        // This ensures shipping/payment/promo data persists across API calls
+        $checkoutSvc = new CheckoutService();
+        $storedCheckoutData = $checkoutSvc->loadAndSyncCheckoutData($chat);
+        Log::add('[checkout] Loaded stored checkout data for chat=' . $chat . ': ' . json_encode($storedCheckoutData), Log::DEBUG, 'com_radicalmart.telegram');
+
         $first = trim($app->input->getString('first_name', ''));
         $second = trim($app->input->getString('second_name', '')); // отчество
         $last  = trim($app->input->getString('last_name', ''));
@@ -1022,6 +1028,14 @@ class ApiController extends BaseController
         $email = trim($app->input->getString('email', ''));
         $shippingId = $app->input->getInt('shipping_id', 0);
         $paymentId  = $app->input->getInt('payment_id', 0);
+        
+        // Use stored values if not provided in request
+        if ($shippingId <= 0 && !empty($storedCheckoutData['shipping']['id'])) {
+            $shippingId = (int) $storedCheckoutData['shipping']['id'];
+        }
+        if ($paymentId <= 0 && !empty($storedCheckoutData['payment']['id'])) {
+            $paymentId = (int) $storedCheckoutData['payment']['id'];
+        }
 
         try {
             // Ensure cart exists
@@ -1222,6 +1236,12 @@ class ApiController extends BaseController
                         ],
                     ]);
                 }
+            } catch (\Throwable $e) { /* ignore */ }
+
+            // Clear checkout data from SessionStore after successful order creation
+            try {
+                $checkoutSvc->clearCheckoutData($chat);
+                Log::add('[checkout] Cleared checkout data for chat=' . $chat . ' after order ' . $number, Log::DEBUG, 'com_radicalmart.telegram');
             } catch (\Throwable $e) { /* ignore */ }
 
             echo new JsonResponse([
