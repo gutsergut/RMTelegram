@@ -25,7 +25,7 @@ class CheckoutService
     {
         $app = Factory::getApplication();
         $sessionData = $app->getUserState('com_radicalmart.checkout.data', []);
-        
+
         // Merge shipping data
         if (!empty($checkoutData['shipping'])) {
             if (!isset($sessionData['shipping'])) {
@@ -33,7 +33,7 @@ class CheckoutService
             }
             $sessionData['shipping'] = array_replace_recursive($sessionData['shipping'], $checkoutData['shipping']);
         }
-        
+
         // Merge payment data
         if (!empty($checkoutData['payment'])) {
             if (!isset($sessionData['payment'])) {
@@ -41,7 +41,7 @@ class CheckoutService
             }
             $sessionData['payment'] = array_replace_recursive($sessionData['payment'], $checkoutData['payment']);
         }
-        
+
         // Merge promo/bonuses data
         if (!empty($checkoutData['promo'])) {
             $sessionData['promo'] = $checkoutData['promo'];
@@ -49,12 +49,24 @@ class CheckoutService
         if (!empty($checkoutData['bonuses'])) {
             $sessionData['bonuses'] = $checkoutData['bonuses'];
         }
-        
+
+        // Sync promo code to plugins.bonuses.codes for RadicalMart/applyPromoToCart compatibility
+        if (!empty($checkoutData['code'])) {
+            $sessionData['code'] = $checkoutData['code'];
+            if (!isset($sessionData['plugins'])) {
+                $sessionData['plugins'] = [];
+            }
+            if (!isset($sessionData['plugins']['bonuses'])) {
+                $sessionData['plugins']['bonuses'] = [];
+            }
+            $sessionData['plugins']['bonuses']['codes'] = $checkoutData['code'];
+        }
+
         $app->setUserState('com_radicalmart.checkout.data', $sessionData);
-        
+
         Log::add('[CheckoutService::syncToJoomlaSession] Synced: ' . json_encode(array_keys($checkoutData)), Log::DEBUG, 'com_radicalmart.telegram');
     }
-    
+
     /**
      * Load checkout data from SessionStore and sync to Joomla session
      * Call this before creating order
@@ -63,16 +75,16 @@ class CheckoutService
     {
         $sessionStore = new SessionStore();
         $checkoutData = $sessionStore->getCheckoutData($chatId);
-        
+
         if (!empty($checkoutData)) {
             $this->syncToJoomlaSession($checkoutData);
         }
-        
+
         Log::add('[CheckoutService::loadAndSyncCheckoutData] Loaded for chat=' . $chatId . ': ' . json_encode($checkoutData), Log::DEBUG, 'com_radicalmart.telegram');
-        
+
         return $checkoutData;
     }
-    
+
     /**
      * Clear checkout data after order is created
      */
@@ -80,7 +92,7 @@ class CheckoutService
     {
         $sessionStore = new SessionStore();
         $sessionStore->clearCheckoutData($chatId);
-        
+
         // Also clear Joomla session
         $app = Factory::getApplication();
         $app->setUserState('com_radicalmart.checkout.data', []);
@@ -126,15 +138,15 @@ class CheckoutService
         if (!$cart || empty($cart->id)) {
             throw new \RuntimeException(Text::_('COM_RADICALMART_TELEGRAM_ERR_CART_EMPTY'));
         }
-        
+
         // Use SessionStore for persistent storage by chat_id (not HTTP session)
         $sessionStore = new SessionStore();
         $checkoutData = $sessionStore->getCheckoutData($chatId);
-        
+
         if (!isset($checkoutData['shipping'])) {
             $checkoutData['shipping'] = [];
         }
-        
+
         if ($shippingId > 0) {
             $checkoutData['shipping']['id'] = $shippingId;
         }
@@ -177,13 +189,13 @@ class CheckoutService
                 unset($checkoutData['shipping']['tariff']);
             }
         }
-        
+
         // Save to SessionStore (persistent by chat_id)
         $sessionStore->setCheckoutData($chatId, $checkoutData);
-        
+
         // Also sync to Joomla session for RadicalMart compatibility
         $this->syncToJoomlaSession($checkoutData);
-        
+
         $model = new CheckoutModel();
         $model->setState('cart.id', (int) $cart->id);
         $model->setState('cart.code', (string) $cart->code);
@@ -314,18 +326,18 @@ class CheckoutService
         // Use SessionStore for persistent storage by chat_id (not HTTP session)
         $sessionStore = new SessionStore();
         $checkoutData = $sessionStore->getCheckoutData($chatId);
-        
+
         if (!isset($checkoutData['payment'])) {
             $checkoutData['payment'] = [];
         }
         $checkoutData['payment']['id'] = $paymentId;
-        
+
         // Save to SessionStore (persistent by chat_id)
         $sessionStore->setCheckoutData($chatId, $checkoutData);
-        
+
         // Also sync to Joomla session for RadicalMart compatibility
         $this->syncToJoomlaSession($checkoutData);
-        
+
         return ['payment_id' => $paymentId];
     }
 

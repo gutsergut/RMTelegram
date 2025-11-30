@@ -423,6 +423,11 @@ class ApiController extends BaseController
         $svc  = new CartService();
         $cart = $svc->getCart($chat);
 
+        // Load checkout data from SessionStore (DB) and sync to Joomla session
+        // This is needed because Joomla HTTP session doesn't persist across Telegram WebApp fetch() calls
+        $checkoutSvc = new CheckoutService();
+        $checkoutSvc->loadAndSyncCheckoutData($chat);
+
         // Применяем скидку промокода к корзине
         $promoInfo = $this->applyPromoToCart($cart);
 
@@ -1028,7 +1033,7 @@ class ApiController extends BaseController
         $email = trim($app->input->getString('email', ''));
         $shippingId = $app->input->getInt('shipping_id', 0);
         $paymentId  = $app->input->getInt('payment_id', 0);
-        
+
         // Use stored values if not provided in request
         if ($shippingId <= 0 && !empty($storedCheckoutData['shipping']['id'])) {
             $shippingId = (int) $storedCheckoutData['shipping']['id'];

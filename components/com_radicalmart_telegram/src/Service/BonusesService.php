@@ -128,10 +128,25 @@ class BonusesService
         if (isset($checkoutData['bonuses'])) {
             $sessionData['bonuses'] = $checkoutData['bonuses'];
         }
-        if (isset($checkoutData['code'])) {
+
+        // Sync promo code to both locations for compatibility:
+        // 1. 'code' - simple key for our API
+        // 2. 'plugins.bonuses.codes' - RadicalMart format expected by applyPromoToCart
+        if (isset($checkoutData['code']) && !empty($checkoutData['code'])) {
             $sessionData['code'] = $checkoutData['code'];
-        } elseif (array_key_exists('code', $checkoutData) && $checkoutData['code'] === null) {
+            // Also set in RadicalMart plugins format
+            if (!isset($sessionData['plugins'])) {
+                $sessionData['plugins'] = [];
+            }
+            if (!isset($sessionData['plugins']['bonuses'])) {
+                $sessionData['plugins']['bonuses'] = [];
+            }
+            $sessionData['plugins']['bonuses']['codes'] = $checkoutData['code'];
+        } elseif (array_key_exists('code', $checkoutData) && empty($checkoutData['code'])) {
             unset($sessionData['code']);
+            if (isset($sessionData['plugins']['bonuses']['codes'])) {
+                unset($sessionData['plugins']['bonuses']['codes']);
+            }
         }
 
         $app->setUserState('com_radicalmart.checkout.data', $sessionData);
