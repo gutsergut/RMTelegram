@@ -1,8 +1,7 @@
 <?php
 /**
  * @package     com_radicalmart_telegram (site)
- *
- * Сервис пунктов выдачи (ПВЗ) - pvz(), markpvz()
+ * Сервис ПВЗ - getPvzList(), markPvz()
  */
 
 namespace Joomla\Component\RadicalMartTelegram\Site\Service;
@@ -11,128 +10,73 @@ namespace Joomla\Component\RadicalMartTelegram\Site\Service;
 
 use Joomla\CMS\Factory;
 use Joomla\CMS\Log\Log;
-use Joomla\Component\RadicalMartTelegram\Site\Helper\ApiShipIntegrationHelper;
 
 class PvzService
 {
-    /**
-     * Получить список ПВЗ по bounding box
-     *
-     * @param string $bbox Bounding box: lon1,lat1,lon2,lat2
-     * @param string $providers Список провайдеров через запятую
-     * @param int $limit Максимальное количество результатов
-     * @return array Список ПВЗ
-     */
-    public function getPvzList(string $bbox, string $providers = '', int $limit = 1000): array
+    public function getPvzList(array $bounds, array $providers = [], int $limit = 500): array
     {
-        return ApiShipIntegrationHelper::getPvzList($bbox, $providers, $limit);
+        $db = Factory::getContainer()->get('DatabaseDriver');
+        $minLat = (float) ($bounds['sw']['lat'] ?? 0);
+        $maxLat = (float) ($bounds['ne']['lat'] ?? 0);
+        $minLon = (float) ($bounds['sw']['lon'] ?? 0);
+        $maxLon = (float) ($bounds['ne']['lon'] ?? 0);
+        $query = $db->getQuery(true)
+            ->select(['id', 'ext_id', 'provider', 'name', 'address', 'city', 'lat', 'lon', 'schedule', 'is_active'])
+            ->from($db->quoteName('#__radicalmart_telegram_pvz'))
+            ->where($db->quoteName('lat') . ' BETWEEN :minLat AND :maxLat')
+            ->where($db->quoteName('lon') . ' BETWEEN :minLon AND :maxLon')
+            ->bind(':minLat', $minLat)
+            ->bind(':maxLat', $maxLat)
+            ->bind(':minLon', $minLon)
+            ->bind(':maxLon', $maxLon);
+        if (!empty($providers)) {
+            $query->whereIn($db->quoteName('provider'), $providers, \Joomla\Database\ParameterType::STRING);
+        }
+        $query->order($db->quoteName('is_active') . ' DESC, ' . $db->quoteName('name') . ' ASC');
+        $rows = $db->setQuery($query, 0, $limit)->loadObjectList();
+        $points = [];
+        $inactiveCount = 0;
+        foreach ($rows as $row) {
+            if (empty($row->is_active)) {
+                $inactiveCount++;
+            }
+            $points[] = [
+                'id' => (string) $row->ext_id,
+                'provider' => (string) $row->provider,
+                'name' => (string) $row->name,
+                'address' => (string) $row->address,
+                'city' => (string) $row->city,
+                'lat' => (float) $row->lat,
+                'lon' => (float) $row->lon,
+                'schedule' => (string) $row->schedule,
+                'is_active' => !empty($row->is_active)
+            ];
+        }
+        return [
+            'points' => $points,
+            'total' => count($points),
+            'inactive_count' => $inactiveCount
+        ];
     }
 
-    /**
-     * Отметить ПВЗ как активный/неактивный
-     *
-     * @param int $chatId Telegram chat ID (для предотвращения дублирования отметок)
-     * @param string $extId Внешний ID ПВЗ
-     * @param string $provider Провайдер (x5, cdek, etc)
-     * @param bool $active true = активен (сброс счетчика), false = неактивен (инкремент)
-     * @return bool Успех операции
-     */
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-}    }        Log::add("[PvzService] Reset inactive_count for $provider:$extId", Log::DEBUG, 'com_radicalmart.telegram');                $db->setQuery($q2)->execute();            ->bind(':nonce', $nonce);            ->bind(':scope', $scope)            ->where($db->quoteName('nonce') . ' = :nonce')            ->where($db->quoteName('scope') . ' = :scope')            ->delete($db->quoteName('#__radicalmart_telegram_nonces'))        $q2 = $db->getQuery(true)                $nonce = $extId . '_' . $provider;        $scope = 'pvz_inactive';        // Clean up nonces for this PVZ                $db->setQuery($q)->execute();            ->bind(':prov', $provider);            ->bind(':ext', $extId)            ->where($db->quoteName('provider') . ' = :prov')            ->where($db->quoteName('ext_id') . ' = :ext')            ->set($db->quoteName('inactive_count') . ' = 0')            ->update($db->quoteName('#__radicalmart_apiship_points'))        $q = $db->getQuery(true)                $db = Factory::getContainer()->get('DatabaseDriver');    {    private function resetInactiveCount(string $extId, string $provider): void     */     * Сбросить счетчик неактивности ПВЗ (когда тариф найден)    /**        }        Log::add("[PvzService] Incremented inactive_count for $provider:$extId by chat $chatId", Log::DEBUG, 'com_radicalmart.telegram');                $db->setQuery($q2)->execute();            ->bind(':prov', $provider);            ->bind(':ext', $extId)            ->where($db->quoteName('provider') . ' = :prov')            ->where($db->quoteName('ext_id') . ' = :ext')            ->set($db->quoteName('inactive_count') . ' = ' . $db->quoteName('inactive_count') . ' + 1')            ->update($db->quoteName('#__radicalmart_apiship_points'))        $q2 = $db->getQuery(true)        // Increment inactive_count                $db->insertObject('#__radicalmart_telegram_nonces', $obj);        ];            'created' => (new \DateTime())->format('Y-m-d H:i:s'),            'nonce' => $nonce,            'scope' => $scope,            'chat_id' => $chatId,        $obj = (object)[        // Record this report                }            return; // Already reported by this user        if ((int) $db->setQuery($q)->loadResult() > 0) {                    ->bind(':nonce', $nonce);            ->bind(':scope', $scope)            ->bind(':chat', $chatId)            ->where($db->quoteName('created') . ' > DATE_SUB(NOW(), INTERVAL 24 HOUR)')            ->where($db->quoteName('nonce') . ' = :nonce')            ->where($db->quoteName('scope') . ' = :scope')            ->where($db->quoteName('chat_id') . ' = :chat')            ->from($db->quoteName('#__radicalmart_telegram_nonces'))            ->select('COUNT(*)')        $q = $db->getQuery(true)                $nonce = $extId . '_' . $provider;        $scope = 'pvz_inactive';        // Check if this chat already reported this PVZ (within 24 hours)                $db = Factory::getContainer()->get('DatabaseDriver');    {    private function incrementInactiveCount(string $extId, string $provider, int $chatId): void     */     * Использует chat_id для предотвращения множественных отметок от одного пользователя     * Инкрементировать счетчик неактивности ПВЗ    /**        // ============ Private helpers ============        }        return true;                }            $this->incrementInactiveCount($extId, $provider, $chatId);        } else {            $this->resetInactiveCount($extId, $provider);        if ($active) {                }            throw new \InvalidArgumentException('Missing ext_id or provider');        if (empty($extId) || empty($provider)) {    {    public function markPvz(int $chatId, string $extId, string $provider, bool $active): bool
+    public function markPvz(string $provider, string $extId, bool $active): bool
+    {
+        $db = Factory::getContainer()->get('DatabaseDriver');
+        $activeInt = $active ? 1 : 0;
+        $query = $db->getQuery(true)
+            ->update($db->quoteName('#__radicalmart_telegram_pvz'))
+            ->set($db->quoteName('is_active') . ' = :active')
+            ->where($db->quoteName('provider') . ' = :provider')
+            ->where($db->quoteName('ext_id') . ' = :extId')
+            ->bind(':active', $activeInt, \Joomla\Database\ParameterType::INTEGER)
+            ->bind(':provider', $provider)
+            ->bind(':extId', $extId);
+        try {
+            $db->setQuery($query)->execute();
+            return $db->getAffectedRows() > 0;
+        } catch (\Throwable $e) {
+            Log::add('PvzService::markPvz error: ' . $e->getMessage(), Log::ERROR, 'com_radicalmart.telegram');
+            return false;
+        }
+    }
+}

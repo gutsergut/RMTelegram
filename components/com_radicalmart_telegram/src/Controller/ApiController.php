@@ -28,6 +28,11 @@ use Joomla\Component\RadicalMartTelegram\Site\Helper\ConsentHelper;
 use Joomla\Plugin\RadicalMartShipping\ApiShip\Extension\ApiShip;
 use Joomla\Component\RadicalMartTelegram\Site\Controller\Concern\ApiSecurityTrait;
 use Joomla\Component\RadicalMartTelegram\Site\Helper\ApiShipIntegrationHelper;
+use Joomla\Component\RadicalMartTelegram\Site\Service\CheckoutService;
+use Joomla\Component\RadicalMartTelegram\Site\Service\BonusesService;
+use Joomla\Component\RadicalMartTelegram\Site\Service\OrderService;
+use Joomla\Component\RadicalMartTelegram\Site\Service\ProfileService;
+use Joomla\Component\RadicalMartTelegram\Site\Service\PvzService;
 
 class ApiController extends BaseController
 {

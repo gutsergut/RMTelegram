@@ -1,8 +1,7 @@
 <?php
 /**
  * @package     com_radicalmart_telegram (site)
- *
- * Сервис оформления заказа - методы checkout, methods, setpvz, setpayment, tariffs
+ * Сервис оформления заказа - getMethods(), setPvz(), getTariffs(), setPayment()
  */
 
 namespace Joomla\Component\RadicalMartTelegram\Site\Service;
@@ -12,504 +11,336 @@ namespace Joomla\Component\RadicalMartTelegram\Site\Service;
 use Joomla\CMS\Factory;
 use Joomla\CMS\Language\Text;
 use Joomla\CMS\Log\Log;
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-}    }        ];            ] : null,                'title' => (string)($item->payment->title ?? ''),                'id' => (int)($item->payment->id ?? 0),            'payment' => !empty($item->payment) ? [            ] : null,                'title' => (string)($item->shipping->title ?? ''),                'id' => (int)($item->shipping->id ?? 0),            'shipping' => !empty($item->shipping) ? [            'total' => $total,        return [                }            // final = товары - скидка (без доставки)            $total['sum'] = $total['base'];            // Добавляем числовые значения для JS                        ];                'shipping_string' => $t['shipping_string'] ?? '',                'shipping' => isset($t['shipping']) ? (float)$t['shipping'] : 0,                'final_string' => $t['final_string'] ?? '',                'final' => isset($t['final']) ? (float)$t['final'] : 0,                'discount_string' => $t['discount_string'] ?? '',                'discount' => isset($t['discount']) ? (float)$t['discount'] : 0,                'base_string' => $t['base_string'] ?? '',                'base' => isset($t['base']) ? (float)$t['base'] : 0,            $total = [            $t = $item->total;        if (!empty($item->total)) {        $total = [];    {    private function buildOrderData($item): array        }        return $weight;        }            $weight += $w * $qty;            $w = (float)($prod->weight ?? 0);            $qty = (float)($prod->quantity ?? 1);        foreach ($products as $prod) {        $weight = 0;    {    private function calculateCartWeight(array $products): float        }        ];            'provider' => $provider,            'days' => '',            'cost' => 0,        return [        // Placeholder - actual implementation depends on ApiShip integration    {    private function calculateTariff($cart, int $shippingId, string $pvzId, string $provider, float $lat, float $lon): array        }        return array_values(array_unique($ids));        }            $ids[] = (int)$prod->category_id;        if (!empty($prod->category_id) && is_numeric($prod->category_id)) {        }            }                }                    $ids[] = (int)$c->id;                if (is_object($c) && !empty($c->id)) {                }                    $ids[] = (int)$c['id'];                if (is_array($c) && !empty($c['id']) && is_numeric($c['id'])) {            foreach ($prod->categories as $c) {        if (!empty($prod->categories) && is_array($prod->categories)) {        }            $ids[] = (int)$prod->category->id;        if (!empty($prod->category) && !empty($prod->category->id)) {        $ids = [];    {    private function getProductCategories($prod): array        }        return $methods;                }            // Ignore errors        } catch (\Throwable $e) {                        }                unset($pm);                }                    }                        $pm['disabled'] = true;                    if (!empty($pm['plugin']) && stripos((string)$pm['plugin'], 'telegramstars') !== false) {                foreach ($methods as &$pm) {            if (!$allAllowed) {                        }                }                    }                        }                            break 2;                            $allAllowed = false;                        if (in_array($cid, $excludedCats, true)) {                    foreach ($catIds as $cid) {                if (!empty($excludedCats)) {                }                    }                        break;                        $allAllowed = false;                    if (!$catAllowed) {                    }                        }                            break;                            $catAllowed = true;                        if (in_array($cid, $allowedCats, true)) {                    foreach ($catIds as $cid) {                    $catAllowed = false;                if (!empty($allowedCats)) {                // Check category restrictions                                }                    break;                    $allAllowed = false;                if (!empty($excludedProd) && in_array($pid, $excludedProd, true)) {                }                    break;                    $allAllowed = false;                if (!empty($allowedProd) && !in_array($pid, $allowedProd, true)) {                // Check product restrictions                                $catIds = $this->getProductCategories($prod);                $pid = (int)($prod->id ?? 0);            foreach ($products as $prod) {            $allAllowed = true;            // Check if all products are allowed                        }                return $methods;            if (empty($allowedCats) && empty($excludedCats) && empty($allowedProd) && empty($excludedProd)) {                        $excludedProd = $parseCsv($conf['excluded_products'] ?? '');            $allowedProd = $parseCsv($conf['allowed_products'] ?? '');            $excludedCats = $parseCsv($conf['excluded_categories'] ?? '');            $allowedCats = $parseCsv($conf['allowed_categories'] ?? '');                        };                return array_values(array_unique($out));                }                    }                        $out[] = (int)$v;                    if ($v !== '' && ctype_digit($v)) {                    $v = trim($v);                foreach (explode(',', (string)$csv) as $v) {                $out = [];            $parseCsv = function($csv) {                        $conf = json_decode($paramsJson, true) ?: [];                        }                return $methods;            if ($paramsJson === '') {                        $paramsJson = (string) $db->setQuery($q, 0, 1)->loadResult();                ->where($db->quoteName('element') . ' = ' . $db->quote('telegramstars'));                ->where($db->quoteName('folder') . ' = ' . $db->quote('radicalmart_payment'))                ->where($db->quoteName('type') . ' = ' . $db->quote('plugin'))                ->from($db->quoteName('#__extensions'))                ->select($db->quoteName('params'))            $q = $db->getQuery(true)            $db = Factory::getContainer()->get('DatabaseDriver');        try {    {    private function applyStarsRestrictions(array $methods, array $products): array        }        }            return false;        } catch (\Throwable $e) {            return ((int) $db->setQuery($q, 0, 1)->loadResult()) > 0;                ->bind(':chat', $chatId);                ->where($db->quoteName('chat_id') . ' = :chat')                ->from($db->quoteName('#__radicalmart_telegram_users'))                ->select('COUNT(*)')            $q = $db->getQuery(true)            $db = Factory::getContainer()->get('DatabaseDriver');        try {    {    private function isChatLinked(int $chatId): bool        }        return $iconPath;                }            $iconPath = ltrim($iconPath, '/');            }                $iconPath = $match[1];            if (preg_match('#^https?://[^/]+(/.*?)$#i', $iconPath, $match)) {            // Remove full URL prefix if present            }                $iconPath = substr($iconPath, 0, $hashPos);            if (($hashPos = strpos($iconPath, '#')) !== false) {            // Remove #joomlaImage:// suffix        if ($iconPath) {                }            $iconPath = $media['icon'];        } elseif (is_array($media) && isset($media['icon'])) {            $iconPath = $media->icon;        } elseif (is_object($media) && isset($media->icon)) {            $iconPath = $media->get('icon', '');        if ($media instanceof \Joomla\Registry\Registry) {        $iconPath = '';    {    private function extractIcon($media): string        }        return $out;        }            $out[] = $method;                        }                }                    $method['icon'] = $iconPath;                if ($iconPath) {                $iconPath = $this->extractIcon($m->media);            if (!empty($m->media)) {            // Get icon from media                        ];                'icon' => ''                'description' => isset($m->description) ? (string)$m->description : '',                'plugin' => isset($m->plugin) ? (string)$m->plugin : '',                'disabled' => !empty($m->disabled),                'title' => (string)$m->title,                'id' => (int)$m->id,            $method = [        foreach ($list as $m) {        $out = [];    {    private function mapPaymentMethods(array $list): array        }        return $out;        }            $out[] = $method;                        }                } catch (\Throwable $e) { /* ignore */ }                    }                        $method['providers'] = array_values((array)$providers);                    if (!empty($providers)) {                    $providers = $params->get('providers', []);                    $params = ApiShip::getShippingMethodParams((int)$m->id);                try {            if (!empty($m->plugin) && stripos($m->plugin, 'apiship') !== false) {            // Get providers for ApiShip methods                        ];                'providers' => []                'plugin' => isset($m->plugin) ? (string)$m->plugin : '',                'disabled' => !empty($m->disabled),                'title' => (string)$m->title,                'id' => (int)$m->id,            $method = [        foreach ($list as $m) {        $out = [];    {    private function mapShippingMethods(array $list): array        // ============ Private helpers ============        }        return ['success' => true, 'payment_id' => $paymentId];                $app->setUserState('com_radicalmart.checkout.data', $sessionData);        $sessionData['payment']['id'] = $paymentId;        $sessionData['payment'] = $sessionData['payment'] ?? [];        $sessionData = $app->getUserState('com_radicalmart.checkout.data', []);        // Store in session                }            throw new \RuntimeException(Text::_('COM_RADICALMART_TELEGRAM_ERR_PAYMENT_UNAVAILABLE'));        if (!isset($allowed[$paymentId])) {                }            }                $allowed[(int)$m->id] = true;            foreach ($item->paymentMethods as $m) {        if (!empty($item->paymentMethods)) {        $allowed = [];        // Validate payment method                $item = $model->getItem();        $model->setState('cart.code', (string) $cart->code);        $model->setState('cart.id', (int) $cart->id);        $model = new CheckoutModel();                }            throw new \RuntimeException(Text::_('COM_RADICALMART_TELEGRAM_ERR_CART_EMPTY'));        if (!$cart || empty($cart->id)) {                $cart = $cartSvc->getCart($chatId);        $cartSvc = new CartService();                $app = Factory::getApplication();    {    public function setPayment(int $chatId, int $paymentId): array     */     * @return array     * @param int $paymentId     * @param int $chatId     *      * Установить способ оплаты    /**        }        return ['tariffs' => $tariffs];                }            Log::add('CheckoutService::getTariffs error: ' . $e->getMessage(), Log::WARNING, 'com_radicalmart.telegram');        } catch (\Throwable $e) {            }                $tariffs = ApiShipHelper::getTariffs($shippingId, $lat, $lon, $weight);            if (class_exists(ApiShipHelper::class) && method_exists(ApiShipHelper::class, 'getTariffs')) {        try {        $tariffs = [];        // Get tariffs via ApiShip                $weight = $this->calculateCartWeight($item->products ?? []);        // Calculate weight                }            return ['tariffs' => [], 'error' => 'Shipping method not available'];        if (!$shippingMethod) {                }            }                }                    break;                    $shippingMethod = $m;                if ((int)$m->id === $shippingId) {            foreach ($item->shippingMethods as $m) {        if (!empty($item->shippingMethods)) {        $shippingMethod = null;        // Validate shipping method                $item = $model->getItem();        $model->setState('cart.code', (string) $cart->code);        $model->setState('cart.id', (int) $cart->id);        $model = new CheckoutModel();                }            return ['tariffs' => [], 'error' => 'Cart empty'];        if (!$cart || empty($cart->id)) {                $cart = $cartSvc->getCart($chatId);        $cartSvc = new CartService();    {    public function getTariffs(int $chatId, int $shippingId, float $lat, float $lon): array     */     * @return array     * @param float $lon     * @param float $lat     * @param int $shippingId     * @param int $chatId     *      * Получить тарифы доставки для указанных координат    /**        }        ];            'order' => $this->buildOrderData($item),            'tariff' => $tariffResult,            ],                'address' => $pvzAddress,                'title' => $pvzTitle,                'provider' => $provider,                'id' => $pvzId,            'pvz' => [        return [                $item = $model->getItem();        $model->setState('cart.code', (string) $cart->code);        $model->setState('cart.id', (int) $cart->id);        $model = new CheckoutModel();        // Get updated checkout data                $tariffResult = $this->calculateTariff($cart, $shippingId, $pvzId, $provider, $lat, $lon);        // Calculate shipping tariff                $app->setUserState('com_radicalmart.checkout.data', $sessionData);        ];            'lon' => $lon,            'lat' => $lat,            'address' => $pvzAddress,            'title' => $pvzTitle,            'provider' => $provider,            'id' => $pvzId,        $sessionData['shipping']['pvz'] = [        $sessionData['shipping']['id'] = $shippingId;        $sessionData['shipping'] = $sessionData['shipping'] ?? [];        $sessionData = $app->getUserState('com_radicalmart.checkout.data', []);        // Store PVZ in session                }            throw new \RuntimeException('Missing PVZ parameters');        if ($shippingId <= 0 || $pvzId === '' || $provider === '') {                $lon = (float) ($pvzData['lon'] ?? 0);        $lat = (float) ($pvzData['lat'] ?? 0);        $pvzAddress = trim((string) ($pvzData['address'] ?? ''));        $pvzTitle = trim((string) ($pvzData['title'] ?? ''));        $provider = trim((string) ($pvzData['provider'] ?? ''));        $pvzId = trim((string) ($pvzData['id'] ?? ''));        $shippingId = (int) ($pvzData['shipping_id'] ?? 0);                }            throw new \RuntimeException(Text::_('COM_RADICALMART_TELEGRAM_ERR_CART_EMPTY'));        if (!$cart || empty($cart->id)) {                $cart = $cartSvc->getCart($chatId);        $cartSvc = new CartService();                $app = Factory::getApplication();    {    public function setPvz(int $chatId, array $pvzData): array     */     * @return array Результат с order data     * @param array $pvzData Данные ПВЗ: id, provider, title, address, lat, lon, shipping_id     * @param int $chatId     *      * Установить выбранный ПВЗ и рассчитать стоимость доставки    /**        }        ];            ],                'methods' => $paymentMethods,                'selected' => $selectedPayment,            'payment' => [            ],                'methods' => $shippingMethods,                'selected' => $selectedShipping,            'shipping' => [        return [                $selectedPayment = (!empty($item->payment) && !empty($item->payment->id)) ? (int) $item->payment->id : 0;        $selectedShipping = (!empty($item->shipping) && !empty($item->shipping->id)) ? (int) $item->shipping->id : 0;                $paymentMethods = $this->applyStarsRestrictions($paymentMethods, $item->products ?? []);        // Check Stars payment restrictions                }            unset($pm);            }                }                    $pm['disabled'] = true;                if (!empty($pm['plugin']) && stripos((string)$pm['plugin'], 'telegram') !== false) {            foreach ($paymentMethods as &$pm) {        if (!$hasMap) {        $hasMap = $this->isChatLinked($chatId);        // Disable telegram payments if chat is not linked to user                $paymentMethods = $this->mapPaymentMethods($item->paymentMethods ?? []);        $shippingMethods = $this->mapShippingMethods($item->shippingMethods ?? []);                $item = $model->getItem();        $model->setState('cart.code', (string) $cart->code);        $model->setState('cart.id', (int) $cart->id);        $model = new CheckoutModel();                }            ];                'payment' => ['methods' => [], 'selected' => 0]                'shipping' => ['methods' => [], 'selected' => 0],            return [        if (!$cart || empty($cart->id)) {                $cart = $cartSvc->getCart($chatId);        $cartSvc = new CartService();                $app = Factory::getApplication();    {    public function getMethods(int $chatId): array     */     * @return array ['shipping' => [...], 'payment' => [...]]     * @param int $chatId Telegram chat ID     *      * Получить доступные методы доставки и оплаты    /**{class CheckoutServiceuse Joomla\Plugin\RadicalMartShipping\ApiShip\Extension\ApiShip;use Joomla\Plugin\RadicalMartShipping\ApiShip\Helper\ApiShipHelper;use Joomla\Component\RadicalMartTelegram\Site\Helper\ConsentHelper;use Joomla\Component\RadicalMartTelegram\Site\Helper\TelegramUserHelper;use Joomla\Component\RadicalMart\Administrator\Helper\ParamsHelper;use Joomla\Component\RadicalMart\Administrator\Helper\UserHelper as RMUserHelper;use Joomla\Component\RadicalMart\Site\Model\CheckoutModel;use Joomla\CMS\Uri\Uri;
+use Joomla\Component\RadicalMart\Site\Model\CheckoutModel;
+use Joomla\Component\RadicalMartTelegram\Site\Helper\ApiShipIntegrationHelper;
+use Joomla\Plugin\RadicalMartShipping\ApiShip\Extension\ApiShip;
+
+class CheckoutService
+{
+    public function getMethods(int $chatId): array
+    {
+        $cartService = new CartService();
+        $cart = $cartService->getCart($chatId);
+        if (!$cart || empty($cart->id)) {
+            return ['shipping' => ['methods' => [], 'selected' => 0], 'payment' => ['methods' => [], 'selected' => 0]];
+        }
+        $model = new CheckoutModel();
+        $model->setState('cart.id', (int) $cart->id);
+        $model->setState('cart.code', (string) $cart->code);
+        $item = $model->getItem();
+        $shippingMethods = $this->mapShippingMethods($item->shippingMethods ?? []);
+        $paymentMethods = $this->mapPaymentMethods($item->paymentMethods ?? []);
+        $selectedShipping = (!empty($item->shipping) && !empty($item->shipping->id)) ? (int) $item->shipping->id : 0;
+        $selectedPayment = (!empty($item->payment) && !empty($item->payment->id)) ? (int) $item->payment->id : 0;
+        $res = [
+            'shipping' => ['selected' => $selectedShipping, 'methods' => $shippingMethods],
+            'payment' => ['selected' => $selectedPayment, 'methods' => $paymentMethods]
+        ];
+        $hasMap = $this->chatHasUserMapping($chatId);
+        if (!$hasMap && !empty($res['payment']['methods'])) {
+            foreach ($res['payment']['methods'] as &$pm) {
+                if (!empty($pm['plugin']) && stripos((string)$pm['plugin'], 'telegram') !== false) {
+                    $pm['disabled'] = true;
+                }
+            }
+            unset($pm);
+        }
+        $res = $this->applyStarsRestrictions($res, $item);
+        return $res;
+    }
+
+    public function setPvz(int $chatId, array $pvzData, int $shippingId = 0, string $tariffId = ''): array
+    {
+        $app = Factory::getApplication();
+        $cartService = new CartService();
+        $cart = $cartService->getCart($chatId);
+        if (!$cart || empty($cart->id)) {
+            throw new \RuntimeException(Text::_('COM_RADICALMART_TELEGRAM_ERR_CART_EMPTY'));
+        }
+        $sessionData = $app->getUserState('com_radicalmart.checkout.data', []);
+        if ($shippingId > 0) {
+            $sessionData['shipping']['id'] = $shippingId;
+        }
+        $sessionData['shipping']['point'] = [
+            'id' => $pvzData['id'] ?? '',
+            'provider' => $pvzData['provider'] ?? '',
+            'title' => $pvzData['title'] ?? '',
+            'address' => $pvzData['address'] ?? '',
+            'latitude' => (float)($pvzData['lat'] ?? 0),
+            'longitude' => (float)($pvzData['lon'] ?? 0),
+        ];
+        $tariffs = [];
+        $selectedTariff = null;
+        if ($shippingId > 0 && class_exists(ApiShip::class)) {
+            $tariffResult = ApiShipIntegrationHelper::calculateTariff($shippingId, $cart, $pvzData['id'] ?? '', $pvzData['provider'] ?? '');
+            $tariffs = $tariffResult['tariffs'] ?? [];
+            if (!empty($tariffs) && !empty($tariffId)) {
+                foreach ($tariffs as $t) {
+                    if ((string)$t->tariffId === $tariffId) {
+                        $selectedTariff = $t;
+                        break;
+                    }
+                }
+            }
+            if (!$selectedTariff && count($tariffs) === 1) {
+                $selectedTariff = $tariffs[0];
+            }
+            if ($selectedTariff) {
+                $deliveryCost = (float)($selectedTariff->deliveryCost ?? 0);
+                $sessionData['shipping']['tariff'] = [
+                    'id' => (int)$selectedTariff->tariffId,
+                    'name' => $selectedTariff->tariffName,
+                    'hash' => '',
+                    'deliveryCost' => $deliveryCost,
+                    'daysMin' => (int)($selectedTariff->daysMin ?? 0),
+                    'daysMax' => (int)($selectedTariff->daysMax ?? 0),
+                ];
+                $sessionData['shipping']['price'] = ['base' => $deliveryCost];
+            } else {
+                unset($sessionData['shipping']['tariff']);
+            }
+        }
+        $app->setUserState('com_radicalmart.checkout.data', $sessionData);
+        $model = new CheckoutModel();
+        $model->setState('cart.id', (int) $cart->id);
+        $model->setState('cart.code', (string) $cart->code);
+        $order = $model->getItem();
+        $orderData = $this->buildOrderData($order, $selectedTariff);
+        return [
+            'shipping_title' => (!empty($order->shipping) && !empty($order->shipping->title)) ? (string) $order->shipping->title : '',
+            'order_total' => $orderData['total']['final_string'] ?? '',
+            'order' => $orderData,
+            'pvz' => $sessionData['shipping']['point'],
+            'tariffs' => $tariffs,
+            'selected_tariff' => $selectedTariff ? $selectedTariff->tariffId : null
+        ];
+    }
+
+    public function getTariffs(int $chatId, int $shippingId, string $provider, string $extId): array
+    {
+        $cartService = new CartService();
+        $cart = $cartService->getCart($chatId);
+        if (!$cart || empty($cart->id)) {
+            return ['tariffs' => []];
+        }
+        if (!class_exists(ApiShip::class)) {
+            return ['tariffs' => []];
+        }
+        $tariffResult = ApiShipIntegrationHelper::calculateTariff($shippingId, $cart, $extId, $provider);
+        return ['tariffs' => $tariffResult['tariffs'] ?? []];
+    }
+
+    public function setPayment(int $chatId, int $paymentId): array
+    {
+        $app = Factory::getApplication();
+        $sessionData = $app->getUserState('com_radicalmart.checkout.data', []);
+        $sessionData['payment']['id'] = $paymentId;
+        $app->setUserState('com_radicalmart.checkout.data', $sessionData);
+        return ['payment_id' => $paymentId];
+    }
+
+    private function mapShippingMethods($list): array
+    {
+        $out = [];
+        if ($list) {
+            foreach ($list as $m) {
+                $method = [
+                    'id' => (int)$m->id,
+                    'title' => (string)$m->title,
+                    'disabled' => !empty($m->disabled),
+                    'plugin' => isset($m->plugin) ? (string)$m->plugin : '',
+                    'providers' => []
+                ];
+                if (!empty($m->plugin) && stripos($m->plugin, 'apiship') !== false) {
+                    try {
+                        $params = ApiShip::getShippingMethodParams((int)$m->id);
+                        $providers = $params->get('providers', []);
+                        if (!empty($providers)) {
+                            $method['providers'] = array_values((array)$providers);
+                        }
+                    } catch (\Throwable $e) {}
+                }
+                $out[] = $method;
+            }
+        }
+        return $out;
+    }
+
+    private function mapPaymentMethods($list): array
+    {
+        $out = [];
+        if ($list) {
+            foreach ($list as $m) {
+                $method = [
+                    'id' => (int)$m->id,
+                    'title' => (string)$m->title,
+                    'disabled' => !empty($m->disabled),
+                    'plugin' => isset($m->plugin) ? (string)$m->plugin : '',
+                    'description' => isset($m->description) ? (string)$m->description : '',
+                    'icon' => ''
+                ];
+                if (!empty($m->media)) {
+                    $iconPath = '';
+                    if ($m->media instanceof \Joomla\Registry\Registry) {
+                        $iconPath = $m->media->get('icon', '');
+                    } elseif (is_object($m->media) && isset($m->media->icon)) {
+                        $iconPath = $m->media->icon;
+                    } elseif (is_array($m->media) && isset($m->media['icon'])) {
+                        $iconPath = $m->media['icon'];
+                    }
+                    if ($iconPath) {
+                        if (($hashPos = strpos($iconPath, '#')) !== false) {
+                            $iconPath = substr($iconPath, 0, $hashPos);
+                        }
+                        if (preg_match('#^https?://[^/]+(/.*?)$#i', $iconPath, $match)) {
+                            $iconPath = $match[1];
+                        }
+                        $iconPath = ltrim($iconPath, '/');
+                        $method['icon'] = $iconPath;
+                    }
+                }
+                $out[] = $method;
+            }
+        }
+        return $out;
+    }
+
+    private function chatHasUserMapping(int $chatId): bool
+    {
+        try {
+            $db = Factory::getContainer()->get('DatabaseDriver');
+            $q = $db->getQuery(true)
+                ->select('COUNT(*)')
+                ->from($db->quoteName('#__radicalmart_telegram_users'))
+                ->where($db->quoteName('chat_id') . ' = :chat')
+                ->bind(':chat', $chatId);
+            return ((int) $db->setQuery($q, 0, 1)->loadResult()) > 0;
+        } catch (\Throwable $e) {
+            return false;
+        }
+    }
+
+    private function applyStarsRestrictions(array $res, $item): array
+    {
+        try {
+            if (empty($item->products) || empty($res['payment']['methods'])) {
+                return $res;
+            }
+            $db = Factory::getContainer()->get('DatabaseDriver');
+            $q = $db->getQuery(true)
+                ->select($db->quoteName('params'))
+                ->from($db->quoteName('#__extensions'))
+                ->where($db->quoteName('type') . ' = ' . $db->quote('plugin'))
+                ->where($db->quoteName('folder') . ' = ' . $db->quote('radicalmart_payment'))
+                ->where($db->quoteName('element') . ' = ' . $db->quote('telegramstars'));
+            $paramsJson = (string) $db->setQuery($q, 0, 1)->loadResult();
+            $conf = [];
+            if ($paramsJson !== '') {
+                try { $conf = json_decode($paramsJson, true) ?: []; } catch (\Throwable $e) { $conf = []; }
+            }
+            $parseCsv = function($csv) {
+                $out = [];
+                foreach (explode(',', (string)$csv) as $v) {
+                    $v = trim($v);
+                    if ($v !== '' && ctype_digit($v)) $out[] = (int)$v;
+                }
+                return array_values(array_unique($out));
+            };
+            $allowedCats = $parseCsv($conf['allowed_categories'] ?? '');
+            $excludedCats = $parseCsv($conf['excluded_categories'] ?? '');
+            $allowedProd = $parseCsv($conf['allowed_products'] ?? '');
+            $excludedProd = $parseCsv($conf['excluded_products'] ?? '');
+            $productCats = function($prod) {
+                $ids = [];
+                if (!empty($prod->category) && !empty($prod->category->id)) $ids[] = (int)$prod->category->id;
+                if (!empty($prod->categories) && is_array($prod->categories)) {
+                    foreach ($prod->categories as $c) {
+                        if (is_array($c) && !empty($c['id']) && is_numeric($c['id'])) $ids[] = (int)$c['id'];
+                        if (is_object($c) && !empty($c->id)) $ids[] = (int)$c->id;
+                    }
+                }
+                if (!empty($prod->category_id) && is_numeric($prod->category_id)) $ids[] = (int)$prod->category_id;
+                return array_values(array_unique($ids));
+            };
+            $isAllowedByCats = function($products) use ($allowedCats, $excludedCats, $productCats) {
+                if (empty($allowedCats)) return true;
+                foreach ($products as $prod) {
+                    $ids = $productCats($prod);
+                    if (!empty($ids)) {
+                        $ok = false;
+                        foreach ($ids as $cid) { if (in_array($cid, $allowedCats, true)) { $ok = true; break; } }
+                        foreach ($ids as $cid) { if (in_array($cid, $excludedCats, true)) { $ok = false; break; } }
+                        if (!$ok) return false;
+                    }
+                }
+                return true;
+            };
+            $isAllowedByProd = function($products) use ($allowedProd, $excludedProd) {
+                if (empty($allowedProd) && empty($excludedProd)) return true;
+                foreach ($products as $prod) {
+                    $pid = (int)($prod->id ?? 0);
+                    if ($pid <= 0) continue;
+                    if (!empty($allowedProd) && !in_array($pid, $allowedProd, true)) return false;
+                    if (!empty($excludedProd) && in_array($pid, $excludedProd, true)) return false;
+                }
+                return true;
+            };
+            $allowedAll = $isAllowedByCats($item->products) && $isAllowedByProd($item->products);
+            if (!$allowedAll) {
+                foreach ($res['payment']['methods'] as &$pm) {
+                    if (!empty($pm['plugin']) && stripos((string)$pm['plugin'], 'telegramstars') !== false) {
+                        $pm['disabled'] = true;
+                    }
+                }
+                unset($pm);
+            }
+        } catch (\Throwable $e) {}
+        return $res;
+    }
+
+    private function buildOrderData($order, $selectedTariff): ?array
+    {
+        if (empty($order->total)) {
+            return null;
+        }
+        $shippingPrice = 0;
+        $rmShippingCalculated = false;
+        if (!empty($order->shipping->order->price['final'])) {
+            $shippingPrice = (float) $order->shipping->order->price['final'];
+            $rmShippingCalculated = true;
+        }
+        if ($selectedTariff && $shippingPrice <= 0) {
+            $shippingPrice = (float)($selectedTariff->deliveryCost ?? 0);
+            $rmShippingCalculated = false;
+        }
+        $shippingString = '';
+        if ($shippingPrice > 0) {
+            $shippingString = number_format($shippingPrice, 0, '', ' ') . ' ₽';
+        }
+        $rmFinal = (float)($order->total['final'] ?? 0);
+        $baseSum = (float)($order->total['base'] ?? 0);
+        if ($rmShippingCalculated) {
+            $productsSum = $rmFinal - $shippingPrice;
+        } else {
+            $productsSum = $rmFinal;
+        }
+        $finalTotal = $productsSum + $shippingPrice;
+        $productsSumString = number_format($productsSum, 0, '', ' ') . ' ₽';
+        $orderTotal = number_format($finalTotal, 0, '', ' ') . ' ₽';
+        $productDiscount = $baseSum - $productsSum;
+        $discountString = ($productDiscount > 0) ? number_format($productDiscount, 0, '', ' ') . ' ₽' : '';
+        return [
+            'total' => [
+                'quantity' => $order->total['quantity'] ?? 0,
+                'sum' => $productsSum,
+                'sum_string' => $productsSumString,
+                'final' => $productsSum,
+                'final_string' => $productsSumString,
+                'discount' => $productDiscount,
+                'discount_string' => $discountString,
+                'shipping' => $shippingPrice,
+                'shipping_string' => $shippingString,
+            ]
+        ];
+    }
+}

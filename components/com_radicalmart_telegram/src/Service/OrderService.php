@@ -1,8 +1,7 @@
 <?php
 /**
  * @package     com_radicalmart_telegram (site)
- *
- * Сервис заказов - orders(), invoice()
+ * Сервис заказов - getOrders(), sendInvoice()
  */
 
 namespace Joomla\Component\RadicalMartTelegram\Site\Service;
@@ -12,267 +11,75 @@ namespace Joomla\Component\RadicalMartTelegram\Site\Service;
 use Joomla\CMS\Factory;
 use Joomla\CMS\Language\Text;
 use Joomla\CMS\Log\Log;
-use Joomla\CMS\Uri\Uri;
 use Joomla\Component\RadicalMart\Administrator\Model\OrderModel as AdminOrderModel;
 
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-}    }        return [];                } catch (\Throwable $e) {}            }                return json_decode($paramsJson, true) ?: [];            if ($paramsJson !== '') {                        $paramsJson = (string) $db->setQuery($q, 0, 1)->loadResult();                ->where($db->quoteName('element') . ' = ' . $db->quote('telegramstars'));                ->where($db->quoteName('folder') . ' = ' . $db->quote('radicalmart_payment'))                ->where($db->quoteName('type') . ' = ' . $db->quote('plugin'))                ->from($db->quoteName('#__extensions'))                ->select($db->quoteName('params'))            $q = $db->getQuery(true)            $db = Factory::getContainer()->get('DatabaseDriver');        try {    {    private function getStarsPluginConfig(): array        }        $tg->sendInvoice($chatId, $title, $desc, $payload, $ptoken, $currency, $amountMinor, []);                }            throw new \RuntimeException('Bad amount');        if ($amountMinor <= 0) {                }            $amountMinor = (int) round(((float) $num) * 100);            $num = str_replace([' ', ','], ['', '.'], $num);            $num = preg_replace('#[^0-9\.,]#', '', (string) $order->total['final_string']);        } elseif (!empty($order->total['final_string'])) {            $amountMinor = (int) round(((float) $order->total['final']) * 100);        if (!empty($order->total['final'])) {        $amountMinor = 0;                $currency = (!empty($order->currency['code'])) ? (string) $order->currency['code'] : 'RUB';                }            throw new \RuntimeException('Missing provider token');        if ($ptoken === '') {                }            $ptoken = (string) $params->get($env === 'prod' ? 'robokassa_provider_token_prod' : 'robokassa_provider_token_test', '');        } else {            $ptoken = (string) $params->get($env === 'prod' ? 'yookassa_provider_token_prod' : 'yookassa_provider_token_test', '');        if ($provider === 'yookassa') {        $ptoken = '';                $env = (string) $params->get('payments_env', 'test');        $provider = (string) $params->get('provider_cards', 'yookassa');    {    private function sendCardInvoice(TelegramClient $tg, int $chatId, string $title, string $desc, string $payload, $order, $params): void        }        $tg->sendInvoice($chatId, $title, $desc, $payload, '', 'XTR', $stars, []);                }            throw new \RuntimeException('Bad amount');        if ($stars <= 0) {                $stars = (int) round($rub / $rubPerStar);        $rub = $rub * (1.0 + ($percent / 100.0));                }            $rubPerStar = 1.0;        if ($rubPerStar <= 0) {                $percent = isset($conf['conversion_percent']) ? (float) $conf['conversion_percent'] : 0.0;        $rubPerStar = isset($conf['rub_per_star']) ? (float) $conf['rub_per_star'] : 1.0;        $conf = $this->getStarsPluginConfig();        // Get stars plugin config                }            $rub = (float) $num;            $num = str_replace([' ', ','], ['', '.'], $num);            $num = preg_replace('#[^0-9\.,]#', '', (string) $order->total['final_string']);        } elseif (!empty($order->total['final_string'])) {            $rub = (float) $order->total['final'];        if (!empty($order->total['final'])) {        $rub = 0.0;        // Get RUB amount    {    private function sendStarsInvoice(TelegramClient $tg, int $chatId, string $title, string $desc, string $payload, $order): void        }        }            return [];        } catch (\Throwable $e) {            return $db->setQuery($qs)->loadAssocList() ?: [];                ->order($db->quoteName('ordering') . ' ASC');                ->where($db->quoteName('state') . ' = 1')                ->from($db->quoteName('#__radicalmart_statuses'))                ->select([$db->quoteName('id'), $db->quoteName('title')])            $qs = $db->getQuery(true)            $db = Factory::getContainer()->get('DatabaseDriver');        try {    {    private function getStatuses(): array        // ============ Private helpers ============        }        return ['ok' => true];                }            $this->sendCardInvoice($tg, $chatId, $title, $desc, $payload, $orderDetails, $params);        } else {            $this->sendStarsInvoice($tg, $chatId, $title, $desc, $payload, $orderDetails);        if (stripos($plugin, 'telegramstars') !== false) {                }            throw new \RuntimeException('Telegram not configured');        if (!$tg->isConfigured()) {                $tg = new TelegramClient();                $payload = 'order:' . (string) ($orderDetails->number ?? (string) $orderDetails->id);        $desc = 'Оплата заказа в магазине';        $title = 'Заказ ' . ($orderDetails->number ?? ('#' . (int) $orderDetails->id));        $params = $app->getParams('com_radicalmart_telegram');        // Resolve provider token and send invoice                }            throw new \RuntimeException('Order not found');        if (!$orderDetails || empty($orderDetails->id)) {                $orderDetails = $adminModel->getItem((int) $order->id);        $adminModel = new AdminOrderModel();        // Get order details                }            throw new \RuntimeException('Payment method is not Telegram');        if ($plugin === '' || stripos($plugin, 'telegram') === false) {                    : '';            ? (string) $order->payment->plugin         $plugin = (!empty($order->payment) && !empty($order->payment->plugin))         // Check it's telegram payment                }            throw new \RuntimeException('Order not found');        if (!$order || empty($order->id)) {                $order = $pm->getOrder($orderNumber, 'number');        $pm = new PaymentModel();        // Load order by number                }            throw new \RuntimeException(Text::_('COM_RADICALMART_TELEGRAM_ERR_INVALID_CHAT'));        if ($chatId <= 0 || $orderNumber === '') {                $app = Factory::getApplication();    {    public function sendInvoice(int $chatId, string $orderNumber): array     */     * @return array Результат отправки     * @param string $orderNumber Номер заказа     * @param int $chatId Telegram chat ID     *      * Отправить Telegram Invoice для оплаты заказа    /**        }        ];            'statuses' => $statuses            'page' => $page,            'has_more' => $hasMore,            'items' => $items,        return [                $statuses = $this->getStatuses();        // Load available statuses                }            ];                'can_resend' => $canResend,                'payment_plugin' => $plugin,                'created' => (string) ($order->created ?? ''),                'pay_url' => rtrim(Uri::root(), '/') . '/index.php?option=com_radicalmart&task=payment.pay&order_number=' . urlencode((string) ($order->number ?? '')),                    : '',                    ? (string) $order->total['final_string']                 'total' => (!empty($order->total) && !empty($order->total['final_string']))                     : '',                    ? (string) $order->status->title                 'status' => (!empty($order->status) && !empty($order->status->title))                 'number' => (string) ($order->number ?? ''),                'id' => (int) $order->id,            $items[] = [                        $canResend = ($plugin !== '' && stripos($plugin, 'telegram') !== false);                : '';                ? (string) $order->payment->plugin             $plugin = (!empty($order->payment) && !empty($order->payment->plugin))                         }                continue;            if (!$order || empty($order->id)) {            $order = $orderModel->getItem((int)$r['id']);        foreach ($rows as $r) {                $orderModel = new AdminOrderModel();        $items = [];        // Load order details                }            array_pop($rows);            $hasMore = true;        if (count($rows) > $limit) {        $hasMore = false;                $rows = $db->loadAssocList() ?: [];        $db->setQuery($q2, $offset, $limit + 1);        $offset = ($page - 1) * $limit;                }            $q2->where($db->quoteName('status') . ' = :st')->bind(':st', (int) $status);        if ($status !== null && $status !== '' && ctype_digit($status)) {                    ->bind(':uid', $userId);            ->order($db->quoteName('id') . ' DESC')            ->where($db->quoteName('state') . ' = 1')            ->where($db->quoteName('created_by') . ' = :uid')            ->from($db->quoteName('#__radicalmart_orders'))            ->select(['id', 'number'])        $q2 = $db->getQuery(true)        // Build orders query                $limit = min(50, max(1, $limit));        $page = max(1, $page);                }            return ['items' => [], 'has_more' => false, 'page' => 1, 'statuses' => []];        if ($userId <= 0) {                $userId = (int) $db->setQuery($q, 0, 1)->loadResult();            ->bind(':chat', $chatId);            ->where($db->quoteName('chat_id') . ' = :chat')            ->from($db->quoteName('#__radicalmart_telegram_users'))            ->select('user_id')        $q = $db->getQuery(true)        // Get user_id by chat_id                $db = Factory::getContainer()->get('DatabaseDriver');    {    public function getOrders(int $chatId, int $page = 1, int $limit = 10, ?string $status = null): array     */     * @return array ['items' => [], 'has_more' => bool, 'page' => int, 'statuses' => []]     * @param string|null $status Фильтр по статусу     * @param int $limit Количество на страницу     * @param int $page Номер страницы     * @param int $chatId Telegram chat ID     *      * Получить список заказов пользователя    /**{class OrderServiceuse Joomla\Component\RadicalMart\Site\Model\PaymentModel;
+class OrderService
+{
+    public function getOrders(int $chatId, int $limit = 20): array
+    {
+        $db = Factory::getContainer()->get('DatabaseDriver');
+        $query = $db->getQuery(true)
+            ->select('user_id')
+            ->from($db->quoteName('#__radicalmart_telegram_users'))
+            ->where($db->quoteName('chat_id') . ' = :chat')
+            ->bind(':chat', $chatId);
+        $userId = (int) $db->setQuery($query, 0, 1)->loadResult();
+        if ($userId <= 0) {
+            return [];
+        }
+        $query = $db->getQuery(true)
+            ->select(['o.id', 'o.number', 'o.total', 'o.state', 'o.created', 'o.shipping', 'o.payment'])
+            ->from($db->quoteName('#__radicalmart_orders', 'o'))
+            ->where($db->quoteName('o.created_by') . ' = :uid')
+            ->bind(':uid', $userId)
+            ->order($db->quoteName('o.created') . ' DESC');
+        $rows = $db->setQuery($query, 0, $limit)->loadObjectList();
+        $orders = [];
+        foreach ($rows as $row) {
+            $total = json_decode($row->total ?? '{}', true);
+            $shipping = json_decode($row->shipping ?? '{}', true);
+            $payment = json_decode($row->payment ?? '{}', true);
+            $orders[] = [
+                'id' => (int) $row->id,
+                'number' => (string) $row->number,
+                'state' => (int) $row->state,
+                'created' => (string) $row->created,
+                'total' => $total['final_string'] ?? '',
+                'shipping_title' => $shipping['title'] ?? '',
+                'payment_title' => $payment['title'] ?? ''
+            ];
+        }
+        return $orders;
+    }
+
+    public function sendInvoice(int $chatId, string $orderNumber, string $type = 'card'): array
+    {
+        $db = Factory::getContainer()->get('DatabaseDriver');
+        $query = $db->getQuery(true)
+            ->select('user_id')
+            ->from($db->quoteName('#__radicalmart_telegram_users'))
+            ->where($db->quoteName('chat_id') . ' = :chat')
+            ->bind(':chat', $chatId);
+        $userId = (int) $db->setQuery($query, 0, 1)->loadResult();
+        if ($userId <= 0) {
+            throw new \RuntimeException(Text::_('COM_RADICALMART_TELEGRAM_ERR_USER_NOT_LINKED'));
+        }
+        $query = $db->getQuery(true)
+            ->select(['id', 'number', 'total', 'products'])
+            ->from($db->quoteName('#__radicalmart_orders'))
+            ->where($db->quoteName('number') . ' = :num')
+            ->where($db->quoteName('created_by') . ' = :uid')
+            ->bind(':num', $orderNumber)
+            ->bind(':uid', $userId);
+        $order = $db->setQuery($query, 0, 1)->loadObject();
+        if (!$order) {
+            throw new \RuntimeException(Text::_('COM_RADICALMART_TELEGRAM_ERR_ORDER_NOT_FOUND'));
+        }
+        $telegram = new TelegramClient();
+        if ($type === 'stars') {
+            return $telegram->sendStarsInvoice($chatId, $order);
+        } else {
+            return $telegram->sendCardInvoice($chatId, $order);
+        }
+    }
+}
