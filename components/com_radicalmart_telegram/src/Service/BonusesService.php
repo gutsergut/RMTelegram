@@ -153,21 +153,27 @@ class BonusesService
             if (!$codeData || empty($codeData->id)) {
                 return ['valid' => false, 'error' => Text::_('COM_RADICALMART_TELEGRAM_ERR_PROMO_INVALID')];
             }
-            if (empty($codeData->enabled)) {
-                return ['valid' => false, 'error' => Text::_('COM_RADICALMART_TELEGRAM_ERR_PROMO_DISABLED')];
-            }
+
+            // Note: radicalmart_bonuses_codes table doesn't have 'enabled' field
+            // Code is active if not expired (expires field)
             $now = Factory::getDate()->toSql();
-            if (!empty($codeData->date_start) && $codeData->date_start > $now) {
-                return ['valid' => false, 'error' => Text::_('COM_RADICALMART_TELEGRAM_ERR_PROMO_NOT_STARTED')];
-            }
-            if (!empty($codeData->date_end) && $codeData->date_end < $now) {
+
+            // Check expiration (expires field, not date_end)
+            if (!empty($codeData->expires) && $codeData->expires !== '0000-00-00 00:00:00' && $codeData->expires < $now) {
                 return ['valid' => false, 'error' => Text::_('COM_RADICALMART_TELEGRAM_ERR_PROMO_EXPIRED')];
             }
+
             $discountString = '';
             if (!empty($codeData->discount_string)) {
                 $discountString = $codeData->discount_string;
             } elseif (!empty($codeData->discount)) {
-                $discountString = $codeData->discount . '%';
+                // Check if discount contains % or is numeric
+                $discount = $codeData->discount;
+                if (is_numeric($discount)) {
+                    $discountString = $discount . '%';
+                } else {
+                    $discountString = $discount;
+                }
             }
             return [
                 'valid' => true,
