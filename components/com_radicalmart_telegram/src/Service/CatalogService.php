@@ -350,7 +350,22 @@ class CatalogService
                 }
             }
 
-            $out[]=['id'=>(int)($m->id??0),'title'=>(string)($m->title??''),'type'=>(string)($m->type??''),'image'=>$image,'category'=>$category,'price_min'=>$priceMin,'price_max'=>$priceMax,'price_final'=>$priceMin,'min_price_raw'=>$minPriceRaw,'children'=>$children,'is_meta'=>true,'in_stock'=>$metaInStock]; }
+            // Вычисляем минимальный cashback из детей
+            $minCashback = null;
+            $cashbackPercent = 0;
+            foreach ($children as $child) {
+                if (isset($child['cashback_percent']) && $child['cashback_percent'] > 0) {
+                    $cashbackPercent = $child['cashback_percent'];
+                }
+                if (isset($child['cashback']) && $child['cashback'] > 0) {
+                    if ($minCashback === null || $child['cashback'] < $minCashback) {
+                        $minCashback = $child['cashback'];
+                    }
+                }
+            }
+            if ($minCashback === null) $minCashback = 0;
+
+            $out[]=['id'=>(int)($m->id??0),'title'=>(string)($m->title??''),'type'=>(string)($m->type??''),'image'=>$image,'category'=>$category,'price_min'=>$priceMin,'price_max'=>$priceMax,'price_final'=>$priceMin,'min_price_raw'=>$minPriceRaw,'children'=>$children,'is_meta'=>true,'in_stock'=>$metaInStock,'cashback'=>$minCashback,'cashback_percent'=>$cashbackPercent]; }
 
         // Применяем сортировку к массиву $out после фильтрации детей
         if ($sortType === 'price_asc') {

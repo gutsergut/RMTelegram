@@ -28,7 +28,15 @@ class TelegramClient
 
     public function api(string $method, array $params = []): Registry
     {
-        Log::add('TelegramClient::api calling ' . $method . ' with ' . count($params) . ' params', Log::DEBUG, 'com_radicalmart.telegram');
+        // Log masked token for debugging
+        $tokenLen = strlen($this->token);
+        $maskedToken = $tokenLen > 10 ? substr($this->token, 0, 5) . '...' . substr($this->token, -5) . " ({$tokenLen} chars)" : "EMPTY or TOO SHORT ({$tokenLen} chars)";
+        Log::add('TelegramClient::api calling ' . $method . ' with ' . count($params) . ' params, token=' . $maskedToken, Log::DEBUG, 'com_radicalmart.telegram');
+
+        if (empty($this->token)) {
+            Log::add('API ' . $method . ' FAILED: bot_token is empty!', Log::ERROR, 'com_radicalmart.telegram');
+            return new Registry(['ok' => false, 'description' => 'Bot token is not configured']);
+        }
 
         $http = new Http();
         $http->setOption('transport.curl', [CURLOPT_SSL_VERIFYHOST => 0, CURLOPT_SSL_VERIFYPEER => 0]);

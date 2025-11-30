@@ -55,10 +55,10 @@ class CartService
         // Это позволит CartModel::getCurrentUser() вернуть правильного пользователя
         $app = Factory::getApplication();
         $session = $app->getSession();
-        
+
         // Устанавливаем пользователя в сессию
         $session->set('user', $user);
-        
+
         // Также обновляем identity в приложении
         $app->loadIdentity($user);
 
