@@ -335,7 +335,9 @@ foreach ($pvzIcons as $k => $v) {
             }
 
             // General discount (may include promo if not separated)
-            if (cart.total.discount_string && !cart.plugins?.bonuses?.codes_discount_string) {
+            // Don't show "0 ₽" discount
+            const discountVal = parseNumber(cart.total.discount);
+            if (cart.total.discount_string && discountVal > 0 && !cart.plugins?.bonuses?.codes_discount_string) {
                 html += `<div class="uk-flex uk-flex-between uk-text-success"><span>Скидка:</span> <span>-${cart.total.discount_string}</span></div>`;
             }
 
@@ -1267,10 +1269,10 @@ foreach ($pvzIcons as $k => $v) {
                 const phoneInput = document.querySelector('[name="phone"]');
                 if (phoneInput) phoneInput.value = phone;
             }
-            
+
             if (data.user) {
                 const u = data.user;
-                
+
                 // Use first_name/last_name from API if available
                 if (u.first_name) {
                     const fnInput = document.querySelector('[name="first_name"]');
@@ -1284,7 +1286,7 @@ foreach ($pvzIcons as $k => $v) {
                     const lnInput = document.querySelector('[name="last_name"]');
                     if (lnInput) lnInput.value = u.last_name;
                 }
-                
+
                 // Fallback: parse name field if separate fields not set
                 if (!u.first_name && !u.last_name && u.name) {
                     const parts = u.name.split(' ');
@@ -1297,7 +1299,7 @@ foreach ($pvzIcons as $k => $v) {
                         if (lnInput && !lnInput.value) lnInput.value = parts[1];
                     }
                 }
-                
+
                 if (u.email) {
                     const emailInput = document.querySelector('[name="email"]');
                     if (emailInput) emailInput.value = u.email;
