@@ -30,11 +30,11 @@ class BonusesService
             throw new \RuntimeException(Text::_('COM_RADICALMART_TELEGRAM_ERR_USER_NOT_LINKED'));
         }
         $available = (float) PointsHelper::getCustomerPoints($userId);
-        
+
         // Use SessionStore for persistent storage by chat_id
         $sessionStore = new SessionStore();
         $checkoutData = $sessionStore->getCheckoutData($chatId);
-        
+
         if ($amount <= 0) {
             $checkoutData['bonuses'] = ['points' => 0];
             $sessionStore->setCheckoutData($chatId, $checkoutData);
@@ -44,11 +44,11 @@ class BonusesService
         if ($amount > $available) {
             throw new \RuntimeException(Text::sprintf('COM_RADICALMART_TELEGRAM_ERR_INSUFFICIENT_POINTS', $available));
         }
-        
+
         $checkoutData['bonuses'] = ['points' => $amount];
         $sessionStore->setCheckoutData($chatId, $checkoutData);
         $this->syncToJoomlaSession($checkoutData);
-        
+
         return ['applied' => $amount, 'available' => $available - $amount];
     }
 
@@ -63,14 +63,14 @@ class BonusesService
         if (!$validationResult['valid']) {
             throw new \RuntimeException($validationResult['error']);
         }
-        
+
         // Use SessionStore for persistent storage by chat_id
         $sessionStore = new SessionStore();
         $checkoutData = $sessionStore->getCheckoutData($chatId);
         $checkoutData['code'] = $code;
         $sessionStore->setCheckoutData($chatId, $checkoutData);
         $this->syncToJoomlaSession($checkoutData);
-        
+
         return [
             'code' => $code,
             'discount' => $validationResult['discount'] ?? '',
@@ -86,7 +86,7 @@ class BonusesService
         unset($checkoutData['code']);
         $sessionStore->setCheckoutData($chatId, $checkoutData);
         $this->syncToJoomlaSession($checkoutData);
-        
+
         return ['removed' => true];
     }
 
@@ -103,20 +103,20 @@ class BonusesService
         if ($userId > 0 && class_exists(PointsHelper::class)) {
             $points = (float) PointsHelper::getCustomerPoints($userId);
         }
-        
+
         // Use SessionStore for persistent storage by chat_id
         $sessionStore = new SessionStore();
         $checkoutData = $sessionStore->getCheckoutData($chatId);
         $appliedPoints = (float) ($checkoutData['bonuses']['points'] ?? 0);
         $appliedCode = (string) ($checkoutData['code'] ?? '');
-        
+
         return [
             'available_points' => $points,
             'applied_points' => $appliedPoints,
             'promo_code' => $appliedCode
         ];
     }
-    
+
     /**
      * Sync checkout data to Joomla session for RadicalMart compatibility
      */
@@ -124,7 +124,7 @@ class BonusesService
     {
         $app = Factory::getApplication();
         $sessionData = $app->getUserState('com_radicalmart.checkout.data', []);
-        
+
         if (isset($checkoutData['bonuses'])) {
             $sessionData['bonuses'] = $checkoutData['bonuses'];
         }
@@ -133,7 +133,7 @@ class BonusesService
         } elseif (array_key_exists('code', $checkoutData) && $checkoutData['code'] === null) {
             unset($sessionData['code']);
         }
-        
+
         $app->setUserState('com_radicalmart.checkout.data', $sessionData);
     }
 
@@ -146,7 +146,10 @@ class BonusesService
             if (!class_exists(CodesHelper::class)) {
                 return ['valid' => false, 'error' => Text::_('COM_RADICALMART_TELEGRAM_ERR_PROMO_NOT_AVAILABLE')];
             }
-            $codeData = CodesHelper::getCode($code);
+
+            // Use find() method to get code by string value
+            $codeData = CodesHelper::find($code);
+
             if (!$codeData || empty($codeData->id)) {
                 return ['valid' => false, 'error' => Text::_('COM_RADICALMART_TELEGRAM_ERR_PROMO_INVALID')];
             }
@@ -172,7 +175,7 @@ class BonusesService
                 'discount_string' => $discountString
             ];
         } catch (\Throwable $e) {
-            Log::add('BonusesService::validatePromoCode error: ' . $e->getMessage(), Log::ERROR, 'com_radicalmart.telegram');
+            Log::add('BonusesService::validatePromoCode error: ' . $e->getMessage() . ' | trace: ' . $e->getTraceAsString(), Log::ERROR, 'com_radicalmart.telegram');
             return ['valid' => false, 'error' => Text::_('COM_RADICALMART_TELEGRAM_ERR_PROMO_VALIDATION_FAILED')];
         }
     }
