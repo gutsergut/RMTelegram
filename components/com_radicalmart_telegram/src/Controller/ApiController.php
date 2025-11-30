@@ -870,75 +870,23 @@ class ApiController extends BaseController
         $chat = $this->getChatId();
         if ($chat <= 0) { echo new JsonResponse(null, Text::_('COM_RADICALMART_TELEGRAM_ERR_INVALID_CHAT'), true); $app->close(); }
         try {
-            $db = Factory::getContainer()->get('DatabaseDriver');
-            // Связка chat->user
-            $query = $db->getQuery(true)
-                ->select('user_id')
-                ->from($db->quoteName('#__radicalmart_telegram_users'))
-                ->where($db->quoteName('chat_id') . ' = :chat')
-                ->bind(':chat', $chat);
-            $userId = (int) $db->setQuery($query, 0, 1)->loadResult();
-            $user   = null;
-            if ($userId > 0) {
-                $user = Factory::getUser($userId);
-            }
-            $points = 0.0;
-            if ($userId > 0) { $points = (float) PointsHelper::getCustomerPoints($userId); }
-            // Рефералы: реферальные коды + инфо
-            $info = [];
-            $codes = [];
-            $canCreate = false;
-            $createMode = '';
-            if ($userId > 0) {
-                try {
-                    $refModel = new \Joomla\Component\RadicalMartBonuses\Site\Model\ReferralsModel();
-                    $refModel->setState('user.id', $userId);
-                    $info = $refModel->getInfo($userId);
-                    $codes = $refModel->getCodes() ?: [];
-                    $createMode = $refModel->canCreateCode();
-                    $canCreate = ($createMode !== false);
-                } catch (\Throwable $e) { /* ignore */ }
-            }
+            $svc = new ProfileService();
+            $data = $svc->getProfile($chat);
+
             // Создание кода action=createcode
             $action = $app->input->getCmd('action', '');
-            $createdCode = null;
-            if ($action === 'createcode' && $canCreate && $userId > 0) {
+            if ($action === 'createcode' && $data['can_create_code'] && $data['user']) {
                 $this->guardRateLimitDb('profilecreate', 5);
                 $this->guardNonce('createcode');
-                try {
-                    $refModel = new \Joomla\Component\RadicalMartBonuses\Site\Model\ReferralsModel();
-                    $refModel->setState('user.id', $userId);
-                    $currency = $app->input->getString('currency', '');
-                    $custom   = $app->input->getString('code', '');
-                    $createdCode = $refModel->createCode($custom, $currency) ?: null;
-                    // обновим список кодов после создания
-                    $codes = $refModel->getCodes() ?: [];
-                } catch (\Throwable $e) { echo new JsonResponse(null, $e->getMessage(), true); $app->close(); }
+                $currency = $app->input->getString('currency', '');
+                $custom = $app->input->getString('code', '');
+                $createdCode = $svc->createReferralCode((int)$data['user']['id'], $currency, $custom);
+                $data['created_code'] = $createdCode;
+                // Refresh profile after creation
+                $data = $svc->getProfile($chat);
+                $data['created_code'] = $createdCode;
             }
-            $data = [
-                'user' => ($user ? [
-                    'id' => (int) $user->id,
-                    'name' => (string) ($user->name ?: $user->username ?: ''),
-                    'username' => (string) $user->username,
-                    'email' => (string) $user->email,
-                    'phone' => (string) ($user->getParam('profile.phonenum') ?: ''),
-                ] : null),
-                'points' => $points,
-                'referrals_info' => $info,
-                'referral_codes' => array_map(function($c){
-                    return [
-                        'id' => (int) ($c->id ?? 0),
-                        'code' => (string) ($c->code ?? ''),
-                        'discount' => (string) ($c->discount_string ?? ''),
-                        'enabled' => (bool) ($c->enabled ?? false),
-                        'link' => (string) ($c->link ?? ''),
-                        'expires' => (string) ($c->expires ?? ''),
-                    ];
-                }, $codes),
-                'can_create_code' => $canCreate,
-                'create_mode' => $createMode,
-                'created_code' => $createdCode,
-            ];
+
             echo new JsonResponse($data);
             $app->close();
         } catch (\Throwable $e) { echo new JsonResponse(null, $e->getMessage(), true); $app->close(); }
@@ -990,9 +938,8 @@ class ApiController extends BaseController
         $this->guardRateLimitDb('consents', 20);
         try {
             $chat = $this->getChatId();
-            $statuses = ConsentHelper::getConsents(max(0, (int) $chat));
-            $docs = ConsentHelper::getAllDocumentUrls();
-            echo new JsonResponse(['statuses' => $statuses, 'documents' => $docs]);
+            $svc = new ProfileService();
+            echo new JsonResponse($svc->getConsents($chat));
             $app->close();
         } catch (\Throwable $e) {
             echo new JsonResponse(null, $e->getMessage(), true);
@@ -1010,10 +957,9 @@ class ApiController extends BaseController
         if ($chat <= 0) { echo new JsonResponse(null, 'Invalid chat', true); $app->close(); }
         $type = trim((string) $app->input->get('type', '', 'string'));
         $val  = (int) $app->input->getInt('value', 0) === 1;
-        $allowed = ['personal_data','marketing','terms'];
-        if (!in_array($type, $allowed, true)) { echo new JsonResponse(null, 'Invalid type', true); $app->close(); }
         try {
-            $ok = ConsentHelper::saveConsent((int)$chat, $type, (bool)$val);
+            $svc = new ProfileService();
+            $ok = $svc->setConsent((int)$chat, $type, (bool)$val);
             if (!$ok) { echo new JsonResponse(null, 'Save failed', true); $app->close(); }
             echo new JsonResponse(['ok' => true]);
             $app->close();
@@ -1022,35 +968,14 @@ class ApiController extends BaseController
 
     public function legal(): void
     {
-        // Возвращает HTML документа (privacy|consent|terms|marketing) санитированный
         $app = Factory::getApplication();
         $this->guardInitData();
         $this->guardRateLimitDb('legal', 30);
         $type = trim((string)$app->input->get('type', '', 'string'));
-        $map = [ 'privacy' => 'article_privacy_policy', 'consent' => 'article_consent_personal_data', 'terms' => 'article_terms_of_service', 'marketing' => 'article_consent_marketing' ];
-        if (!isset($map[$type])) { echo new JsonResponse(null, 'Invalid type', true); $app->close(); }
         try {
-            $params = $app->getParams('com_radicalmart_telegram');
-            $articleId = (int)$params->get($map[$type], 0);
-            if ($articleId <= 0) { echo new JsonResponse(['html' => '<p>Документ не настроен.</p>']); $app->close(); }
-            // Прямой запрос статьи
-            $db = Factory::getContainer()->get('DatabaseDriver');
-            $q = $db->getQuery(true)
-                ->select($db->quoteName(['introtext','fulltext']))
-                ->from($db->quoteName('#__content'))
-                ->where($db->quoteName('id') . ' = :id')
-                ->bind(':id', $articleId);
-            $row = $db->setQuery($q, 0, 1)->loadObject();
-            if (!$row) { echo new JsonResponse(['html' => '<p>Документ не найден.</p>']); $app->close(); }
-            $htmlRaw = (string)($row->introtext ?? '') . (string)($row->fulltext ?? '');
-            // Простая санитизация: удаляем скрипты, iframe, style, on* атрибуты
-            $clean = preg_replace('#<script[^>]*?>.*?</script>#is', '', $htmlRaw);
-            $clean = preg_replace('#<iframe[^>]*?>.*?</iframe>#is', '', $clean);
-            $clean = preg_replace('#<style[^>]*?>.*?</style>#is', '', $clean);
-            $clean = preg_replace('#on[a-zA-Z]+\s*=\s*["\"][^"\"]*["\"]#is', '', $clean);
-            // Ограничить потенциально опасные ссылки target
-            $clean = preg_replace('#<a([^>]+)>#i', '<a$1 target="_blank" rel="noopener">', $clean);
-            echo new JsonResponse(['html' => $clean]);
+            $svc = new ProfileService();
+            $html = $svc->getLegalDocument($type);
+            echo new JsonResponse(['html' => $html]);
             $app->close();
         } catch (\Throwable $e) {
             echo new JsonResponse(null, $e->getMessage(), true); $app->close();
@@ -1321,151 +1246,10 @@ class ApiController extends BaseController
         if ($chat <= 0) { echo new JsonResponse(null, Text::_('COM_RADICALMART_TELEGRAM_ERR_INVALID_CHAT'), true); $app->close(); }
 
         try {
-            $svc  = new CartService();
-            $cart = $svc->getCart($chat);
-            if (!$cart || empty($cart->id)) { echo new JsonResponse(['shipping'=>['methods'=>[],'selected'=>0],'payment'=>['methods'=>[],'selected'=>0]]); $app->close(); }
-
-            $model = new CheckoutModel();
-            $model->setState('cart.id', (int) $cart->id);
-            $model->setState('cart.code', (string) $cart->code);
-            $item  = $model->getItem();
-
-            // Map shipping methods with providers info
-            $mapShipping = function($list) {
-                $out = [];
-                if ($list) {
-                    foreach ($list as $m) {
-                        $method = [
-                            'id' => (int)$m->id,
-                            'title' => (string)$m->title,
-                            'disabled' => !empty($m->disabled),
-                            'plugin' => isset($m->plugin) ? (string)$m->plugin : '',
-                            'providers' => []
-                        ];
-                        // Get providers for ApiShip methods
-                        if (!empty($m->plugin) && stripos($m->plugin, 'apiship') !== false) {
-                            try {
-                                $params = \Joomla\Plugin\RadicalMartShipping\ApiShip\Extension\ApiShip::getShippingMethodParams((int)$m->id);
-                                $providers = $params->get('providers', []);
-                                if (!empty($providers)) {
-                                    $method['providers'] = array_values((array)$providers);
-                                }
-                            } catch (\Throwable $e) { /* ignore */ }
-                        }
-                        $out[] = $method;
-                    }
-                }
-                return $out;
-            };
-            $mapPayment = function($list){
-                $out = [];
-                if ($list) {
-                    foreach ($list as $m) {
-                        $method = [
-                            'id' => (int)$m->id,
-                            'title' => (string)$m->title,
-                            'disabled' => !empty($m->disabled),
-                            'plugin' => isset($m->plugin) ? (string)$m->plugin : '',
-                            'description' => isset($m->description) ? (string)$m->description : '',
-                            'icon' => ''
-                        ];
-                        // Get icon from media
-                        if (!empty($m->media)) {
-                            $iconPath = '';
-                            if ($m->media instanceof \Joomla\Registry\Registry) {
-                                $iconPath = $m->media->get('icon', '');
-                            } elseif (is_object($m->media) && isset($m->media->icon)) {
-                                $iconPath = $m->media->icon;
-                            } elseif (is_array($m->media) && isset($m->media['icon'])) {
-                                $iconPath = $m->media['icon'];
-                            }
-                            if ($iconPath) {
-                                // Remove #joomlaImage:// suffix
-                                if (($hashPos = strpos($iconPath, '#')) !== false) {
-                                    $iconPath = substr($iconPath, 0, $hashPos);
-                                }
-                                // Remove full URL prefix if present, keep only path
-                                if (preg_match('#^https?://[^/]+(/.*?)$#i', $iconPath, $match)) {
-                                    $iconPath = $match[1];
-                                }
-                                // Remove any leading slashes first, then add exactly one
-                                $iconPath = ltrim($iconPath, '/');
-                                if ($iconPath !== '') {
-                                    // $iconPath = '/' . $iconPath;
-                                }
-                                $method['icon'] = $iconPath;
-                            }
-                        }
-                        $out[] = $method;
-                    }
-                }
-                return $out;
-            };
-
-            $selectedShipping = (!empty($item->shipping) && !empty($item->shipping->id)) ? (int) $item->shipping->id : 0;
-            $selectedPayment  = (!empty($item->payment) && !empty($item->payment->id)) ? (int) $item->payment->id : 0;
-            $res = [
-                'shipping' => [
-                    'selected' => $selectedShipping,
-                    'methods'  => $mapShipping($item->shippingMethods ?? []),
-                ],
-                'payment' => [
-                    'selected' => $selectedPayment,
-                    'methods'  => $mapPayment($item->paymentMethods ?? []),
-                ],
-            ];
-            // If chat is not mapped to a user, mark telegram payments disabled
-            $hasMap = false;
-            try {
-                $db = Factory::getContainer()->get('DatabaseDriver');
-                $q = $db->getQuery(true)
-                    ->select('COUNT(*)')
-                    ->from($db->quoteName('#__radicalmart_telegram_users'))
-                    ->where($db->quoteName('chat_id') . ' = :chat')
-                    ->bind(':chat', $chat);
-                $hasMap = ((int) $db->setQuery($q, 0, 1)->loadResult()) > 0;
-            } catch (\Throwable $e) { $hasMap = false; }
-            if ((!$hasMap) && !empty($res['payment']['methods'])) {
-                foreach ($res['payment']['methods'] as &$pm) {
-                    if (!empty($pm['plugin']) && stripos((string)$pm['plugin'], 'telegram') !== false) {
-                        $pm['disabled'] = true;
-                    }
-                }
-                unset($pm);
-            }
-            // Stars method: optionally hide by plugin rules (categories/products)
-            try {
-                if (!empty($item->products) && !empty($res['payment']['methods'])) {
-                    $db = Factory::getContainer()->get('DatabaseDriver');
-                    $q = $db->getQuery(true)
-                        ->select($db->quoteName('params'))
-                        ->from($db->quoteName('#__extensions'))
-                        ->where($db->quoteName('type') . ' = ' . $db->quote('plugin'))
-                        ->where($db->quoteName('folder') . ' = ' . $db->quote('radicalmart_payment'))
-                        ->where($db->quoteName('element') . ' = ' . $db->quote('telegramstars'));
-                    $paramsJson = (string) $db->setQuery($q, 0, 1)->loadResult();
-                    $conf = [];
-                    if ($paramsJson !== '') { try { $conf = json_decode($paramsJson, true) ?: []; } catch (\Throwable $e) { $conf = []; } }
-                    $parseCsv = function($csv){ $out=[]; foreach (explode(',', (string)$csv) as $v){ $v=trim($v); if ($v!=='' && ctype_digit($v)) $out[]=(int)$v; } return array_values(array_unique($out)); };
-                    $allowedCats = $parseCsv($conf['allowed_categories'] ?? '');
-                    $excludedCats= $parseCsv($conf['excluded_categories'] ?? '');
-                    $allowedProd = $parseCsv($conf['allowed_products'] ?? '');
-                    $excludedProd= $parseCsv($conf['excluded_products'] ?? '');
-                    $productCats = function($prod){ $ids=[]; if (!empty($prod->category) && !empty($prod->category->id)) $ids[]=(int)$prod->category->id; if (!empty($prod->categories) && is_array($prod->categories)) { foreach ($prod->categories as $c){ if (is_array($c) && !empty($c['id']) && is_numeric($c['id'])) $ids[]=(int)$c['id']; if (is_object($c) && !empty($c->id)) $ids[]=(int)$c->id; } } if (!empty($prod->category_id) && is_numeric($prod->category_id)) $ids[]=(int)$prod->category_id; return array_values(array_unique($ids)); };
-                    $isAllowedByCats = function($products) use ($allowedCats,$excludedCats,$productCats){ if (empty($allowedCats)) return true; foreach ($products as $prod){ $ids=$productCats($prod); if (!empty($ids)){ $ok=false; foreach($ids as $cid){ if (in_array($cid,$allowedCats,true)) { $ok=true; break; } } foreach($ids as $cid){ if (in_array($cid,$excludedCats,true)) { $ok=false; break; } } if (!$ok) return false; } } return true; };
-                    $isAllowedByProd = function($products) use ($allowedProd,$excludedProd){ if (empty($allowedProd) && empty($excludedProd)) return true; foreach ($products as $prod){ $pid=(int)($prod->id ?? 0); if ($pid<=0) continue; if (!empty($allowedProd) && !in_array($pid,$allowedProd,true)) return false; if (!empty($excludedProd) && in_array($pid,$excludedProd,true)) return false; } return true; };
-                    $allowedAll = $isAllowedByCats($item->products) && $isAllowedByProd($item->products);
-                    if (!$allowedAll) {
-                        foreach ($res['payment']['methods'] as &$pm) {
-                            if (!empty($pm['plugin']) && stripos((string)$pm['plugin'], 'telegramstars') !== false) {
-                                $pm['disabled'] = true;
-                            }
-                        }
-                        unset($pm);
-                    }
-                }
-            } catch (\Throwable $e) { /* ignore */ }
-            echo new JsonResponse($res); $app->close();
+            $svc = new CheckoutService();
+            $res = $svc->getMethods($chat);
+            echo new JsonResponse($res);
+            $app->close();
         } catch (\Throwable $e) { echo new JsonResponse(null, $e->getMessage(), true); $app->close(); }
     }
 
@@ -1690,11 +1474,10 @@ class ApiController extends BaseController
         }
 
         try {
-            $sessionData = $app->getUserState('com_radicalmart.checkout.data', []);
-            $sessionData['payment']['id'] = $paymentId;
-            $app->setUserState('com_radicalmart.checkout.data', $sessionData);
-
-            echo new JsonResponse(['success' => true, 'payment_id' => $paymentId]);
+            $chat = $this->getChatId();
+            $svc = new CheckoutService();
+            $res = $svc->setPayment($chat, $paymentId);
+            echo new JsonResponse(['success' => true, 'payment_id' => $res['payment_id']]);
             $app->close();
         } catch (\Throwable $e) {
             echo new JsonResponse(null, $e->getMessage(), true);
