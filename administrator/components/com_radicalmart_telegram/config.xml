@@ -8,6 +8,10 @@
               <field name="logs_enabled" type="radio" default="0" label="COM_RADICALMART_TELEGRAM_LOGS_ENABLED_LABEL" description="COM_RADICALMART_TELEGRAM_LOGS_ENABLED_DESC">
                      <option value="1">JYES</option>
                      <option value="0">JNO</option>
+              </field>
+       </fieldset>
+
+       <fieldset name="catalog" label="COM_RADICALMART_TELEGRAM_FIELDSET_CATALOG">
               <field
                      name="catalog_categories_filter"
                      type="sql"
@@ -16,8 +20,6 @@
                      description="COM_RADICALMART_TELEGRAM_CATALOG_CATEGORIES_FILTER_DESC"
                      query="SELECT id AS value, title AS text FROM #__radicalmart_categories WHERE published = 1 ORDER BY lft"
               />
-
-       <fieldset name="catalog" label="COM_RADICALMART_TELEGRAM_FIELDSET_CATALOG">
               <field name="catalog_mode" type="list" default="metas" label="COM_RADICALMART_TELEGRAM_CATALOG_MODE_LABEL" description="COM_RADICALMART_TELEGRAM_CATALOG_MODE_DESC">
                      <option value="metas">Мета‑товары (только metas)</option>
                      <option value="products">Обычные товары</option>
