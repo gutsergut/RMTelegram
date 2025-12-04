@@ -18,7 +18,9 @@
                      multiple="true"
                      label="COM_RADICALMART_TELEGRAM_CATALOG_CATEGORIES_FILTER_LABEL"
                      description="COM_RADICALMART_TELEGRAM_CATALOG_CATEGORIES_FILTER_DESC"
-                     query="SELECT id AS value, title AS text FROM #__radicalmart_categories WHERE published = 1 ORDER BY lft"
+                     query="SELECT id AS value, title AS text FROM #__radicalmart_categories WHERE state = 1 ORDER BY lft"
+                     key_field="value"
+                     value_field="text"
               />
               <field name="catalog_mode" type="list" default="metas" label="COM_RADICALMART_TELEGRAM_CATALOG_MODE_LABEL" description="COM_RADICALMART_TELEGRAM_CATALOG_MODE_DESC">
                      <option value="metas">Мета‑товары (только metas)</option>
