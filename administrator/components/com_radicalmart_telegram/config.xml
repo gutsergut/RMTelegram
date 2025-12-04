@@ -5,7 +5,7 @@
               <field name="bot_token" type="text" label="COM_RADICALMART_TELEGRAM_BOT_TOKEN_LABEL" description="COM_RADICALMART_TELEGRAM_BOT_TOKEN_DESC" class="input-xlarge" />
               <field name="webhook_secret" type="text" label="COM_RADICALMART_TELEGRAM_WEBHOOK_SECRET_LABEL" description="COM_RADICALMART_TELEGRAM_WEBHOOK_SECRET_DESC" filter="string" class="input-large" />
               <field name="webapp_allowed_domains" type="textarea" label="COM_RADICALMART_TELEGRAM_WEBAPP_ALLOWED_DOMAINS_LABEL" description="COM_RADICALMART_TELEGRAM_WEBAPP_ALLOWED_DOMAINS_DESC" filter="raw" rows="3" default="https://cacao.land" />
-              <field name="logs_enabled" type="radio" default="1" label="COM_RADICALMART_TELEGRAM_LOGS_ENABLED_LABEL" description="COM_RADICALMART_TELEGRAM_LOGS_ENABLED_DESC">
+              <field name="logs_enabled" type="radio" default="0" label="COM_RADICALMART_TELEGRAM_LOGS_ENABLED_LABEL" description="COM_RADICALMART_TELEGRAM_LOGS_ENABLED_DESC">
                      <option value="1">JYES</option>
                      <option value="0">JNO</option>
               </field>

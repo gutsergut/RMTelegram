@@ -192,8 +192,9 @@ class CatalogService
         $hasPriceFilter = !empty($filters['price']) && is_array($filters['price']) && ((string)($filters['price']['from'] ?? '') !== '' || (string)($filters['price']['to'] ?? '') !== '');
         $hasFieldFilters = !empty($filters['fields']) && is_array($filters['fields']);
         $hasSort = !empty($filters['sort']) && (string)$filters['sort'] !== '';
+        $hasCategoryFilter = !empty($filters['categories']) && is_array($filters['categories']) && count(array_filter($filters['categories']))>0;
         // Автоматически включаем фильтр "в наличии" при любых фильтрах ИЛИ сортировке
-        $hasAnyFilter = $hasStockFilter || $hasPriceFilter || $hasFieldFilters || $hasSort;
+        $hasAnyFilter = $hasStockFilter || $hasPriceFilter || $hasFieldFilters || $hasSort || $hasCategoryFilter;
         if ($debug) { LogHelper::debug('listMetas: hasStockFilter=' . (int)$hasStockFilter . ' hasPriceFilter=' . (int)$hasPriceFilter . ' hasFieldFilters=' . (int)$hasFieldFilters . ' hasSort=' . (int)$hasSort . ' hasAnyFilter=' . (int)$hasAnyFilter . ' filters=' . json_encode($filters), 'radicalmart_telegram_catalog'); }
 
         $model = new MetasModel(); try { $model->populateState(); } catch (\Throwable $e) {}
@@ -226,6 +227,7 @@ class CatalogService
         }
         $model->setState('filter.fields',[]); $model->setState('filter.price',[]); $model->setState('filter.categories',[]); $model->setState('filter.manufacturers',[]); $model->setState('filter.badges',[]); $model->setState('filter.in_stock',[]); $model->setState('filter.search',''); $model->setState('filter.item_id',null); $model->setState('filter.item_id.include',true); $model->setState('products.metas',1);
         if (!empty($filters['sort'])) { $sort=(string)$filters['sort']; if($sort==='price_asc') $model->setState('products.ordering','p.ordering_price asc'); elseif($sort==='price_desc') $model->setState('products.ordering','p.ordering_price desc'); elseif($sort==='new') $model->setState('products.ordering','p.created desc'); }
+        if ($hasCategoryFilter) { $cats = array_map('intval', array_filter($filters['categories'])); if(!empty($cats)) { $model->setState('filter.categories', $cats); } }
         if ($debug) { LogHelper::debug('listMetas: states pre-query: published=' . json_encode($model->getState('filter.published')) . ' language=' . (int)$model->getState('filter.language') . ' products.metas=' . (int)$model->getState('products.metas') . ' ordering=' . (string)$model->getState('list.ordering'), 'radicalmart_telegram_catalog'); }
         $items = $model->getItems();
         if ($limit<=0) {
