@@ -11,10 +11,14 @@ use Joomla\CMS\Factory;
 use Joomla\CMS\Language\Text;
 use Joomla\CMS\MVC\View\HtmlView as BaseHtmlView;
 use Joomla\CMS\HTML\HTMLHelper;
+use Joomla\CMS\Component\ComponentHelper;
+use Joomla\Database\ParameterType;
 
 class HtmlView extends BaseHtmlView
 {
     protected $params;
+    protected array $categoryButtons = [];
+    protected bool $isMapMode = false;
 
     public function display($tpl = null)
     {
@@ -23,6 +27,30 @@ class HtmlView extends BaseHtmlView
         $lang->load('com_radicalmart_telegram', JPATH_SITE);
 
         $this->params = Factory::getApplication()->getParams('com_radicalmart_telegram');
+        $app = Factory::getApplication();
+        $input = $app->input;
+        $this->isMapMode = (string)$input->get('mode', 'list') === 'map';
+
+        // Build category buttons from selected ids in params
+        $selected = (array)$this->params->get('catalog_categories_filter', []);
+        $selected = array_values(array_filter(array_map('intval', $selected)));
+        if (!empty($selected)) {
+            $db = Factory::getContainer()->get('DatabaseDriver');
+            $query = $db->getQuery(true)
+                ->select($db->quoteName(['id', 'title']))
+                ->from($db->quoteName('#__radicalmart_categories'))
+                ->where($db->quoteName('published') . ' = 1')
+                ->where($db->quoteName('id') . ' IN (' . implode(',', array_fill(0, count($selected), '?')) . ')');
+            foreach ($selected as $i => $id) {
+                $query->bind($i + 1, $id, ParameterType::INTEGER);
+            }
+            $db->setQuery($query);
+            $rows = (array)$db->loadAssocList();
+            $this->categoryButtons = array_map(fn($r) => ['id' => (int)$r['id'], 'title' => (string)$r['title']], $rows);
+        }
+
+        $this->assign('categoryButtons', $this->categoryButtons);
+        $this->assign('isMapMode', $this->isMapMode);
 
         $app = Factory::getApplication();
 

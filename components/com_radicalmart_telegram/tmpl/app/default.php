@@ -95,10 +95,31 @@ $chatId = $tgUser['chat_id'] ?? 0;
             #app-bottom-nav .uk-icon > svg { width: 18px; height: 18px; }
             /* Cart badge */
             #cart-badge { position: absolute; top: 2px; right: 6px; background: #f0506e; color: white; border-radius: 10px; padding: 2px 6px; font-size: 10px; font-weight: bold; min-width: 18px; text-align: center; }
+            /* Category filter buttons bar */
+            #catalog-category-bar { position: sticky; top: 0; z-index: 10001; background: var(--tg-theme-bg-color, #fff); padding: 8px; border-bottom: 1px solid rgba(0,0,0,0.06); }
+            .catalog-category-btn { margin: 4px 6px 4px 0; }
         </style>
         <script>
             // Переводы для внешнего JS
             window.RMT_LANG = {
+        <?php
+        // Render category buttons only in list mode
+        $isMapMode = isset($this->isMapMode) ? (bool)$this->isMapMode : (isset($_GET['mode']) && $_GET['mode'] === 'map');
+        $categoryButtons = is_array($this->categoryButtons ?? null) ? $this->categoryButtons : [];
+        if (!$isMapMode && !empty($categoryButtons)):
+        ?>
+        <div id="catalog-category-bar" class="uk-container">
+            <?php foreach ($categoryButtons as $btn):
+                $cid = (int)($btn['id'] ?? 0);
+                $ctitle = (string)($btn['title'] ?? '');
+                $url = Uri::current() . '?option=com_radicalmart_telegram&view=app&category_id=' . $cid;
+            ?>
+            <a class="uk-button uk-button-default catalog-category-btn" href="<?php echo htmlspecialchars($url, ENT_QUOTES, 'UTF-8'); ?>">
+                <?php echo htmlspecialchars($ctitle, ENT_QUOTES, 'UTF-8'); ?>
+            </a>
+            <?php endforeach; ?>
+        </div>
+        <?php endif; ?>
                 COM_RADICALMART_TELEGRAM_PROFILE_NO_USER: '<?php echo Text::_('COM_RADICALMART_TELEGRAM_PROFILE_NO_USER'); ?>',
                 COM_RADICALMART_TELEGRAM_EMAIL: '<?php echo Text::_('COM_RADICALMART_TELEGRAM_EMAIL'); ?>',
                 COM_RADICALMART_TELEGRAM_PHONE: '<?php echo Text::_('COM_RADICALMART_TELEGRAM_PHONE'); ?>',
