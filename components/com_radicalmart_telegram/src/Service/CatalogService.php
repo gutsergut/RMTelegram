@@ -8,6 +8,7 @@ namespace Joomla\Component\RadicalMartTelegram\Site\Service;
 \defined('_JEXEC') or die;
 
 use Joomla\CMS\Factory;
+use Joomla\Component\RadicalMartTelegram\Site\Helper\LogHelper;
 use Joomla\CMS\Log\Log;
 use Joomla\Component\RadicalMart\Site\Model\ProductsModel;
 use Joomla\Component\RadicalMart\Site\Model\MetasModel;
@@ -98,7 +99,7 @@ class CatalogService
             ];
         } catch (\Throwable $e) {
             // Логируем ошибку, но не ломаем работу
-            Log::add('CatalogService::getCashbackConfig error: ' . $e->getMessage(), Log::WARNING, 'com_radicalmart.telegram');
+            LogHelper::warning('CatalogService::getCashbackConfig error: ' . $e->getMessage());
         }
 
         return self::$cashbackConfig;
@@ -124,7 +125,7 @@ class CatalogService
                 return PointsHelper::calculatePoints($price, $config['formula'], $config['currency']);
             }
         } catch (\Throwable $e) {
-            Log::add('CatalogService::calculateCashback error: ' . $e->getMessage(), Log::WARNING, 'com_radicalmart.telegram');
+            LogHelper::warning('CatalogService::calculateCashback error: ' . $e->getMessage());
         }
 
         return 0;
@@ -138,11 +139,7 @@ class CatalogService
         $debug = false;
         try { $debug = (bool) ($app->input->getInt('debug_catalog', 0) === 1 || (int)$app->getParams('com_radicalmart_telegram')->get('debug_catalog', 0) === 1); } catch (\Throwable $e) {}
         if ($debug) {
-            static $loggerReady = false;
-            if (!$loggerReady) {
-                Log::addLogger(['text_file' => 'com_radicalmart.telegram.catalog.php','extension'=>'com_radicalmart_telegram'], Log::ALL, ['radicalmart_telegram_catalog']);
-                $loggerReady = true;
-            }
+
         }
         $mode = 'metas';
         try { $mode = (string) $app->getParams('com_radicalmart_telegram')->get('catalog_mode', 'metas'); } catch (\Throwable $e) {}
@@ -151,7 +148,7 @@ class CatalogService
         $hasStockFilter = !empty($filters['in_stock']);
         $autoUseMetas = !$hasFieldFilters && !$hasPriceFilter && !$hasStockFilter;
         if ($debug) {
-            Log::add('listProducts: page=' . $page . ' limit=' . $limit . ' mode=' . $mode . ' hasFieldFilters=' . (int)$hasFieldFilters . ' hasPriceFilter=' . (int)$hasPriceFilter . ' hasStockFilter=' . (int)$hasStockFilter . ' autoUseMetas=' . (int)$autoUseMetas, Log::DEBUG, 'radicalmart_telegram_catalog');
+            LogHelper::debug('listProducts: page=' . $page . ' limit=' . $limit . ' mode=' . $mode . ' hasFieldFilters=' . (int)$hasFieldFilters . ' hasPriceFilter=' . (int)$hasPriceFilter . ' hasStockFilter=' . (int)$hasStockFilter . ' autoUseMetas=' . (int)$autoUseMetas, 'radicalmart_telegram_catalog');
         }
         if ($mode === 'metas' || ($mode === 'auto' && $autoUseMetas)) {
             return $this->listMetas($page, $limit, $filters);
@@ -179,7 +176,7 @@ class CatalogService
             $category=''; if (!empty($it->category) && is_object($it->category) && !empty($it->category->title)) $category=(string)$it->category->title;
             $out[]=['id'=>(int)($it->id??0),'title'=>(string)($it->title??''),'price_final'=>$priceFinal,'image'=>$image,'category'=>$category];
         }
-        if ($debug) { Log::add('[catalog] products_count=' . count($out), Log::DEBUG, 'com_radicalmart.telegram'); }
+        if ($debug) { LogHelper::debug('[catalog] products_count=' . count($out)); }
         return $out;
     }
 
@@ -188,7 +185,7 @@ class CatalogService
         $page = max(1,$page); $limit=(int)$limit;
         $app = Factory::getApplication();
         $debug=false; try { $debug = (bool) ($app->input->getInt('debug_catalog',0)===1 || (int)$app->getParams('com_radicalmart_telegram')->get('debug_catalog',0)===1); } catch (\Throwable $e) {}
-        if ($debug) { static $loggerReady=false; if(!$loggerReady){ Log::addLogger(['text_file'=>'com_radicalmart.telegram.catalog.php','extension'=>'com_radicalmart_telegram'], Log::ALL,['radicalmart_telegram_catalog']); $loggerReady=true; } }
+        if ($debug) {  }
 
         // Определяем фильтры из переданных параметров
         $hasStockFilter = !empty($filters['in_stock']);
@@ -197,7 +194,7 @@ class CatalogService
         $hasSort = !empty($filters['sort']) && (string)$filters['sort'] !== '';
         // Автоматически включаем фильтр "в наличии" при любых фильтрах ИЛИ сортировке
         $hasAnyFilter = $hasStockFilter || $hasPriceFilter || $hasFieldFilters || $hasSort;
-        if ($debug) { Log::add('listMetas: hasStockFilter=' . (int)$hasStockFilter . ' hasPriceFilter=' . (int)$hasPriceFilter . ' hasFieldFilters=' . (int)$hasFieldFilters . ' hasSort=' . (int)$hasSort . ' hasAnyFilter=' . (int)$hasAnyFilter . ' filters=' . json_encode($filters), Log::DEBUG,'radicalmart_telegram_catalog'); }
+        if ($debug) { LogHelper::debug('listMetas: hasStockFilter=' . (int)$hasStockFilter . ' hasPriceFilter=' . (int)$hasPriceFilter . ' hasFieldFilters=' . (int)$hasFieldFilters . ' hasSort=' . (int)$hasSort . ' hasAnyFilter=' . (int)$hasAnyFilter . ' filters=' . json_encode($filters), 'radicalmart_telegram_catalog'); }
 
         $model = new MetasModel(); try { $model->populateState(); } catch (\Throwable $e) {}
         if ($limit<=0) { $model->setState('list.limit',0); $model->setState('list.start',0); } else { $model->setState('list.limit',$limit); $model->setState('list.start',($page-1)*$limit); }
@@ -229,10 +226,10 @@ class CatalogService
         }
         $model->setState('filter.fields',[]); $model->setState('filter.price',[]); $model->setState('filter.categories',[]); $model->setState('filter.manufacturers',[]); $model->setState('filter.badges',[]); $model->setState('filter.in_stock',[]); $model->setState('filter.search',''); $model->setState('filter.item_id',null); $model->setState('filter.item_id.include',true); $model->setState('products.metas',1);
         if (!empty($filters['sort'])) { $sort=(string)$filters['sort']; if($sort==='price_asc') $model->setState('products.ordering','p.ordering_price asc'); elseif($sort==='price_desc') $model->setState('products.ordering','p.ordering_price desc'); elseif($sort==='new') $model->setState('products.ordering','p.created desc'); }
-        if ($debug) { Log::add('listMetas: states pre-query: published=' . json_encode($model->getState('filter.published')) . ' language=' . (int)$model->getState('filter.language') . ' products.metas=' . (int)$model->getState('products.metas') . ' ordering=' . (string)$model->getState('list.ordering'), Log::DEBUG,'radicalmart_telegram_catalog'); }
+        if ($debug) { LogHelper::debug('listMetas: states pre-query: published=' . json_encode($model->getState('filter.published')) . ' language=' . (int)$model->getState('filter.language') . ' products.metas=' . (int)$model->getState('products.metas') . ' ordering=' . (string)$model->getState('list.ordering'), 'radicalmart_telegram_catalog'); }
         $items = $model->getItems();
         if ($limit<=0) {
-            try { $dbAll=Factory::getContainer()->get('DatabaseDriver'); $qAll=$dbAll->getQuery(true)->select(['m.id','m.title','m.alias','m.type','m.category','m.products','m.prices','m.media','m.language'])->from($dbAll->quoteName('#__radicalmart_metas','m'))->where($dbAll->quoteName('m.state').' = 1')->order($dbAll->escape('m.ordering').' ASC'); $rowsAll=$dbAll->setQuery($qAll)->loadObjectList()?:[]; if(is_array($items)&&count($rowsAll)>count($items)) { $items=$rowsAll; if($debug) Log::add('listMetas: expanded to full set count=' . count($items),Log::DEBUG,'radicalmart_telegram_catalog'); } elseif(!is_array($items)||empty($items)) { $items=$rowsAll; if($debug) Log::add('listMetas: model empty full SQL count=' . count($items),Log::DEBUG,'radicalmart_telegram_catalog'); } } catch (\Throwable $e) { if($debug) Log::add('listMetas: full SQL fetch error=' . $e->getMessage(),Log::WARNING,'radicalmart_telegram_catalog'); }
+            try { $dbAll=Factory::getContainer()->get('DatabaseDriver'); $qAll=$dbAll->getQuery(true)->select(['m.id','m.title','m.alias','m.type','m.category','m.products','m.prices','m.media','m.language'])->from($dbAll->quoteName('#__radicalmart_metas','m'))->where($dbAll->quoteName('m.state').' = 1')->order($dbAll->escape('m.ordering').' ASC'); $rowsAll=$dbAll->setQuery($qAll)->loadObjectList()?:[]; if(is_array($items)&&count($rowsAll)>count($items)) { $items=$rowsAll; if($debug) LogHelper::debug('listMetas: expanded to full set count=' . count($items), 'radicalmart_telegram_catalog'); } elseif(!is_array($items)||empty($items)) { $items=$rowsAll; if($debug) LogHelper::debug('listMetas: model empty full SQL count=' . count($items), 'radicalmart_telegram_catalog'); } } catch (\Throwable $e) { if($debug) LogHelper::warning('listMetas: full SQL fetch error=' . $e->getMessage(), 'radicalmart_telegram_catalog'); }
         }
         if (!is_array($items) || empty($items)) return [];
         $allIds=[]; $metaProductsMap=[]; $addedByMetaRef=[]; $dbProbe=null; try { $dbProbe=Factory::getContainer()->get('DatabaseDriver'); } catch (\Throwable $e) {}
@@ -249,7 +246,7 @@ class CatalogService
             // Удалён probe по p.meta_id: в RadicalMart связка хранится только в поле products мета
             $metaProductsMap[(int)$m->id]=$children;
         }
-        if ($debug) { $sampleMap=[]; $d=0; foreach($metaProductsMap as $mid=>$ids){ $sampleMap[$mid]=array_slice($ids,0,15); $d++; if($d>=5) break; } Log::add('listMetas: metaProductsMap metas=' . count($metaProductsMap) . ' sample=' . json_encode($sampleMap) . (empty($addedByMetaRef)?'':' added='.json_encode($addedByMetaRef)), Log::DEBUG,'radicalmart_telegram_catalog'); }
+        if ($debug) { $sampleMap=[]; $d=0; foreach($metaProductsMap as $mid=>$ids){ $sampleMap[$mid]=array_slice($ids,0,15); $d++; if($d>=5) break; } LogHelper::debug('listMetas: metaProductsMap metas=' . count($metaProductsMap) . ' sample=' . json_encode($sampleMap) . (empty($addedByMetaRef)?'':' added='.json_encode($addedByMetaRef)), 'radicalmart_telegram_catalog'); }
         $childrenById=[];
         if(!empty($allIds)){
             // Используем нативный ProductsModel для получения вариантов (чтобы цены и поля считались через ядро)
@@ -280,18 +277,42 @@ class CatalogService
 
                 $rows = $productsModel->getItems();
 
+                // Подгрузка координат (maps) напрямую из БД, т.к. поле может быть скрыто в display_*
+                $coordsById = [];
+                if(!empty($rows)){
+                    try {
+                        $db = Factory::getContainer()->get('DatabaseDriver');
+                        $rowIds = array_map(fn($r)=>(int)$r->id, $rows);
+                        $q = $db->getQuery(true)
+                            ->select([$db->quoteName('id'), 'JSON_UNQUOTE(JSON_EXTRACT('.$db->quoteName('fields').', \'$.maps\')) AS maps_raw'])
+                            ->from($db->quoteName('#__radicalmart_products'))
+                            ->whereIn($db->quoteName('id'), $rowIds);
+                        $coordRows = $db->setQuery($q)->loadObjectList('id');
+                        foreach($coordRows as $cid => $crow){
+                            if(!empty($crow->maps_raw) && $crow->maps_raw !== 'null'){
+                                $coordsById[(int)$cid] = $crow->maps_raw;
+                            }
+                        }
+                        if($debug) LogHelper::debug('listMetas: loaded coords for '.count($coordsById).' products from DB', 'radicalmart_telegram_catalog');
+                    } catch(\Throwable $e){
+                        if($debug) LogHelper::warning('listMetas: coords load error='.$e->getMessage(), 'radicalmart_telegram_catalog');
+                    }
+                }
+
                 foreach($rows as $r){
-                    $childrenById[(int)$r->id]=$this->mapProductForMeta($r);
+                    // Передаём координаты как дополнительный параметр
+                    $rawCoords = $coordsById[(int)$r->id] ?? null;
+                    $childrenById[(int)$r->id]=$this->mapProductForMeta($r, $rawCoords);
                 }
 
                 if($debug){
                     $requested=array_keys($allIds);
                     $loaded=array_keys($childrenById);
                     $missing=array_diff($requested,$loaded);
-                    Log::add('listMetas: ProductsModel children loaded=' . count($childrenById) . ' requested=' . count($requested) . ' missing=' . count($missing), Log::DEBUG,'radicalmart_telegram_catalog');
+                    LogHelper::debug('listMetas: ProductsModel children loaded=' . count($childrenById) . ' requested=' . count($requested) . ' missing=' . count($missing), 'radicalmart_telegram_catalog');
                 }
             } catch(\Throwable $e){
-                if($debug){ Log::add('listMetas: ProductsModel error=' . $e->getMessage(), Log::WARNING,'radicalmart_telegram_catalog'); }
+                if($debug){ LogHelper::warning('listMetas: ProductsModel error=' . $e->getMessage(), 'radicalmart_telegram_catalog'); }
             }
         }
         // Дополнительный анализ мета без детей при debug
@@ -300,7 +321,7 @@ class CatalogService
                     if($rawMeta){ $lenProd=is_string($rawMeta->products)? strlen($rawMeta->products): (is_array($rawMeta->products)? count($rawMeta->products):0); $emptyMetaInfo[]=['id'=>$mid,'products_len'=>$lenProd,'lang'=>(string)($rawMeta->language??''),'type'=>(string)($rawMeta->type??'')]; }
                     if(count($emptyMetaInfo)>=20) break; }
             }
-            if($countEmpty>0){ Log::add('listMetas: metas with EMPTY children count=' . $countEmpty . ' sample=' . json_encode($emptyMetaInfo, JSON_UNESCAPED_UNICODE), Log::DEBUG,'radicalmart_telegram_catalog'); }
+            if($countEmpty>0){ LogHelper::debug('listMetas: metas with EMPTY children count=' . $countEmpty . ' sample=' . json_encode($emptyMetaInfo, JSON_UNESCAPED_UNICODE), 'radicalmart_telegram_catalog'); }
         }
         $out=[]; $metasWithout=0; $metasWith=0; $childrenTotal=0; $skippedByStock=0;
         foreach($items as $m){ $image=''; if(!empty($m->image)&&is_string($m->image)) $image=$m->image; elseif(!empty($m->media)){ try { $media=is_string($m->media)? new \Joomla\Registry\Registry($m->media): new \Joomla\Registry\Registry((array)$m->media); $img=(string)$media->get('image',''); if($img!=='') $image=$img; } catch(\Throwable $e){} } $category=''; if(!empty($m->category)&&is_object($m->category)&&!empty($m->category->title)) $category=(string)$m->category->title; $priceMin=''; $priceMax=''; if(!empty($m->price)&&is_array($m->price)){ $priceMin=(string)($m->price['min_string']??($m->price['min']['final_string']??'')); $priceMax=(string)($m->price['max_string']??($m->price['max']['final_string']??'')); }
@@ -308,7 +329,7 @@ class CatalogService
             // Debug: не добавляем missing-товары в отображение, только логируем
             if($debug){
                 $missing=[]; foreach($metaProductsMap[(int)$m->id] as $pid){ if(empty($childrenById[$pid])) $missing[]=$pid; }
-                if(!empty($missing)) Log::add('listMetas: meta='.(int)$m->id.' missing_children='.json_encode($missing), Log::DEBUG,'radicalmart_telegram_catalog');
+                if(!empty($missing)) LogHelper::debug('listMetas: meta='.(int)$m->id.' missing_children='.json_encode($missing), 'radicalmart_telegram_catalog');
             }
 
             // Фильтрация по наличию при любых активных фильтрах
@@ -316,14 +337,14 @@ class CatalogService
                 // Если нет детей вообще — пропускаем
                 if(empty($children)){
                     $skippedByStock++;
-                    if($debug) Log::add('listMetas: skipped meta='.(int)$m->id.' (no children at all)', Log::DEBUG,'radicalmart_telegram_catalog');
+                    if($debug) LogHelper::debug('listMetas: skipped meta='.(int)$m->id.' (no children at all)', 'radicalmart_telegram_catalog');
                     continue;
                 }
                 // ВСЕГДА фильтруем по наличию при любом фильтре (убираем недоступные из списка)
                 $children = array_values(array_filter($children, function($ch){ return !empty($ch['in_stock']); }));
                 if(empty($children)){
                     $skippedByStock++;
-                    if($debug) Log::add('listMetas: skipped meta='.(int)$m->id.' (no variants in stock after filter)', Log::DEBUG,'radicalmart_telegram_catalog');
+                    if($debug) LogHelper::debug('listMetas: skipped meta='.(int)$m->id.' (no variants in stock after filter)', 'radicalmart_telegram_catalog');
                     continue; // Пропускаем этот мета-товар
                 }
                 // Примечание: фильтры цены и полей уже применены в ProductsModel, поэтому $children содержит только подходящие варианты
@@ -394,16 +415,16 @@ class CatalogService
             }
             $out = array_merge($inStock, $outOfStock);
             if ($debug) {
-                Log::add('listMetas: stock sort applied - in_stock=' . count($inStock) . ' out_of_stock=' . count($outOfStock), Log::DEBUG, 'radicalmart_telegram_catalog');
+                LogHelper::debug('listMetas: stock sort applied - in_stock=' . count($inStock) . ' out_of_stock=' . count($outOfStock), 'radicalmart_telegram_catalog');
             }
         }
         // Для 'new' сортировка уже применена к MetasModel, для 'default' тоже
 
-        if($debug){ Log::add('listMetas: metas_count=' . count($out) . ' with_children=' . $metasWith . ' without_children=' . $metasWithout . ' children_total=' . $childrenTotal . ' skipped_by_stock=' . $skippedByStock, Log::DEBUG,'radicalmart_telegram_catalog'); Log::add('[catalog] metas_count=' . count($out) . ' with_children=' . $metasWith . ' without_children=' . $metasWithout, Log::DEBUG,'com_radicalmart.telegram'); }
+        if($debug){ LogHelper::debug('listMetas: metas_count=' . count($out) . ' with_children=' . $metasWith . ' without_children=' . $metasWithout . ' children_total=' . $childrenTotal . ' skipped_by_stock=' . $skippedByStock, 'radicalmart_telegram_catalog'); LogHelper::debug('[catalog] metas_count=' . count($out) . ' with_children=' . $metasWith . ' without_children=' . $metasWithout, 'com_radicalmart.telegram'); }
         return $out;
     }
 
-    private function mapProductForMeta(object $it): array
+    private function mapProductForMeta(object $it, ?string $rawCoordsFromDb = null): array
     {
         $priceFinal=''; $priceOriginal=''; $priceBase=''; $discountPercent=''; $discountValue=''; $discountString=''; $discountEnable=false;
 
@@ -417,7 +438,7 @@ class CatalogService
                     elseif(is_array($it->price)) $pricePreview = json_encode($it->price, JSON_UNESCAPED_UNICODE|JSON_UNESCAPED_SLASHES);
                 }
             } catch(\Throwable $e){}
-            Log::add('mapProductForMeta PRICE DEBUG: id='.(int)$it->id.' priceType='.$priceType.' pricePreview='.$pricePreview, Log::DEBUG,'com_radicalmart.telegram');
+            LogHelper::debug('mapProductForMeta PRICE DEBUG: id='.(int)$it->id.' priceType='.$priceType.' pricePreview='.$pricePreview, 'com_radicalmart.telegram');
         }
 
         // Цена может быть массивом (уже подготовленным ProductsModel) или объектом/Registry
@@ -444,15 +465,21 @@ class CatalogService
         $image=''; if(!empty($it->image)&&is_string($it->image)) $image=$it->image; $category=''; if(!empty($it->category)&&is_object($it->category)&&!empty($it->category->title)) $category=(string)$it->category->title;
         static $params=null; if($params===null){ try { $params=Factory::getApplication()->getParams('com_radicalmart_telegram'); } catch(\Throwable $e){ $params=new \Joomla\Registry\Registry(); } }
         $extendedEnabled=(int)$params->get('cardview_enabled',0)===1; static $resolved=null; if($resolved===null){
-            $resolved=['badge'=>[],'subtitle'=>[],'weight'=>'','weight_id'=>0];
+            $resolved=['badge'=>[],'subtitle'=>[],'weight'=>'','weight_id'=>0,'map_coords'=>'','map_coords_id'=>0,'map_country'=>'','map_country_id'=>0];
             $badgeRaw=$params->get('card_badge_fields',[]); if(!is_array($badgeRaw)) $badgeRaw=$badgeRaw!==''? explode(',',(string)$badgeRaw):[];
             $subtitleRaw=$params->get('card_subtitle_fields',[]); if(!is_array($subtitleRaw)) $subtitleRaw=$subtitleRaw!==''? explode(',',(string)$subtitleRaw):[];
             $weightRaw=$params->get('card_variant_weight_field',''); if(is_array($weightRaw)) $weightRaw=reset($weightRaw);
+            // Поля карты для отображения товаров на карте
+            $mapCoordsRaw=$params->get('map_coordinates_field',''); if(is_array($mapCoordsRaw)) $mapCoordsRaw=reset($mapCoordsRaw);
+            $mapCountryRaw=$params->get('map_country_field',''); if(isArray($mapCountryRaw)) $mapCountryRaw=reset($mapCountryRaw);
             $specialTokens=['in_stock','discount'];
             $idsNeeded=[];
             foreach($badgeRaw as $v){ if($v===''||in_array($v,$specialTokens,true)) continue; if(ctype_digit((string)$v)) $idsNeeded[]=(int)$v; }
             foreach($subtitleRaw as $v){ if($v===''||in_array($v,$specialTokens,true)) continue; if(ctype_digit((string)$v)) $idsNeeded[]=(int)$v; }
             if($weightRaw!==''&&!in_array($weightRaw,$specialTokens,true) && ctype_digit((string)$weightRaw)) $idsNeeded[]=(int)$weightRaw;
+            // Добавляем ID полей карты
+            if($mapCoordsRaw!=='' && ctype_digit((string)$mapCoordsRaw)) $idsNeeded[]=(int)$mapCoordsRaw;
+            if($mapCountryRaw!=='' && ctype_digit((string)$mapCountryRaw)) $idsNeeded[]=(int)$mapCountryRaw;
             $idsNeeded=array_values(array_unique(array_filter($idsNeeded)));
             $idToAlias=[]; if($idsNeeded){ try { $db=Factory::getContainer()->get('DatabaseDriver'); $q=$db->getQuery(true)->select([$db->quoteName('id'),$db->quoteName('alias')])->from($db->quoteName('#__radicalmart_fields'))->where($db->quoteName('id').' IN ('.implode(',',array_map('intval',$idsNeeded)).')'); $rows=$db->setQuery($q)->loadAssocList(); foreach($rows as $r){ $idToAlias[(int)$r['id']]=trim((string)$r['alias']); } } catch(\Throwable $e){} }
             foreach($badgeRaw as $v){ if(in_array($v,$specialTokens,true)){ $resolved['badge'][]=$v; continue; } if(ctype_digit((string)$v)){ $id=(int)$v; if(isset($idToAlias[$id])&&$idToAlias[$id] !== '') $resolved['badge'][]=$idToAlias[$id]; } else { $resolved['badge'][]=trim((string)$v); } }
@@ -465,12 +492,35 @@ class CatalogService
                     $resolved['weight']=trim((string)$weightRaw);
                 }
             } elseif(in_array($weightRaw,$specialTokens,true)) { $resolved['weight']=$weightRaw; }
+            // Разрешение полей карты (координаты)
+            if($mapCoordsRaw!==''){
+                if(ctype_digit((string)$mapCoordsRaw)){
+                    $id=(int)$mapCoordsRaw; $resolved['map_coords_id']=$id;
+                    if(isset($idToAlias[$id])&&$idToAlias[$id] !== '') $resolved['map_coords']=$idToAlias[$id];
+                } else {
+                    $resolved['map_coords']=trim((string)$mapCoordsRaw);
+                }
+            }
+            // Разрешение полей карты (страна)
+            if($mapCountryRaw!==''){
+                if(ctype_digit((string)$mapCountryRaw)){
+                    $id=(int)$mapCountryRaw; $resolved['map_country_id']=$id;
+                    if(isset($idToAlias[$id])&&$idToAlias[$id] !== '') $resolved['map_country']=$idToAlias[$id];
+                } else {
+                    $resolved['map_country']=trim((string)$mapCountryRaw);
+                }
+            }
             // Очистка пустых значений
             $resolved['badge']=array_values(array_filter($resolved['badge'], fn($x)=>$x!==''));
             $resolved['subtitle']=array_values(array_filter($resolved['subtitle'], fn($x)=>$x!==''));
             if(!is_string($resolved['weight'])) $resolved['weight']='';
+            if(!is_string($resolved['map_coords'])) $resolved['map_coords']='';
+            if(!is_string($resolved['map_country'])) $resolved['map_country']='';
         }
         $weightFieldAlias=$resolved['weight']; $weightFieldId=(int)($resolved['weight_id']??0); $badgeAliases=$resolved['badge']; $subtitleAliases=$resolved['subtitle']; $weightVal=''; $selectedValues=[];
+        // Алиасы полей карты
+        $mapCoordsAlias=$resolved['map_coords']; $mapCoordsId=(int)($resolved['map_coords_id']??0);
+        $mapCountryAlias=$resolved['map_country']; $mapCountryId=(int)($resolved['map_country_id']??0);
         // Принудительный fallback если алиас пуст, но в настройках задано строковое поле
         if($weightFieldAlias===''){
             try { $rawCfg = (string)$params->get('card_variant_weight_field',''); if($rawCfg!=='') $weightFieldAlias=$rawCfg; } catch(\Throwable $e){}
@@ -516,11 +566,11 @@ class CatalogService
         if($debugLocal){
             $rawPreview='';
             try { $rawPreview=json_encode(array_slice($fields,0,8,true),JSON_UNESCAPED_UNICODE|JSON_UNESCAPED_SLASHES); } catch(\Throwable $e){}
-            Log::add('mapProductForMeta: id='.(int)$it->id.' weightAlias='.$weightFieldAlias.' weightId='.$weightFieldId.' hasKeys='.implode(',',array_keys($fields)).' resolvedWeight='.$weightVal.' fieldsPreview='.$rawPreview, Log::DEBUG,'radicalmart_telegram_catalog');
+            LogHelper::debug('mapProductForMeta: id='.(int)$it->id.' weightAlias='.$weightFieldAlias.' weightId='.$weightFieldId.' hasKeys='.implode(',',array_keys($fields)).' resolvedWeight='.$weightVal.' fieldsPreview='.$rawPreview, 'radicalmart_telegram_catalog');
             if(($weightFieldAlias||$weightFieldId>0) && $weightVal===''){
                 // Дополнительная детализация по каждому первому уровню если значение не найдено
                 $i=0; foreach($fields as $k=>$v){ if($i>=5) break; $i++; $det=''; if(is_array($v)||is_object($v)){ $arr=is_object($v)?(array)$v:$v; $aliasIn=isset($arr['alias'])?$arr['alias']:''; $idIn=isset($arr['id'])?$arr['id']:''; $valIn=$arr['value']??''; $dispIn=$arr['display']??''; $det='struct alias='.$aliasIn.' id='.$idIn.' value='.((is_scalar($valIn)?$valIn:'' )).' display='.((is_scalar($dispIn)?$dispIn:'')); } else { $det='scalar='.((is_scalar($v)?$v:'')); }
-                    Log::add('mapProductForMeta: fieldScan key='.$k.' '.$det, Log::DEBUG,'radicalmart_telegram_catalog');
+                    LogHelper::debug('mapProductForMeta: fieldScan key='.$k.' '.$det, 'radicalmart_telegram_catalog');
                 }
             }
         }
@@ -572,14 +622,76 @@ class CatalogService
         if($fieldWeightDisplay!=='' && is_numeric($fieldWeightDisplay)){
             $grams=(int)$fieldWeightDisplay;
             if($grams>=1000){ $kg=$grams/1000; $fieldWeightDisplay=($kg==(int)$kg)? ((int)$kg).'кг': $kg.'кг'; }
-            else { $fieldWeightDisplay=$grams.'г'; }
+            else { $fieldWeightDisplay=$grams+'г'; }
         }
         $out['field_weight']=$fieldWeightDisplay;
+
+        // Извлечение полей карты (координаты) — возвращаем объект {lat, lng}
+        $mapCoordsVal=null;
+
+        // ПРИОРИТЕТ 1: Координаты напрямую из БД (минуя display_* фильтр RadicalMart)
+        if($rawCoordsFromDb !== null && $rawCoordsFromDb !== ''){
+            $mapCoordsVal = $this->extractMapCoords($rawCoordsFromDb);
+        }
+
+        // ПРИОРИТЕТ 2: Из fields модели (если display_* включён)
+        if($mapCoordsVal === null && $mapCoordsAlias!==''){
+            if(isset($fields[$mapCoordsAlias])){ $mcf=$fields[$mapCoordsAlias]; $mapCoordsVal=$this->extractMapCoords($mcf); }
+            if($mapCoordsVal===null && $mapCoordsId>0 && isset($fields[$mapCoordsId])){ $mcf=$fields[$mapCoordsId]; $mapCoordsVal=$this->extractMapCoords($mcf); }
+            // Fallback поиск по alias
+            if($mapCoordsVal===null){
+                foreach($fields as $key=>$raw){
+                    if(is_array($raw)||is_object($raw)){
+                        $arr=is_object($raw)? (array)$raw : $raw;
+                        if($mapCoordsAlias!=='' && isset($arr['alias']) && $arr['alias']===$mapCoordsAlias){ $mapCoordsVal=$this->extractMapCoords($arr); break; }
+                        if($mapCoordsId>0 && isset($arr['id']) && (int)$arr['id']===$mapCoordsId){ $mapCoordsVal=$this->extractMapCoords($arr); break; }
+                    }
+                }
+            }
+        }
+        $out['map_coords']=$mapCoordsVal;
+
+        // Извлечение полей карты (страна)
+        $mapCountryVal='';
+        $mapCountryAliasVal='';
+        if($mapCountryAlias!==''){
+            if(isset($fields[$mapCountryAlias])){
+                $mcof=$fields[$mapCountryAlias];
+                $mapCountryVal=$this->extractFieldDisplay($mcof);
+                $mapCountryAliasVal=$this->extractFieldValue($mcof);
+            }
+            if($mapCountryVal==='' && $mapCountryId>0 && isset($fields[$mapCountryId])){
+                $mcof=$fields[$mapCountryId];
+                $mapCountryVal=$this->extractFieldDisplay($mcof);
+                $mapCountryAliasVal=$this->extractFieldValue($mcof);
+            }
+            // Fallback поиск по alias
+            if($mapCountryVal===''){
+                foreach($fields as $key=>$raw){
+                    if(is_array($raw)||is_object($raw)){
+                        $arr=is_object($raw)? (array)$raw : $raw;
+                        if($mapCountryAlias!=='' && isset($arr['alias']) && $arr['alias']===$mapCountryAlias){
+                            $mapCountryVal=$this->extractFieldDisplay($arr);
+                            $mapCountryAliasVal=$this->extractFieldValue($arr);
+                            break;
+                        }
+                        if($mapCountryId>0 && isset($arr['id']) && (int)$arr['id']===$mapCountryId){
+                            $mapCountryVal=$this->extractFieldDisplay($arr);
+                            $mapCountryAliasVal=$this->extractFieldValue($arr);
+                            break;
+                        }
+                    }
+                }
+            }
+        }
+        $out['map_country']=$mapCountryVal;
+        $out['map_country_alias']=$mapCountryAliasVal;
+
         // DEBUG: детальный лог для первых товаров
         if((int)($it->id??0) <= 5){
             $fieldsKeys = is_array($fields) ? array_keys($fields) : [];
             $vesValue = isset($fields['ves']) ? json_encode($fields['ves']) : 'NOT_FOUND';
-            Log::add('mapProductForMeta DEBUG: id='.(int)$it->id.' title='.(string)($it->title??'').' weightAlias='.$weightFieldAlias.' weightVal='.$weightVal.' formattedWeight='.$formattedWeight.' fieldsKeys=['.implode(',',$fieldsKeys).'] ves='.$vesValue, Log::DEBUG,'com_radicalmart.telegram');
+            LogHelper::debug('mapProductForMeta DEBUG: id='.(int)$it->id.' title='.(string)($it->title??'').' weightAlias='.$weightFieldAlias.' weightVal='.$weightVal.' formattedWeight='.$formattedWeight.' fieldsKeys=['.implode(',',$fieldsKeys).'] ves='.$vesValue.' map_coords='.$mapCoordsVal.' map_country='.$mapCountryVal, 'com_radicalmart.telegram');
         }
         if($extendedEnabled){ foreach($selectedValues as $k=>$v){ if(!array_key_exists($k,$out)) $out[$k]=$v; } }
 
@@ -618,10 +730,10 @@ class CatalogService
                 if(empty($out['base_string']) && isset($vals['base_string'])) $out['base_string']=(string)$vals['base_string'];
                 if(empty($out['base_string']) && isset($vals['old_string'])) $out['base_string']=(string)$vals['old_string'];
                 if(empty($out['base_string']) && isset($vals['original_string'])) $out['base_string']=(string)$vals['original_string'];
-                if(isset($out['final_string']) && isset($out['base_string'])) break; }
+                if(isset($out['final_string']) and isset($out['base_string'])) break; }
         }
         // 3) Дополнительный поиск по любому числовому значению > final (когда base_string отсутствует)
-        if(empty($out['base_string']) && !empty($out['final_string'])){
+        if(empty($out['base_string']) and !empty($out['final_string'])){
             $finalNum=preg_replace('/[^0-9.,]/','',$out['final_string']); $finalNum=str_replace(',', '.', $finalNum);
             $candidate=''; $candidateVal=0.0; if(is_numeric($finalNum)){
                 $fVal=(float)$finalNum; $queue=[ $arr ];
@@ -714,7 +826,7 @@ class CatalogService
         // Если нет value, попробуем display/text
         foreach(['display','text'] as $k){ if(isset($fv[$k]) && $fv[$k] !== '') return trim((string)$fv[$k]); }
         // Fallback на название поля (label/title) — используем только если нет значения
-        foreach(['label','title'] as $k){ if(isset($fv[$k]) && $fv[$k] !== '') return trim((string)$fv[$k]); }
+        foreach(['label','title'] as $k){ if(isset($fv[$k]) and $fv[$k] !== '') return trim((string)$fv[$k]); }
         // Возможно массив значений без ключей
         if(array_is_list($fv)){
             $parts=[]; foreach($fv as $item){ $parts[]=$this->extractFieldDisplay($item); }
@@ -725,342 +837,71 @@ class CatalogService
     }
 
     /**
-     * Получить детальную информацию о товаре для WebApp
-     * @param int $productId ID товара
-     * @return array Данные товара для API
-     * @throws \RuntimeException если товар не найден
+     * Извлечение "сырого" значения поля (alias, value) — используется для map_country_alias
      */
-    public function getProduct(int $productId): array
+    private function extractFieldValue($fv): string
     {
-        if ($productId <= 0) {
-            throw new \RuntimeException('Product ID required', 400);
-        }
-
-        $model = new \Joomla\Component\RadicalMart\Site\Model\ProductModel();
-        $model->setState('product.id', $productId);
-        $model->setState('filter.published', [1, 2]);
-        $product = $model->getItem($productId);
-
-        if (empty($product) || empty($product->id)) {
-            throw new \RuntimeException('Product not found', 404);
-        }
-
-        $data = [
-            'id' => (int) $product->id,
-            'title' => (string) ($product->title ?? ''),
-            'type' => (string) ($product->type ?? 'product'),
-            'state' => (int) ($product->state ?? 0),
-            'in_stock' => !empty($product->in_stock),
-        ];
-
-        // Image
-        $data['image'] = '';
-        if (!empty($product->image) && is_string($product->image)) {
-            $data['image'] = $product->image;
-        } elseif (!empty($product->media)) {
-            try {
-                $media = is_string($product->media)
-                    ? new \Joomla\Registry\Registry($product->media)
-                    : new \Joomla\Registry\Registry((array) $product->media);
-                $data['image'] = (string) $media->get('image', '');
-            } catch (\Throwable $e) {}
-        }
-
-        // Gallery
-        $data['gallery'] = [];
-        if (!empty($product->gallery) && is_array($product->gallery)) {
-            foreach ($product->gallery as $g) {
-                if (is_object($g) && !empty($g->src)) {
-                    $data['gallery'][] = (string) $g->src;
-                } elseif (is_array($g) && !empty($g['src'])) {
-                    $data['gallery'][] = (string) $g['src'];
-                } elseif (is_string($g)) {
-                    $data['gallery'][] = $g;
-                }
+        if(is_object($fv)) $fv=(array)$fv;
+        if(is_scalar($fv)) return trim((string)$fv);
+        if(!is_array($fv)) return '';
+        // Приоритет: value (как alias), затем просто строка
+        if(array_key_exists('value',$fv)){
+            $v=$fv['value']; if(is_object($v)) $v=(array)$v;
+            if(is_scalar($v)) return trim((string)$v);
+            // Если value — массив, берём первый элемент
+            if(is_array($v) && !empty($v)){
+                $first = reset($v);
+                if(is_object($first)) $first=(array)$first;
+                if(is_array($first) && isset($first['value'])) return trim((string)$first['value']);
+                if(is_scalar($first)) return trim((string)$first);
             }
         }
-
-        // Categories
-        $data['categories'] = [];
-        if (!empty($product->categories)) {
-            foreach ($product->categories as $cat) {
-                $data['categories'][] = [
-                    'id' => (int) ($cat->id ?? 0),
-                    'title' => (string) ($cat->title ?? ''),
-                    'link' => (string) ($cat->link ?? ''),
-                ];
-            }
-        }
-
-        // Category
-        if (!empty($product->category) && is_object($product->category)) {
-            $data['category'] = [
-                'id' => (int) ($product->category->id ?? 0),
-                'title' => (string) ($product->category->title ?? ''),
-            ];
-        }
-
-        // Manufacturers
-        $data['manufacturers'] = [];
-        if (!empty($product->manufacturers)) {
-            foreach ($product->manufacturers as $m) {
-                $data['manufacturers'][] = [
-                    'id' => (int) ($m->id ?? 0),
-                    'title' => (string) ($m->title ?? ''),
-                    'link' => (string) ($m->link ?? ''),
-                ];
-            }
-        }
-
-        // Price
-        if (!empty($product->price) && is_array($product->price)) {
-            $data['price'] = [
-                'final' => (float) ($product->price['final'] ?? 0),
-                'final_string' => (string) ($product->price['final_string'] ?? ''),
-                'base' => (float) ($product->price['base'] ?? 0),
-                'base_string' => (string) ($product->price['base_string'] ?? ''),
-                'discount_enable' => !empty($product->price['discount_enable']),
-                'discount_string' => (string) ($product->price['discount_string'] ?? ''),
-            ];
-        }
-
-        // Cashback
-        $config = self::getCashbackConfig();
-        $data['cashback'] = 0;
-        $data['cashback_percent'] = $config['percent'] ?? 0;
-        if ($config['enabled'] && !empty($product->price)) {
-            $priceFor = $config['from'] === 'base'
-                ? (float) ($product->price['base'] ?? $product->price['final'] ?? 0)
-                : (float) ($product->price['final'] ?? 0);
-            $data['cashback'] = self::calculateCashback($priceFor, $config['from'] !== 'base');
-        }
-
-        // Texts
-        $data['introtext'] = (string) ($product->introtext ?? '');
-        $data['fulltext'] = (string) ($product->fulltext ?? '');
-
-        // Fieldsets
-        $data['fieldsets'] = [];
-        if (!empty($product->fieldsets)) {
-            foreach ($product->fieldsets as $fsAlias => $fieldset) {
-                if ($fieldset->alias === 'root') continue;
-                $fs = [
-                    'alias' => (string) ($fieldset->alias ?? $fsAlias),
-                    'title' => (string) ($fieldset->title ?? ''),
-                    'fields' => [],
-                ];
-                if (!empty($fieldset->fields)) {
-                    foreach ($fieldset->fields as $fAlias => $field) {
-                        $fs['fields'][$fAlias] = [
-                            'alias' => (string) ($field->alias ?? $fAlias),
-                            'title' => (string) ($field->title ?? ''),
-                            'value' => $field->value ?? null,
-                            'rawvalue' => $field->rawvalue ?? null,
-                        ];
-                    }
-                }
-                $data['fieldsets'][$fsAlias] = $fs;
-            }
-        }
-
-        // Badges
-        $data['badges'] = [];
-        if (!empty($product->badges)) {
-            foreach ($product->badges as $badge) {
-                $data['badges'][] = [
-                    'id' => (int) ($badge->id ?? 0),
-                    'title' => (string) ($badge->title ?? ''),
-                    'link' => (string) ($badge->link ?? ''),
-                ];
-            }
-        }
-
-        // Variability
-        $data['variability'] = null;
-        if (!empty($product->type) && $product->type === 'variability') {
-            try {
-                $variability = $model->getVariability();
-                if (!empty($variability) && !empty($variability->products)) {
-                    $data['variability'] = [
-                        'fields' => array_keys($variability->fields ?? []),
-                        'products' => [],
-                    ];
-                    foreach ($variability->products as $vp) {
-                        $data['variability']['products'][] = [
-                            'id' => (int) ($vp->id ?? 0),
-                            'title' => (string) ($vp->title ?? ''),
-                            'link' => (string) ($vp->link ?? ''),
-                            'fields' => $vp->fieldsVariability ?? [],
-                        ];
-                    }
-                }
-            } catch (\Throwable $e) {}
-        }
-
-        // Quantity
-        if (!empty($product->quantity)) {
-            $data['quantity'] = [
-                'min' => (int) ($product->quantity['min'] ?? 1),
-                'max' => (int) ($product->quantity['max'] ?? 0),
-                'step' => (int) ($product->quantity['step'] ?? 1),
-            ];
-        }
-
-        return $data;
+        return '';
     }
 
     /**
-     * Получить динамические опции фильтров (facets) для текущих товаров
-     * @param array $filters Текущие фильтры ['in_stock'=>bool, 'price'=>['from'=>'', 'to'=>''], 'fields'=>[...]]
-     * @return array ['facets' => [alias => [{value, label, count}, ...]]]
+     * Извлечение координат из поля карты — возвращает объект {lat, lng} или null
      */
-    public function getFacets(array $filters = []): array
+    private function extractMapCoords($fv): ?array
     {
-        $app = Factory::getApplication();
-        $db = Factory::getContainer()->get('DatabaseDriver');
+        if($fv === null || $fv === '') return null;
+        if(is_object($fv)) $fv=(array)$fv;
 
-        $inStock = !empty($filters['in_stock']);
-        $priceFrom = trim((string) ($filters['price']['from'] ?? ''));
-        $priceTo = trim((string) ($filters['price']['to'] ?? ''));
-        $selectedFields = $filters['fields'] ?? [];
+        // Если строка — пробуем распарсить как JSON
+        if(is_string($fv)){
+            $fv = trim($fv);
+            if($fv === '') return null;
+            $decoded = json_decode($fv, true);
+            if(is_array($decoded)) $fv = $decoded;
+            else return null;
+        }
 
-        // Load field metadata from config
-        $params = $app->getParams('com_radicalmart_telegram');
-        $cfg = (array) ($params->get('filters_fields') ?: []);
-        $fieldIds = [];
-        foreach ($cfg as $row) {
-            if (is_object($row)) { $row = get_object_vars($row); }
-            if (!is_array($row)) { continue; }
-            if (!empty($row['enabled']) && (int)$row['enabled'] === 1 && !empty($row['field_id'])) {
-                $fieldIds[] = (int)$row['field_id'];
+        if(!is_array($fv)) return null;
+
+        // Если есть value — берём из него
+        if(isset($fv['value'])){
+            $v = $fv['value'];
+            if(is_string($v)){
+                $decoded = json_decode($v, true);
+                if(is_array($decoded)) $v = $decoded;
             }
+            if(is_object($v)) $v = (array)$v;
+            if(is_array($v)) $fv = $v;
         }
 
-        $fieldsMeta = [];
-        if (!empty($fieldIds)) {
-            $q = $db->getQuery(true)
-                ->select($db->quoteName(['id', 'title', 'alias', 'plugin', 'params', 'options']))
-                ->from($db->quoteName('#__radicalmart_fields'))
-                ->where($db->quoteName('state') . ' = 1')
-                ->where($db->quoteName('area') . ' = ' . $db->quote('products'))
-                ->whereIn($db->quoteName('id'), $fieldIds);
-            $rows = (array) $db->setQuery($q)->loadObjectList();
+        // Ищем lat/lng
+        $lat = $fv['lat'] ?? $fv['latitude'] ?? null;
+        $lng = $fv['lng'] ?? $fv['lon'] ?? $fv['longitude'] ?? null;
 
-            foreach ($rows as $r) {
-                $opts = [];
-                try {
-                    $pp = json_decode((string)$r->params, true) ?: [];
-                    if (isset($pp['options']) && is_array($pp['options'])) { $opts = $pp['options']; }
-                    elseif (isset($pp['values']) && is_array($pp['values'])) { $opts = $pp['values']; }
-                    elseif (isset($pp['choices']) && is_array($pp['choices'])) { $opts = $pp['choices']; }
-                    elseif (isset($pp['variations']) && is_array($pp['variations'])) { $opts = $pp['variations']; }
-                    $colOpts = json_decode((string)$r->options, true);
-                    if (is_array($colOpts) && !empty($colOpts)) { $opts = $colOpts; }
-                } catch (\Throwable $e) {}
-
-                // Normalize options
-                $norm = [];
-                foreach ($opts as $k => $v) {
-                    if (is_array($v)) {
-                        $val = (string) ($v['value'] ?? $v['val'] ?? $v['id'] ?? $k);
-                        $lab = (string) ($v['label'] ?? $v['text'] ?? $v['title'] ?? $val);
-                    } elseif (is_object($v)) {
-                        $val = (string) ($v->value ?? $v->val ?? $v->id ?? $k);
-                        $lab = (string) ($v->label ?? $v->text ?? $v->title ?? $val);
-                    } else {
-                        $val = is_int($k) ? (string)$v : (string)$k;
-                        $lab = (string)$v;
-                    }
-                    if ($val !== '') { $norm[] = ['value' => $val, 'label' => $lab]; }
-                }
-                $fieldsMeta[(int)$r->id] = ['alias' => (string)$r->alias, 'title' => (string)$r->title, 'options' => $norm];
-            }
+        if($lat !== null && $lng !== null){
+            return ['lat' => (float)$lat, 'lng' => (float)$lng];
         }
 
-        // Build base WHERE conditions
-        $langTag = $app->getLanguage()->getTag();
-        $where = ['p.state = 1', 'p.language IN (' . $db->quote($langTag) . ', ' . $db->quote('*') . ')', 'p.in_stock = 1'];
-        $binds = [];
-
-        // Price filter
-        if ($priceFrom !== '' || $priceTo !== '') {
-            $currency = \Joomla\Component\RadicalMart\Administrator\Helper\PriceHelper::getCurrency(null);
-            $group = $currency['group'];
-            $priceExpr = 'CAST(JSON_VALUE(p.prices, ' . $db->quote('$."' . $group . '".final') . ') as double)';
-            if ($priceFrom !== '') { $where[] = $priceExpr . ' >= :pf'; $binds[':pf'] = (float) $priceFrom; }
-            if ($priceTo !== '') { $where[] = $priceExpr . ' <= :pt'; $binds[':pt'] = (float) $priceTo; }
+        // Проверяем location
+        if(isset($fv['location']) && is_array($fv['location'])){
+            return $this->extractMapCoords($fv['location']);
         }
 
-        // Field filters
-        foreach ($selectedFields as $alias => $val) {
-            $path = '$."' . $alias . '"';
-            if (is_array($val)) {
-                if (isset($val['from']) || isset($val['to'])) {
-                    if (isset($val['from']) && $val['from'] !== '') {
-                        $where[] = 'CAST(JSON_VALUE(p.fields, ' . $db->quote($path) . ') as double) >= :f_' . md5($alias . 'from');
-                        $binds[':f_' . md5($alias . 'from')] = (float) $val['from'];
-                    }
-                    if (isset($val['to']) && $val['to'] !== '') {
-                        $where[] = 'CAST(JSON_VALUE(p.fields, ' . $db->quote($path) . ') as double) <= :t_' . md5($alias . 'to');
-                        $binds[':t_' . md5($alias . 'to')] = (float) $val['to'];
-                    }
-                } else {
-                    $orParts = [];
-                    foreach ($val as $mv) {
-                        $mv = trim((string)$mv);
-                        if ($mv === '') continue;
-                        $orParts[] = '(JSON_VALUE(p.fields, ' . $db->quote($path) . ') = ' . $db->quote($mv)
-                            . ' OR JSON_CONTAINS(p.fields, ' . $db->quote('"' . $db->escape($mv, true) . '"') . ', ' . $db->quote($path) . '))';
-                    }
-                    if ($orParts) { $where[] = '(' . implode(' OR ', $orParts) . ')'; }
-                }
-            } else {
-                $v = trim((string)$val);
-                if ($v === '') continue;
-                $where[] = '(JSON_VALUE(p.fields, ' . $db->quote($path) . ') = :sv_' . md5($alias)
-                    . ' OR JSON_CONTAINS(p.fields, :js_' . md5($alias) . ', ' . $db->quote($path) . '))';
-                $binds[':sv_' . md5($alias)] = $v;
-                $binds[':js_' . md5($alias)] = '"' . $db->escape($v, true) . '"';
-            }
-        }
-
-        // Build facets
-        $facets = [];
-        foreach ($cfg as $row) {
-            if (is_object($row)) { $row = get_object_vars($row); }
-            if (!is_array($row)) { continue; }
-            if (empty($row['enabled']) || (int)$row['enabled'] !== 1) continue;
-            $fid = (int) ($row['field_id'] ?? 0);
-            if ($fid <= 0 || empty($fieldsMeta[$fid]['alias'])) continue;
-
-            $alias = $fieldsMeta[$fid]['alias'];
-            $options = $fieldsMeta[$fid]['options'] ?? [];
-            if (empty($options)) continue;
-
-            $list = [];
-            foreach ($options as $op) {
-                $val = (string) ($op['value'] ?? '');
-                if ($val === '') continue;
-                $label = (string) ($op['label'] ?? $val);
-
-                $q = $db->getQuery(true)->select('COUNT(*)')->from($db->quoteName('#__radicalmart_products', 'p'));
-                if (!empty($where)) { $q->where(implode(' AND ', $where)); }
-                $path = '$."' . $alias . '"';
-                $cond = '(JSON_VALUE(p.fields, ' . $db->quote($path) . ') = :cv_' . md5($alias . $val)
-                    . ' OR JSON_CONTAINS(p.fields, :cj_' . md5($alias . $val) . ', ' . $db->quote($path) . '))';
-                $q->where($cond);
-
-                foreach ($binds as $k => $bv) { $q->bind($k, $bv); }
-                $q->bind(':cv_' . md5($alias . $val), $val);
-                $jsonVal = '"' . $db->escape($val, true) . '"';
-                $q->bind(':cj_' . md5($alias . $val), $jsonVal);
-
-                $cnt = (int) $db->setQuery($q)->loadResult();
-                if ($cnt > 0) { $list[] = ['value' => $val, 'label' => $label, 'count' => $cnt]; }
-            }
-            $facets[$alias] = $list;
-        }
-
-        return ['facets' => $facets];
+        return null;
     }
 }
