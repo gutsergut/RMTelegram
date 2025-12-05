@@ -128,6 +128,17 @@ $chatId = $tgUser['chat_id'] ?? 0;
                 background: #f8f9fa;
                 box-shadow: 0 3px 12px rgba(0,0,0,0.3);
             }
+            /* Out of stock markers - серый фон */
+            .rmt-map-marker.out-of-stock .rmt-map-marker-content {
+                background: #e0e0e0;
+                opacity: 0.75;
+            }
+            .rmt-map-marker.out-of-stock .rmt-map-marker-text {
+                color: #666;
+            }
+            .rmt-map-marker.out-of-stock:hover .rmt-map-marker-content {
+                background: #d0d0d0;
+            }
         </style>
         <script>
             // Переводы для внешнего JS
@@ -1332,18 +1343,22 @@ $chatId = $tgUser['chat_id'] ?? 0;
 
                 bounds.push([coords.lat, coords.lon]);
 
+                // Проверяем, есть ли хоть один вариант в наличии
+                const allOutOfStock = children.length > 0 && children.every(ch => !ch.in_stock);
+                const outOfStockClass = allOutOfStock ? ' out-of-stock' : '';
+
                 // Создаём маркер с картинкой флага и названием страны
                 let markerHtml = '';
                 const escapedTitle = (countryDisplay || meta.title || '').replace(/"/g, '&quot;').replace(/'/g, '&#39;');
                 if (flagImage) {
-                    markerHtml = `<div class="rmt-map-marker" data-meta-id="${meta.id}">
+                    markerHtml = `<div class="rmt-map-marker${outOfStockClass}" data-meta-id="${meta.id}">
                         <div class="rmt-map-marker-content">
                             <img src="${flagImage}" class="rmt-map-marker-flag" alt="">
                             <span class="rmt-map-marker-text">${escapedTitle}</span>
                         </div>
                     </div>`;
                 } else {
-                    markerHtml = `<div class="rmt-map-marker" data-meta-id="${meta.id}">
+                    markerHtml = `<div class="rmt-map-marker${outOfStockClass}" data-meta-id="${meta.id}">
                         <div class="rmt-map-marker-content">
                             <span class="rmt-map-marker-text">${escapedTitle}</span>
                         </div>
