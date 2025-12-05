@@ -868,6 +868,7 @@ class ApiController extends BaseController
     /**
      * Поиск товаров (быстрый search в WebApp)
      * Параметры: q (строка), limit (int)
+     * Возвращает мета-товары с детьми (полные карточки как в каталоге)
      */
     public function search(): void
     {
@@ -875,13 +876,13 @@ class ApiController extends BaseController
         $this->guardInitData();
         $this->guardRateLimitDb('search', 40);
         $q    = trim((string) $app->input->get('q', '', 'string'));
-        $lim  = $app->input->getInt('limit', 10);
-        if ($lim <= 0 || $lim > 50) { $lim = 10; }
+        $lim  = $app->input->getInt('limit', 12);
+        if ($lim <= 0 || $lim > 50) { $lim = 12; }
         if ($q === '') { echo new JsonResponse(['items'=>[]]); $app->close(); }
         try {
-            // Используем CatalogService с фильтром по имени (оставляем как text search)
+            // Используем listMetas с фильтром search для полных карточек
             $filters = ['search' => $q];
-            $items = (new CatalogService())->listProducts(1, $lim, $filters);
+            $items = (new CatalogService())->listMetas(1, $lim, $filters);
             echo new JsonResponse(['items' => $items]);
             $app->close();
         } catch (\Throwable $e) { echo new JsonResponse(null, $e->getMessage(), true); $app->close(); }

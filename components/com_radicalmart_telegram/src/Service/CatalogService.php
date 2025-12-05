@@ -193,6 +193,8 @@ class CatalogService
         $hasFieldFilters = !empty($filters['fields']) && is_array($filters['fields']);
         $hasSort = !empty($filters['sort']) && (string)$filters['sort'] !== '';
         $hasCategoryFilter = !empty($filters['categories']) && is_array($filters['categories']) && count(array_filter($filters['categories'])) > 0;
+        $hasSearchFilter = !empty($filters['search']) && trim((string)$filters['search']) !== '';
+        $searchQuery = $hasSearchFilter ? mb_strtolower(trim((string)$filters['search'])) : '';
         // Автоматически включаем фильтр "в наличии" при любых фильтрах ИЛИ сортировке
         $hasAnyFilter = $hasStockFilter || $hasPriceFilter || $hasFieldFilters || $hasSort || $hasCategoryFilter;
         if ($debug) { LogHelper::debug('listMetas: hasStockFilter=' . (int)$hasStockFilter . ' hasPriceFilter=' . (int)$hasPriceFilter . ' hasFieldFilters=' . (int)$hasFieldFilters . ' hasSort=' . (int)$hasSort . ' hasCategoryFilter=' . (int)$hasCategoryFilter . ' hasAnyFilter=' . (int)$hasAnyFilter . ' filters=' . json_encode($filters), 'radicalmart_telegram_catalog'); }
@@ -270,6 +272,15 @@ class CatalogService
                 return !empty(array_intersect($metaCats, $categoryFilterIds));
             });
             $items = array_values($items);
+        }
+        // Фильтрация по поисковому запросу (search) — ищем подстроку в title
+        if ($hasSearchFilter && !empty($items)) {
+            $items = array_filter($items, function($m) use ($searchQuery) {
+                $title = mb_strtolower(trim((string)($m->title ?? '')));
+                return mb_strpos($title, $searchQuery) !== false;
+            });
+            $items = array_values($items);
+            if ($debug) { LogHelper::debug('listMetas: after search filter "' . $searchQuery . '" count=' . count($items), 'radicalmart_telegram_catalog'); }
         }
         if (!is_array($items) || empty($items)) return [];
         $allIds=[]; $metaProductsMap=[]; $addedByMetaRef=[]; $dbProbe=null; try { $dbProbe=Factory::getContainer()->get('DatabaseDriver'); } catch (\Throwable $e) {}
