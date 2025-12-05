@@ -5,6 +5,8 @@
 
 namespace Joomla\Component\RadicalMartTelegram\Site\Service;
 
+use Joomla\Component\RadicalMartTelegram\Site\Helper\LogHelper;
+
 \defined('_JEXEC') or die;
 
 use Joomla\CMS\Factory;
@@ -28,17 +30,17 @@ class UpdateHandler
 
     public function handle(string $rawBody): void
     {
-        Log::add('UpdateHandler::handle called with ' . strlen($rawBody) . ' bytes', Log::DEBUG, 'com_radicalmart.telegram');
+        LogHelper::debug('UpdateHandler::handle called with ' . strlen($rawBody) . ' bytes', 'com_radicalmart.telegram');
 
         if (!$this->client->isConfigured()) {
-            Log::add('Client not configured, skipping update', Log::WARNING, 'com_radicalmart.telegram');
+            LogHelper::warning('Client not configured, skipping update', 'com_radicalmart.telegram');
             return;
         }
 
         $data   = new Registry($rawBody);
         $update = $data->toArray();
 
-        Log::add('Update parsed: update_id=' . ($update['update_id'] ?? 'missing') . ', has_message=' . (isset($update['message']) ? 'YES' : 'NO'), Log::DEBUG, 'com_radicalmart.telegram');
+        LogHelper::debug('Update parsed: update_id=' . ($update['update_id'] ?? 'missing') . ', has_message=' . (isset($update['message']) ? 'YES' : 'NO'), 'com_radicalmart.telegram');
 
         $updateId = (int) ($update['update_id'] ?? 0);
         $chatId   = 0;
@@ -48,15 +50,15 @@ class UpdateHandler
             $chatId = (int) $update['callback_query']['message']['chat']['id'];
         }
 
-        Log::add('Chat ID: ' . $chatId, Log::DEBUG, 'com_radicalmart.telegram');
+        LogHelper::debug('Chat ID: ' . $chatId, 'com_radicalmart.telegram');
 
         if ($updateId && $chatId && $this->store->isDuplicate($chatId, $updateId)) {
-            Log::add('Duplicate update skipped: ' . $updateId, Log::DEBUG, 'com_radicalmart.telegram');
+            LogHelper::debug('Duplicate update skipped: ' . $updateId, 'com_radicalmart.telegram');
             return;
         }
 
         if (!empty($update['message'])) {
-            Log::add('Processing message...', Log::DEBUG, 'com_radicalmart.telegram');
+            LogHelper::debug('Processing message...', 'com_radicalmart.telegram');
             $this->onMessage($update['message']);
             if ($updateId && $chatId) {
                 $this->store->setLastUpdate($chatId, $updateId);
@@ -178,7 +180,7 @@ class UpdateHandler
                 $this->client->sendMessage($chatId, $msg);
                 return;
             } catch (\Throwable $e) {
-                \Joomla\CMS\Log\Log::add('Contact link error: ' . $e->getMessage(), \Joomla\CMS\Log\Log::WARNING, 'com_radicalmart.telegram');
+                LogHelper::warning('Contact link error: ' . $e->getMessage(), 'com_radicalmart.telegram');
             }
         }
 
@@ -215,7 +217,7 @@ class UpdateHandler
                         }
                     }
                 } catch (\Throwable $e) {
-                    \Joomla\CMS\Log\Log::add('Telegram successful_payment status error: ' . $e->getMessage(), \Joomla\CMS\Log\Log::ERROR, 'com_radicalmart.telegram');
+                    LogHelper::error('Telegram successful_payment status error: ' . $e->getMessage(), 'com_radicalmart.telegram');
                 }
             }
             return;
@@ -229,17 +231,17 @@ class UpdateHandler
         $params = Factory::getApplication()->getParams('com_radicalmart_telegram');
         $storeTitle = (string) ($params->get('store_title', 'магазин Cacao.Land'));
 
-        Log::add('Message text: "' . $text . '"', Log::DEBUG, 'com_radicalmart.telegram');
+        LogHelper::debug('Message text: "' . $text . '"', 'com_radicalmart.telegram');
 
         // Handle /start with optional referral code: /start ref_CODE
         if ($text === '/start' || $text === '/help' || strpos($text, '/start ') === 0) {
-            Log::add('Processing /start or /help command', Log::DEBUG, 'com_radicalmart.telegram');
+            LogHelper::debug('Processing /start or /help command', 'com_radicalmart.telegram');
 
             // Extract referral code if present (format: /start ref_CODE)
             $referralCode = null;
             if (strpos($text, '/start ref_') === 0) {
                 $referralCode = trim(substr($text, strlen('/start ref_')));
-                Log::add('Referral code from start parameter: ' . $referralCode, Log::DEBUG, 'com_radicalmart.telegram');
+                LogHelper::debug('Referral code from start parameter: ' . $referralCode, 'com_radicalmart.telegram');
             }
 
             // Check consent first
@@ -260,7 +262,7 @@ class UpdateHandler
                     $this->saveReferralCode($chatId, $referralCode, $user);
                 }
 
-                Log::add('User consent: ' . ($hasConsent ? 'YES' : 'NO') . ', phone: ' . ($hasPhone ? 'YES' : 'NO'), Log::DEBUG, 'com_radicalmart.telegram');
+                LogHelper::debug('User consent: ' . ($hasConsent ? 'YES' : 'NO') . ', phone: ' . ($hasPhone ? 'YES' : 'NO'), 'com_radicalmart.telegram');
 
                 // Unified consent keyboard (personal_data + terms mandatory)
                 $statuses = ConsentHelper::getConsents($chatId);
@@ -299,9 +301,9 @@ class UpdateHandler
                     ]
                 ];
 
-                Log::add('Sending welcome message to chat ' . $chatId . ' (hasPhone=' . ($hasPhone?'YES':'NO') . ')', Log::DEBUG, 'com_radicalmart.telegram');
+                LogHelper::debug('Sending welcome message to chat ' . $chatId . ' (hasPhone=' . ($hasPhone?'YES':'NO') . ')', 'com_radicalmart.telegram');
                 $result = $this->client->sendMessage($chatId, $welcome, $opts);
-                Log::add('sendMessage result: ' . ($result ? 'SUCCESS' : 'FAILED'), Log::DEBUG, 'com_radicalmart.telegram');
+                LogHelper::debug('sendMessage result: ' . ($result ? 'SUCCESS' : 'FAILED'), 'com_radicalmart.telegram');
 
                 // Step 3: Offer marketing opt-in if not accepted yet (if enabled in settings)
                 try {
@@ -314,7 +316,7 @@ class UpdateHandler
                 } catch (\Throwable $e) { /* ignore */ }
 
             } catch (\Throwable $e) {
-                Log::add('Error in /start handler: ' . $e->getMessage(), Log::WARNING, 'com_radicalmart.telegram');
+                LogHelper::warning('Error in /start handler: ' . $e->getMessage(), 'com_radicalmart.telegram');
             }
             return;
         }
@@ -790,7 +792,7 @@ class UpdateHandler
             if (class_exists(\Joomla\Component\RadicalMartBonuses\Administrator\Helper\CodesHelper::class)) {
                 $codeData = \Joomla\Component\RadicalMartBonuses\Administrator\Helper\CodesHelper::find($referralCode, 'code');
                 if (!$codeData || empty($codeData->referral)) {
-                    Log::add('Referral code not found or not a referral code: ' . $referralCode, Log::DEBUG, 'com_radicalmart.telegram');
+                    LogHelper::debug('Referral code not found or not a referral code: ' . $referralCode, 'com_radicalmart.telegram');
                     return;
                 }
             }
@@ -812,9 +814,9 @@ class UpdateHandler
                 $db->insertObject('#__radicalmart_telegram_users', $row);
             }
 
-            Log::add('Saved referral code ' . $referralCode . ' for chat ' . $chatId, Log::DEBUG, 'com_radicalmart.telegram');
+            LogHelper::debug('Saved referral code ' . $referralCode . ' for chat ' . $chatId, 'com_radicalmart.telegram');
         } catch (\Throwable $e) {
-            Log::add('Error saving referral code: ' . $e->getMessage(), Log::WARNING, 'com_radicalmart.telegram');
+            LogHelper::warning('Error saving referral code: ' . $e->getMessage(), 'com_radicalmart.telegram');
         }
     }
 
@@ -840,27 +842,27 @@ class UpdateHandler
 
             // Check if ReferralHelper (Admin) exists
             if (!class_exists(\Joomla\Component\RadicalMartBonuses\Administrator\Helper\ReferralHelper::class)) {
-                Log::add('ReferralHelper not available, skipping referral code application', Log::DEBUG, 'com_radicalmart.telegram');
+                LogHelper::debug('ReferralHelper not available, skipping referral code application', 'com_radicalmart.telegram');
                 return;
             }
 
             // Check if user already has a parent (already in chain)
             $parent = \Joomla\Component\RadicalMartBonuses\Administrator\Helper\ReferralHelper::getParent($userId);
             if ($parent) {
-                Log::add('User ' . $userId . ' already has parent in referral chain', Log::DEBUG, 'com_radicalmart.telegram');
+                LogHelper::debug('User ' . $userId . ' already has parent in referral chain', 'com_radicalmart.telegram');
                 return;
             }
 
             // Get code data to find owner
             $codeData = \Joomla\Component\RadicalMartBonuses\Administrator\Helper\CodesHelper::find($referralCode, 'code');
             if (!$codeData || empty($codeData->created_by)) {
-                Log::add('Code not found or has no owner: ' . $referralCode, Log::DEBUG, 'com_radicalmart.telegram');
+                LogHelper::debug('Code not found or has no owner: ' . $referralCode, 'com_radicalmart.telegram');
                 return;
             }
 
             // Create referral relationship: parent (code owner) -> child (new user)
             $result = \Joomla\Component\RadicalMartBonuses\Administrator\Helper\ReferralHelper::createReferralRelationship($userId, (int) $codeData->created_by);
-            Log::add('Created referral relationship from code ' . $referralCode . ' for user ' . $userId . ' (parent: ' . $codeData->created_by . '): ' . ($result ? 'SUCCESS' : 'FAILED'), Log::DEBUG, 'com_radicalmart.telegram');
+            LogHelper::debug('Created referral relationship from code ' . $referralCode . ' for user ' . $userId . ' (parent: ' . $codeData->created_by . '): ' . ($result ? 'SUCCESS' : 'FAILED'), 'com_radicalmart.telegram');
 
             // Clear referral code after successful application
             $upd = $db->getQuery(true)
@@ -871,7 +873,7 @@ class UpdateHandler
             $db->setQuery($upd)->execute();
 
         } catch (\Throwable $e) {
-            Log::add('Error applying referral code: ' . $e->getMessage(), Log::WARNING, 'com_radicalmart.telegram');
+            LogHelper::warning('Error applying referral code: ' . $e->getMessage(), 'com_radicalmart.telegram');
         }
     }
 }

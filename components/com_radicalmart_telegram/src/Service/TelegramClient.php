@@ -10,7 +10,7 @@ namespace Joomla\Component\RadicalMartTelegram\Site\Service;
 use Joomla\CMS\Http\Http;
 use Joomla\CMS\Factory;
 use Joomla\Registry\Registry;
-use Joomla\CMS\Log\Log;
+use Joomla\Component\RadicalMartTelegram\Site\Helper\LogHelper;
 
 class TelegramClient
 {
@@ -31,10 +31,10 @@ class TelegramClient
         // Log masked token for debugging
         $tokenLen = strlen($this->token);
         $maskedToken = $tokenLen > 10 ? substr($this->token, 0, 5) . '...' . substr($this->token, -5) . " ({$tokenLen} chars)" : "EMPTY or TOO SHORT ({$tokenLen} chars)";
-        Log::add('TelegramClient::api calling ' . $method . ' with ' . count($params) . ' params, token=' . $maskedToken, Log::DEBUG, 'com_radicalmart.telegram');
+        LogHelper::debug('TelegramClient::api calling ' . $method . ' with ' . count($params) . ' params, token=' . $maskedToken);
 
         if (empty($this->token)) {
-            Log::add('API ' . $method . ' FAILED: bot_token is empty!', Log::ERROR, 'com_radicalmart.telegram');
+            LogHelper::error('API ' . $method . ' FAILED: bot_token is empty!');
             return new Registry(['ok' => false, 'description' => 'Bot token is not configured']);
         }
 
@@ -48,16 +48,16 @@ class TelegramClient
             $data = new Registry($body);
 
             $ok = $data->get('ok', false);
-            Log::add('API ' . $method . ' response: ok=' . ($ok ? 'true' : 'false') . ', code=' . $response->code, Log::DEBUG, 'com_radicalmart.telegram');
+            LogHelper::debug('API ' . $method . ' response: ok=' . ($ok ? 'true' : 'false') . ', code=' . $response->code);
 
             if (!$ok) {
                 $error = $data->get('description', 'Unknown error');
-                Log::add('API ' . $method . ' error: ' . $error, Log::WARNING, 'com_radicalmart.telegram');
+                LogHelper::warning('API ' . $method . ' error: ' . $error);
             }
 
             return $data;
         } catch (\Throwable $e) {
-            Log::add('API ' . $method . ' exception: ' . $e->getMessage(), Log::ERROR, 'com_radicalmart.telegram');
+            LogHelper::error('API ' . $method . ' exception: ' . $e->getMessage());
             return new Registry(['ok' => false, 'description' => $e->getMessage()]);
         }
     }

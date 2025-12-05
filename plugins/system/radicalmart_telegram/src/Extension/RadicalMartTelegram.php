@@ -95,6 +95,18 @@ class RadicalMartTelegram extends CMSPlugin implements SubscriberInterface
             if (strpos($task, 'payment.') === 0) {
                 $paymentTask = str_replace('payment.', '', $task);
 
+                // IMPORTANT: Do NOT redirect payment.pay - this is the actual payment initiation page
+                // The payment gateway needs to process this request, then redirect to success/error/return
+                if ($paymentTask === 'pay') {
+                    Log::add(
+                        sprintf('[WebApp Redirect] SKIPPING payment.pay redirect - letting payment process (order=%s)',
+                            $orderNumber),
+                        Log::INFO,
+                        'com_radicalmart.telegram'
+                    );
+                    return; // Let the payment proceed without redirect
+                }
+
                 switch ($paymentTask) {
                     case 'success':
                         $paymentResult = 'success';
@@ -109,6 +121,15 @@ class RadicalMartTelegram extends CMSPlugin implements SubscriberInterface
                     case 'return':
                         $paymentResult = 'return';
                         break;
+                    default:
+                        // Unknown payment task - don't redirect, let RadicalMart handle it
+                        Log::add(
+                            sprintf('[WebApp Redirect] SKIPPING unknown payment task: %s (order=%s)',
+                                $paymentTask, $orderNumber),
+                            Log::INFO,
+                            'com_radicalmart.telegram'
+                        );
+                        return;
                 }
 
                 // Redirect to our payment result view

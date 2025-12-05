@@ -2378,7 +2378,7 @@ $chatId = $tgUser['chat_id'] ?? 0;
             <a href="#" id="top-search-toggle" class="uk-icon-link" uk-icon="icon: search" title="<?php echo Text::_('COM_RADICALMART_TELEGRAM_SEARCH_TITLE'); ?>" onclick="toggleTopSearch(); return false;"></a>
         </div>
         <div class="uk-navbar-item">
-            <a href="#" id="profile-top" class="uk-icon-link" uk-icon="icon: user" title="<?php echo Text::_('COM_RADICALMART_TELEGRAM_PROFILE'); ?>" onclick="document.getElementById('profile')?.scrollIntoView({behavior:'smooth'}); return false;"></a>
+            <a href="<?php echo $root; ?>/index.php?option=com_radicalmart_telegram&view=profile<?php echo $chatId ? '&chat=' . $chatId : ''; ?>" id="profile-top" class="uk-icon-link" uk-icon="icon: user" title="<?php echo Text::_('COM_RADICALMART_TELEGRAM_PROFILE'); ?>"></a>
         </div>
     </div>
     <script>

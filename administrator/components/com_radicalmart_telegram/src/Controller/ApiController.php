@@ -10,7 +10,7 @@ namespace Joomla\Component\RadicalMartTelegram\Administrator\Controller;
 
 use Joomla\CMS\Factory;
 use Joomla\CMS\Language\Text;
-use Joomla\CMS\Log\Log;
+use Joomla\Component\RadicalMartTelegram\Administrator\Helper\LogHelper;
 use Joomla\CMS\MVC\Controller\BaseController;
 use Joomla\CMS\Router\Route;
 use Joomla\CMS\Component\ComponentHelper;
@@ -35,37 +35,27 @@ class ApiController extends BaseController
 	{
 		$app = Factory::getApplication();
 
-		// Инициализируем логирование
-		\Joomla\CMS\Log\Log::addLogger(
-			[
-				'text_file' => 'com_radicalmart_telegram.php',
-				'text_entry_format' => '{DATETIME} {PRIORITY} {MESSAGE}'
-			],
-			\Joomla\CMS\Log\Log::ALL,
-			['com_radicalmart_telegram']
-		);
+		// LogHelper handles logger initialization
 
-		\Joomla\CMS\Log\Log::add('ApiController::apishipfetch started', \Joomla\CMS\Log\Log::INFO, 'com_radicalmart_telegram');
+		LogHelper::info('ApiController::apishipfetch started');
 
 		// Проверяем токен
 		try {
 			$this->checkToken();
-			\Joomla\CMS\Log\Log::add('CSRF token check passed', \Joomla\CMS\Log\Log::INFO, 'com_radicalmart_telegram');
+			LogHelper::info('CSRF token check passed');
 		} catch (\Exception $e) {
-			\Joomla\CMS\Log\Log::add('CSRF token check failed: ' . $e->getMessage(), \Joomla\CMS\Log\Log::ERROR, 'com_radicalmart_telegram');
+			LogHelper::error('CSRF token check failed: ' . $e->getMessage());
 			throw $e;
 		}
 
 		try {
-			\Joomla\CMS\Log\Log::add('Running ApiShip fetch', \Joomla\CMS\Log\Log::INFO, 'com_radicalmart_telegram');
+			LogHelper::info('Running ApiShip fetch');
 
 			// Запускаем обновление через helper
 			$result = ApiShipFetchHelper::fetchAllPoints();
 
-			\Joomla\CMS\Log\Log::add(
-				'Fetch finished: success=' . ($result['success'] ? 'true' : 'false') . ', total=' . $result['total'],
-				\Joomla\CMS\Log\Log::INFO,
-				'com_radicalmart_telegram'
+			LogHelper::info(
+				'Fetch finished: success=' . ($result['success'] ? 'true' : 'false') . ', total=' . $result['total']
 			);
 
 			if ($result['success']) {
@@ -74,10 +64,8 @@ class ApiController extends BaseController
 				$app->enqueueMessage(Text::sprintf('COM_RADICALMART_TELEGRAM_APISHIP_FETCH_ERROR', $result['message']), 'error');
 			}
 		} catch (\Throwable $e) {
-			\Joomla\CMS\Log\Log::add(
-				'ApiShipFetch error: ' . $e->getMessage() . "\n" . $e->getTraceAsString(),
-				\Joomla\CMS\Log\Log::ERROR,
-				'com_radicalmart_telegram'
+			LogHelper::error(
+				'ApiShipFetch error: ' . $e->getMessage() . "\n" . $e->getTraceAsString()
 			);
 			$app->enqueueMessage(Text::sprintf('COM_RADICALMART_TELEGRAM_APISHIP_FETCH_ERROR', $e->getMessage()), 'error');
 		}

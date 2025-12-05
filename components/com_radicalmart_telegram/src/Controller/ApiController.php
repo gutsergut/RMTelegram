@@ -22,7 +22,7 @@ use Joomla\Component\RadicalMartBonuses\Administrator\Helper\PointsHelper;
 use Joomla\Plugin\RadicalMartShipping\ApiShip\Helper\ApiShipHelper;
 use Joomla\CMS\Filesystem\Folder;
 use Joomla\CMS\Filesystem\File;
-use Joomla\CMS\Log\Log;
+use Joomla\Component\RadicalMartTelegram\Site\Helper\LogHelper;
 use Joomla\Component\RadicalMart\Administrator\Model\OrderModel as AdminOrderModel;
 use Joomla\Component\RadicalMartTelegram\Site\Helper\ConsentHelper;
 use Joomla\Plugin\RadicalMartShipping\ApiShip\Extension\ApiShip;
@@ -44,18 +44,8 @@ class ApiController extends BaseController
         $this->guardInitData();
         $this->guardRateLimitDb('list', 60);
 
-        // Инициализация логгера в самом начале для отладки фильтров
-        $debug = true;
-        try {
-            static $loggerReady = false;
-            if ($debug && !$loggerReady) {
-                \Joomla\CMS\Log\Log::addLogger([
-                    'text_file' => 'com_radicalmart.telegram.catalog.php',
-                    'extension' => 'com_radicalmart_telegram'
-                ], \Joomla\CMS\Log\Log::ALL, ['radicalmart_telegram_catalog']);
-                $loggerReady = true;
-            }
-        } catch (\Throwable $e) {}
+        // Debug режим контролируется через LogHelper::isEnabled()
+        $debug = LogHelper::isEnabled();
 
         $page = $app->input->getInt('page', 1);
         $lim  = $app->input->getInt('limit', 12);
@@ -68,6 +58,12 @@ class ApiController extends BaseController
         if ($inStock) { $filters['in_stock'] = 1; }
         if ($sort !== '') { $filters['sort'] = $sort; }
         if ($priceFrom !== '' || $priceTo !== '') { $filters['price'] = ['from'=>$priceFrom, 'to'=>$priceTo]; }
+        // Category filter from buttons
+        $categoryId = $app->input->getInt('category_id', 0);
+        if ($categoryId > 0) {
+            $filters['categories'] = [$categoryId];
+            LogHelper::debug('ApiController.list: category_id=' . $categoryId . ' applied to filters', 'radicalmart_telegram_catalog');
+        }
         // Field filters: read configured field_ids, load aliases from DB, pick values from request
         try {
             $params = $app->getParams('com_radicalmart_telegram');
@@ -75,21 +71,21 @@ class ApiController extends BaseController
             $fields = [];
             // DEBUG: вывод всех параметров запроса
             $allInput = $app->input->getArray();
-            \Joomla\CMS\Log\Log::add('ApiController.list: ALL INPUT PARAMS=' . json_encode($allInput, JSON_UNESCAPED_UNICODE), \Joomla\CMS\Log\Log::DEBUG, 'radicalmart_telegram_catalog');
+            LogHelper::debug('ApiController.list: ALL INPUT PARAMS=' . json_encode($allInput, JSON_UNESCAPED_UNICODE), 'radicalmart_telegram_catalog');
 
             // DEBUG: проверка конфигурации фильтров
-            \Joomla\CMS\Log\Log::add('ApiController.list: filters_fields RAW cfg=' . json_encode($cfg, JSON_UNESCAPED_UNICODE) . ' type=' . gettype($cfg) . ' empty=' . (empty($cfg) ? 'YES' : 'NO') . ' isArray=' . (is_array($cfg) ? 'YES' : 'NO'), \Joomla\CMS\Log\Log::DEBUG, 'radicalmart_telegram_catalog');
+            LogHelper::debug('ApiController.list: filters_fields RAW cfg=' . json_encode($cfg, JSON_UNESCAPED_UNICODE) . ' type=' . gettype($cfg) . ' empty=' . (empty($cfg) ? 'YES' : 'NO') . ' isArray=' . (is_array($cfg) ? 'YES' : 'NO'), 'radicalmart_telegram_catalog');
 
             // Конвертируем объект в массив (Joomla subform возвращает stdClass)
             if (is_object($cfg)) {
                 $cfg = get_object_vars($cfg);
-                \Joomla\CMS\Log\Log::add('ApiController.list: Converted object to array, new type=' . gettype($cfg), \Joomla\CMS\Log\Log::DEBUG, 'radicalmart_telegram_catalog');
+                LogHelper::debug('ApiController.list: Converted object to array, new type=' . gettype($cfg), 'radicalmart_telegram_catalog');
             }
 
             // Сначала загружаем aliases из БД по field_id
             $fieldIdToAlias = [];
             if (!empty($cfg) && is_array($cfg)) {
-                \Joomla\CMS\Log\Log::add('ApiController.list: filters_fields config=' . json_encode($cfg, JSON_UNESCAPED_UNICODE), \Joomla\CMS\Log\Log::DEBUG, 'radicalmart_telegram_catalog');
+                LogHelper::debug('ApiController.list: filters_fields config=' . json_encode($cfg, JSON_UNESCAPED_UNICODE), 'radicalmart_telegram_catalog');
                 $fieldIds = [];
                 foreach ($cfg as $row) {
                     if (is_object($row)) { $row = get_object_vars($row); }
@@ -97,7 +93,7 @@ class ApiController extends BaseController
                     if (empty($row['enabled']) || (int)$row['enabled'] !== 1) continue;
                     if (!empty($row['field_id'])) { $fieldIds[] = (int)$row['field_id']; }
                 }
-                \Joomla\CMS\Log\Log::add('ApiController.list: field_ids to load=' . json_encode($fieldIds), \Joomla\CMS\Log\Log::DEBUG, 'radicalmart_telegram_catalog');
+                LogHelper::debug('ApiController.list: field_ids to load=' . json_encode($fieldIds), 'radicalmart_telegram_catalog');
                 if (!empty($fieldIds)) {
                     $db = Factory::getContainer()->get('DatabaseDriver');
                     $q = $db->getQuery(true)
@@ -108,7 +104,7 @@ class ApiController extends BaseController
                         ->whereIn($db->quoteName('id'), $fieldIds);
                     $rows = (array) $db->setQuery($q)->loadObjectList();
                     foreach ($rows as $r) { $fieldIdToAlias[(int)$r->id] = (string)$r->alias; }
-                    \Joomla\CMS\Log\Log::add('ApiController.list: fieldIdToAlias map=' . json_encode($fieldIdToAlias, JSON_UNESCAPED_UNICODE), \Joomla\CMS\Log\Log::DEBUG, 'radicalmart_telegram_catalog');
+                    LogHelper::debug('ApiController.list: fieldIdToAlias map=' . json_encode($fieldIdToAlias, JSON_UNESCAPED_UNICODE), 'radicalmart_telegram_catalog');
                 }
             }
             // Теперь читаем значения из запроса по alias
@@ -122,7 +118,7 @@ class ApiController extends BaseController
                     $alias = $fieldIdToAlias[$fieldId];
                     if ($alias === '') continue;
                     $type = isset($row['type']) ? (string) $row['type'] : 'text';
-                    \Joomla\CMS\Log\Log::add('ApiController.list: checking field alias=' . $alias . ' type=' . $type, \Joomla\CMS\Log\Log::DEBUG, 'radicalmart_telegram_catalog');
+                    LogHelper::debug('ApiController.list: checking field alias=' . $alias . ' type=' . $type, 'radicalmart_telegram_catalog');
                     if ($type === 'range') {
                         $from = $app->input->getString('field_' . $alias . '_from', '');
                         $to   = $app->input->getString('field_' . $alias . '_to', '');
@@ -134,7 +130,7 @@ class ApiController extends BaseController
                             $arr = $app->input->get('field', [], 'array');
                             if (isset($arr[$alias])) { $val = (string) $arr[$alias]; }
                         }
-                        \Joomla\CMS\Log\Log::add('ApiController.list: field_' . $alias . ' value=' . json_encode($val), \Joomla\CMS\Log\Log::DEBUG, 'radicalmart_telegram_catalog');
+                        LogHelper::debug('ApiController.list: field_' . $alias . ' value=' . json_encode($val), 'radicalmart_telegram_catalog');
                         if ($val !== null && $val !== '') {
                             $parts = array_filter(array_map('trim', explode(',', (string)$val)), fn($x)=>$x!=='');
                             if (count($parts) > 1) { $fields[$alias] = $parts; }
@@ -145,15 +141,15 @@ class ApiController extends BaseController
             }
             if (!empty($fields)) {
                 $filters['fields'] = $fields;
-                \Joomla\CMS\Log\Log::add('ApiController.list: FINAL filters[fields]=' . json_encode($fields, JSON_UNESCAPED_UNICODE), \Joomla\CMS\Log\Log::DEBUG, 'radicalmart_telegram_catalog');
+                LogHelper::debug('ApiController.list: FINAL filters[fields]=' . json_encode($fields, JSON_UNESCAPED_UNICODE), 'radicalmart_telegram_catalog');
             }
         } catch (\Throwable $e) {
-            \Joomla\CMS\Log\Log::add('ApiController.list: EXCEPTION in field filters: ' . $e->getMessage(), \Joomla\CMS\Log\Log::ERROR, 'radicalmart_telegram_catalog');
+            LogHelper::error('ApiController.list: EXCEPTION in field filters: ' . $e->getMessage(), 'radicalmart_telegram_catalog');
         }
 
         // Финальное логирование собранных фильтров
         if ($debug) {
-            \Joomla\CMS\Log\Log::add('ApiController.list: page=' . $page . ' limit=' . $lim . ' filters=' . json_encode($filters, JSON_UNESCAPED_UNICODE), \Joomla\CMS\Log\Log::DEBUG, 'radicalmart_telegram_catalog');
+            LogHelper::debug('ApiController.list: page=' . $page . ' limit=' . $lim . ' filters=' . json_encode($filters, JSON_UNESCAPED_UNICODE), 'radicalmart_telegram_catalog');
         }
 
         $items = (new CatalogService())->listProducts($page, $lim, $filters);
@@ -162,13 +158,13 @@ class ApiController extends BaseController
                 $metaCount = 0; $simpleCount = 0;
                 foreach ($items as $it) { if (!empty($it['is_meta'])) $metaCount++; else $simpleCount++; }
                 if (!empty($debug)) {
-                    \Joomla\CMS\Log\Log::add('ApiController.list: items total=' . count($items) . ' meta=' . $metaCount . ' simple=' . $simpleCount, \Joomla\CMS\Log\Log::DEBUG, 'radicalmart_telegram_catalog');
+                    LogHelper::debug('ApiController.list: items total=' . count($items) . ' meta=' . $metaCount . ' simple=' . $simpleCount, 'radicalmart_telegram_catalog');
                     // Duplicate concise summary to common channel for visibility
-                    \Joomla\CMS\Log\Log::add('[catalog] list totals: total=' . count($items) . ', meta=' . $metaCount . ', simple=' . $simpleCount, \Joomla\CMS\Log\Log::DEBUG, 'com_radicalmart.telegram');
+                    LogHelper::debug('[catalog] list totals: total=' . count($items) . ', meta=' . $metaCount . ', simple=' . $simpleCount);
                 }
             } else if (!empty($debug)) {
-                \Joomla\CMS\Log\Log::add('ApiController.list: items empty', \Joomla\CMS\Log\Log::INFO, 'radicalmart_telegram_catalog');
-                \Joomla\CMS\Log\Log::add('[catalog] list: items empty', \Joomla\CMS\Log\Log::INFO, 'com_radicalmart.telegram');
+                LogHelper::info('ApiController.list: items empty', 'radicalmart_telegram_catalog');
+                LogHelper::info('[catalog] list: items empty');
             }
         } catch (\Throwable $e) {}
         echo new JsonResponse(['items' => $items]);
@@ -478,14 +474,27 @@ class ApiController extends BaseController
         try {
             $app = Factory::getApplication();
             $sessionData = $app->getUserState('com_radicalmart.checkout.data', []);
-            $appliedCode = $sessionData['plugins']['bonuses']['codes'] ?? '';
 
-            if (empty($appliedCode) || !class_exists(CodesHelper::class)) {
-                return $result;
+            // Get promo code - can be in 'code' (string) or 'plugins.bonuses.codes' (array of IDs)
+            $appliedCodeString = $sessionData['code'] ?? '';
+            $appliedCodeIds = $sessionData['plugins']['bonuses']['codes'] ?? [];
+
+            // Determine which source to use
+            $codeData = null;
+            if (!empty($appliedCodeString) && class_exists(CodesHelper::class)) {
+                // Try to find by string code first
+                $codeData = CodesHelper::find($appliedCodeString);
             }
 
-            // Get code data
-            $codeData = CodesHelper::find($appliedCode);
+            if (!$codeData && !empty($appliedCodeIds) && is_array($appliedCodeIds)) {
+                // Fallback: find by ID from array using getCodes()
+                $firstCodeId = (int) reset($appliedCodeIds);
+                if ($firstCodeId > 0 && class_exists(CodesHelper::class)) {
+                    $codes = CodesHelper::getCodes([$firstCodeId]);
+                    $codeData = $codes[$firstCodeId] ?? null;
+                }
+            }
+
             if (!$codeData || empty($codeData->discount)) {
                 return $result;
             }
@@ -499,8 +508,11 @@ class ApiController extends BaseController
                 return $result;
             }
 
+            // Get the code string for display
+            $codeString = $codeData->code ?? $appliedCodeString;
+
             $result['applied'] = true;
-            $result['code'] = $appliedCode;
+            $result['code'] = $codeString;
             $result['discount_type'] = $isPercent ? 'percent' : 'fixed';
 
             // Calculate total discount
@@ -534,16 +546,16 @@ class ApiController extends BaseController
                 $cart->plugins = [];
             }
             $cart->plugins['bonuses'] = [
-                'codes' => [$codeData->id],
-                'code_string' => $appliedCode,
+                'codes' => [(int) $codeData->id],
+                'code_string' => $codeString,
                 'discount' => $discountAmount,
                 'codes_discount_string' => $discountAmountString  // Frontend expects this key
             ];
 
-            Log::add('applyPromoToCart: code=' . $appliedCode . ' discount=' . $discountAmount . ' base=' . $baseTotal . ' final=' . $cart->total['final'], Log::DEBUG, 'com_radicalmart.telegram');
+            LogHelper::debug('applyPromoToCart: code=' . $codeString . ' id=' . $codeData->id . ' discount=' . $discountAmount . ' base=' . $baseTotal . ' final=' . $cart->total['final']);
 
         } catch (\Throwable $e) {
-            Log::add('applyPromoToCart error: ' . $e->getMessage(), Log::WARNING, 'com_radicalmart.telegram');
+            LogHelper::warning('applyPromoToCart error: ' . $e->getMessage());
         }
 
         return $result;
@@ -593,13 +605,25 @@ class ApiController extends BaseController
             if (!$hasReferral) {
                 $app = Factory::getApplication();
                 $sessionData = $app->getUserState('com_radicalmart.checkout.data', []);
-                $appliedCode = $sessionData['plugins']['bonuses']['codes'] ?? '';
 
-                if ($appliedCode !== '' && class_exists(CodesHelper::class)) {
-                    $codeData = CodesHelper::find($appliedCode);
-                    if ($codeData && !empty($codeData->referral) && (int) $codeData->referral === 1) {
-                        $hasReferral = true;
+                // Get code - can be string or array of IDs
+                $appliedCodeString = $sessionData['code'] ?? '';
+                $appliedCodeIds = $sessionData['plugins']['bonuses']['codes'] ?? [];
+
+                $codeData = null;
+                if ($appliedCodeString !== '' && class_exists(CodesHelper::class)) {
+                    $codeData = CodesHelper::find($appliedCodeString);
+                }
+                if (!$codeData && !empty($appliedCodeIds) && is_array($appliedCodeIds)) {
+                    $firstCodeId = (int) reset($appliedCodeIds);
+                    if ($firstCodeId > 0 && class_exists(CodesHelper::class)) {
+                        $codes = CodesHelper::getCodes([$firstCodeId]);
+                        $codeData = $codes[$firstCodeId] ?? null;
                     }
+                }
+
+                if ($codeData && !empty($codeData->referral) && (int) $codeData->referral === 1) {
+                    $hasReferral = true;
                 }
             }
 
@@ -634,7 +658,7 @@ class ApiController extends BaseController
             $result['total'] = (int) $totalCashback;
 
         } catch (\Throwable $e) {
-            Log::add('ApiController::calculateCartCashback error: ' . $e->getMessage(), Log::WARNING, 'com_radicalmart.telegram');
+            LogHelper::warning('ApiController::calculateCartCashback error: ' . $e->getMessage());
         }
 
         return $result;
@@ -835,7 +859,7 @@ class ApiController extends BaseController
             $app->close();
 
         } catch (\Throwable $e) {
-            Log::add('ApiController::product error: ' . $e->getMessage(), Log::WARNING, 'com_radicalmart.telegram');
+            LogHelper::warning('ApiController::product error: ' . $e->getMessage());
             echo new JsonResponse(null, $e->getMessage(), true);
             $app->close();
         }
@@ -1023,7 +1047,7 @@ class ApiController extends BaseController
         // This ensures shipping/payment/promo data persists across API calls
         $checkoutSvc = new CheckoutService();
         $storedCheckoutData = $checkoutSvc->loadAndSyncCheckoutData($chat);
-        Log::add('[checkout] Loaded stored checkout data for chat=' . $chat . ': ' . json_encode($storedCheckoutData), Log::DEBUG, 'com_radicalmart.telegram');
+        LogHelper::debug('[checkout] Loaded stored checkout data for chat=' . $chat . ': ' . json_encode($storedCheckoutData));
 
         $first = trim($app->input->getString('first_name', ''));
         $second = trim($app->input->getString('second_name', '')); // отчество
@@ -1056,6 +1080,31 @@ class ApiController extends BaseController
             if (!preg_match('#^\+?7?\d{10,11}$#', $phone)) { throw new \RuntimeException(Text::_('COM_RADICALMART_TELEGRAM_ERR_PHONE_FORMAT'), 400); }
             if (!empty($email) && !filter_var($email, FILTER_VALIDATE_EMAIL)) { throw new \RuntimeException(Text::_('COM_RADICALMART_TELEGRAM_ERR_EMAIL_FORMAT'), 400); }
             if (empty($first) || empty($last)) { throw new \RuntimeException(Text::_('COM_RADICALMART_TELEGRAM_ERR_NAME_REQUIRED'), 400); }
+
+            // Server-side validation: ApiShip shipping methods require PVZ selection
+            // ApiShip shipping IDs: 4 (CDEK), 6 (yataxi), 7 (5Post)
+            $apishipShippingIds = [4, 6, 7];
+            if (in_array($shippingId, $apishipShippingIds, true)) {
+                // Check that PVZ point is selected
+                $pointId = $storedCheckoutData['shipping']['point']['id'] ?? null;
+                if (empty($pointId)) {
+                    LogHelper::warning('[checkout] VALIDATION FAILED: ApiShip shipping=' . $shippingId . ' requires PVZ selection, but point.id is empty');
+                    throw new \RuntimeException(Text::_('COM_RADICALMART_TELEGRAM_ERR_PVZ_REQUIRED'), 400);
+                }
+
+                // Check that tariff is selected
+                $tariffId = $storedCheckoutData['shipping']['tariff']['id'] ?? null;
+                if (empty($tariffId)) {
+                    LogHelper::warning('[checkout] VALIDATION FAILED: ApiShip shipping=' . $shippingId . ' requires tariff selection, but tariff.id is empty');
+                    throw new \RuntimeException(Text::_('COM_RADICALMART_TELEGRAM_ERR_TARIFF_REQUIRED'), 400);
+                }
+
+                // Check that shipping price is calculated
+                $priceBase = $storedCheckoutData['shipping']['price']['base'] ?? 0;
+                if ((int)$priceBase <= 0) {
+                    LogHelper::debug('[checkout] WARNING: ApiShip shipping=' . $shippingId . ' has price.base=' . $priceBase . ' (may be zero for free shipping)');
+                }
+            }
 
             // Resolve or create user
             $db = Factory::getContainer()->get('DatabaseDriver');
@@ -1128,25 +1177,16 @@ class ApiController extends BaseController
             // Persist chosen shipping/payment in session state for RadicalMart checkout
             // Validate selected shipping/payment via available methods
             $sessionData = $app->getUserState('com_radicalmart.checkout.data', []);
-            $model = new CheckoutModel();
-            $model->setState('cart.id', (int) $cart->id);
-            $model->setState('cart.code', (string) $cart->code);
-            $item  = $model->getItem();
+            LogHelper::debug('[checkout] Session data BEFORE merge: ' . json_encode([
+                'shipping_id' => $sessionData['shipping']['id'] ?? 'none',
+                'shipping_tariff_id' => $sessionData['shipping']['tariff']['id'] ?? 'none',
+                'shipping_price_base' => $sessionData['shipping']['price']['base'] ?? 'none',
+                'plugins_bonuses' => $sessionData['plugins']['bonuses'] ?? 'none',
+            ]));
 
-            if ($shippingId > 0) {
-                $allowed = [];
-                if (!empty($item->shippingMethods)) { foreach ($item->shippingMethods as $m) { $allowed[(int)$m->id] = true; } }
-                if (!isset($allowed[$shippingId])) { throw new \RuntimeException(Text::_('COM_RADICALMART_TELEGRAM_ERR_SHIPPING_UNAVAILABLE'), 400); }
-                $sessionData['shipping']['id'] = $shippingId;
-            }
-            if ($paymentId > 0) {
-                $allowed = [];
-                if (!empty($item->paymentMethods)) { foreach ($item->paymentMethods as $m) { $allowed[(int)$m->id] = true; } }
-                if (!isset($allowed[$paymentId])) { throw new \RuntimeException(Text::_('COM_RADICALMART_TELEGRAM_ERR_PAYMENT_UNAVAILABLE'), 400); }
-                $sessionData['payment']['id'] = $paymentId;
-            }
-
-            // Merge PVZ address data from stored checkout data
+            // CRITICAL FIX: Merge storedCheckoutData BEFORE calling getItem()!
+            // Otherwise getItem() reads old session data without shipping.price
+            // and onRadicalMartGetOrderShipping event won't have the preset price
             if (!empty($storedCheckoutData['shipping'])) {
                 $sessionData['shipping'] = array_replace_recursive(
                     $sessionData['shipping'] ?? [],
@@ -1154,18 +1194,74 @@ class ApiController extends BaseController
                 );
             }
 
+            // Set specific shipping/payment IDs from request (override stored values if provided)
+            if ($shippingId > 0) {
+                $sessionData['shipping']['id'] = $shippingId;
+            }
+            if ($paymentId > 0) {
+                $sessionData['payment']['id'] = $paymentId;
+            }
+
+            LogHelper::debug('[checkout] Session data AFTER merge (before setUserState): ' . json_encode([
+                'shipping_id' => $sessionData['shipping']['id'] ?? 'none',
+                'shipping_tariff_id' => $sessionData['shipping']['tariff']['id'] ?? 'none',
+                'shipping_price_base' => $sessionData['shipping']['price']['base'] ?? 'none',
+                'plugins_bonuses' => $sessionData['plugins']['bonuses'] ?? 'none',
+            ]));
+
+            // Save merged session BEFORE calling getItem() for validation
             $app->setUserState('com_radicalmart.checkout.data', $sessionData);
+
+            $model = new CheckoutModel();
+            // CRITICAL: Force populateState() first to prevent cart.id/code being overwritten
+            $model->getState();
+            $model->setState('cart.id', (int) $cart->id);
+            $model->setState('cart.code', (string) $cart->code);
+            $item  = $model->getItem();
+
+            // Validate shipping/payment methods are available
+            if ($shippingId > 0) {
+                $allowed = [];
+                if (!empty($item->shippingMethods)) { foreach ($item->shippingMethods as $m) { $allowed[(int)$m->id] = true; } }
+                if (!isset($allowed[$shippingId])) { throw new \RuntimeException(Text::_('COM_RADICALMART_TELEGRAM_ERR_SHIPPING_UNAVAILABLE'), 400); }
+            }
+            if ($paymentId > 0) {
+                $allowed = [];
+                if (!empty($item->paymentMethods)) { foreach ($item->paymentMethods as $m) { $allowed[(int)$m->id] = true; } }
+                if (!isset($allowed[$paymentId])) { throw new \RuntimeException(Text::_('COM_RADICALMART_TELEGRAM_ERR_PAYMENT_UNAVAILABLE'), 400); }
+            }
+
+            LogHelper::debug('[checkout] Session data verified, shipping total from getItem: ' . json_encode([
+                'shipping_order_price_base' => $item->shipping->order->price['base'] ?? 'none',
+                'total_base' => $item->total['base'] ?? 'none',
+                'total_final' => $item->total['final'] ?? 'none',
+            ]));
+
+            // Verify session was set correctly
+            $verifyData = $app->getUserState('com_radicalmart.checkout.data', []);
+            LogHelper::debug('[checkout] Session data AFTER setUserState: ' . json_encode([
+                'shipping_id' => $verifyData['shipping']['id'] ?? 'none',
+                'shipping_tariff_id' => $verifyData['shipping']['tariff']['id'] ?? 'none',
+                'shipping_price_base' => $verifyData['shipping']['price']['base'] ?? 'none',
+                'plugins_bonuses' => $verifyData['plugins']['bonuses'] ?? 'none',
+            ]));
 
             // Create order via CheckoutModel
             // Re-init model after session update
             $model = new CheckoutModel();
+            // CRITICAL: Force populateState() to run FIRST by calling getState()
+            // Otherwise setState() values will be overwritten when getState() is called later
+            // This ensures cart.id and cart.code are correctly set for order creation
+            $model->getState();
             $model->setState('cart.id', (int) $cart->id);
             $model->setState('cart.code', (string) $cart->code);
 
-            // Build orderData with shipping and payment IDs
+            // Build orderData with shipping, payment, and plugins (promo codes)
             // RadicalMart expects these in $data for createOrder
+            // CRITICAL: currency must be set explicitly for discount calculations to work
             $orderData = [
                 'created_by' => $userId,
+                'currency' => (!empty($item->currency['code'])) ? $item->currency['code'] : 'RUB',
                 'contacts' => [
                     'first_name' => ($first ?: ($fallbackName ?: '')),
                     'second_name' => $second,
@@ -1177,16 +1273,71 @@ class ApiController extends BaseController
                 'payment' => $sessionData['payment'] ?? [],
             ];
 
-            Log::add('[checkout] Creating order with data: ' . json_encode([
+            // Include plugins (promo codes/bonuses) from session data
+            // This ensures promo codes are saved with the order
+            if (!empty($sessionData['plugins'])) {
+                $orderData['plugins'] = $sessionData['plugins'];
+                LogHelper::debug('[checkout] Including plugins in orderData: ' . json_encode($sessionData['plugins']));
+            }
+
+            LogHelper::debug('[checkout] Creating order with data: ' . json_encode([
                 'created_by' => $orderData['created_by'],
+                'currency' => $orderData['currency'] ?? 'NOT SET',
                 'shipping_id' => $orderData['shipping']['id'] ?? 'none',
                 'payment_id' => $orderData['payment']['id'] ?? 'none',
-            ]), Log::DEBUG, 'com_radicalmart.telegram');
+                'plugins' => $orderData['plugins'] ?? 'none',
+            ]));
+
+            // CRITICAL: Call getItem() BEFORE createOrder() to trigger discount calculation
+            // This fires onRadicalMartGetOrderProducts event with context=com_radicalmart.checkout
+            // which allows Bonuses plugin to apply promo code discounts to products
+            LogHelper::debug('[checkout] Calling getItem() to trigger discount calculation...');
+            $checkoutItem = $model->getItem();
+            if (!$checkoutItem) {
+                throw new \RuntimeException('Failed to prepare checkout item for discount calculation', 500);
+            }
+            LogHelper::debug('[checkout] getItem() completed. Pre-order totals: base=' . ($checkoutItem->total['base'] ?? 'null') . ', final=' . ($checkoutItem->total['final'] ?? 'null'));
 
             if (!$order = $model->createOrder($orderData)) {
                 $errors = $model->getErrors();
                 $msg = $errors ? (is_array($errors) ? implode("\n", array_map(fn($e)=> ($e instanceof \Exception)?$e->getMessage():$e, $errors)) : (string) $errors) : 'Ошибка оформления заказа';
                 throw new \RuntimeException($msg, 500);
+            }
+
+            // Log order data after initial creation
+            LogHelper::debug('[checkout] Order created (initial): id=' . ($order->id ?? 'null') . ', number=' . ($order->number ?? 'null') . ', total_base=' . ($order->total['base'] ?? 'null') . ', total_final=' . ($order->total['final'] ?? 'null') . ', shipping_price_base=' . ($order->shipping->order->price['base'] ?? 'null'));
+
+            // CRITICAL FIX: Re-save order with recalculate_price=1 to force shipping price recalculation
+            // This triggers onRadicalMartGetOrderShipping with recalculate_price flag, ensuring
+            // the shipping price is properly added to total before payment
+            $orderId = (int) ($order->id ?? 0);
+            if ($orderId > 0) {
+                try {
+                    $orderModel = new \Joomla\Component\RadicalMart\Administrator\Model\OrderModel();
+                    $orderModel->setState('order.id', $orderId);
+
+                    // Build resave data with recalculate flag
+                    $resaveData = [
+                        'id' => $orderId,
+                        'shipping' => array_merge(
+                            $sessionData['shipping'] ?? [],
+                            ['recalculate_price' => 1]
+                        ),
+                    ];
+
+                    LogHelper::debug('[checkout] Re-saving order ' . $orderId . ' with recalculate_price=1');
+
+                    if ($orderModel->save($resaveData)) {
+                        // Reload order to get updated totals
+                        $order = $orderModel->getItem($orderId);
+                        LogHelper::debug('[checkout] Order re-saved: total_base=' . ($order->total['base'] ?? 'null') . ', total_final=' . ($order->total['final'] ?? 'null') . ', shipping_price_base=' . ($order->shipping->order->price['base'] ?? 'null'));
+                    } else {
+                        $errors = $orderModel->getErrors();
+                        LogHelper::warning('[checkout] Order re-save failed: ' . json_encode($errors));
+                    }
+                } catch (\Throwable $e) {
+                    LogHelper::warning('[checkout] Order re-save exception: ' . $e->getMessage());
+                }
             }
 
             $number  = $order->number ?? null;
@@ -1216,25 +1367,23 @@ class ApiController extends BaseController
                     $ptoken = (string) $params->get($env === 'prod' ? 'robokassa_provider_token_prod' : 'robokassa_provider_token_test', '');
                 }
                 if ($cardsEnabled && $ptoken !== '') {
-                    // Try to get order total and currency
-                    $model2 = new CheckoutModel();
-                    $model2->setState('cart.id', (int) $cart->id);
-                    $model2->setState('cart.code', (string) $cart->code);
-                    $order2 = $model2->getItem();
-                    $paymentPlugin = (!empty($order2->payment) && !empty($order2->payment->plugin)) ? (string) $order2->payment->plugin : '';
+                    // Use the created order directly - cart is already deleted after createOrder()
+                    // $order contains full order data including total with shipping
+                    $paymentPlugin = (!empty($order->payment) && !empty($order->payment->plugin)) ? (string) $order->payment->plugin : '';
                     $isTelegramPayment = ($paymentPlugin !== '' && stripos($paymentPlugin, 'telegram') !== false);
                     if (!$isTelegramPayment) { throw new \RuntimeException('Skip invoice: payment not telegram'); }
-                    $currency = (!empty($order2->currency['code'])) ? (string) $order2->currency['code'] : 'RUB';
-                    $amountStr = (!empty($order2->total['final_string'])) ? (string) $order2->total['final_string'] : '';
+                    $currency = (!empty($order->currency['code'])) ? (string) $order->currency['code'] : 'RUB';
+                    $amountStr = (!empty($order->total['final_string'])) ? (string) $order->total['final_string'] : '';
                     $amountMinor = 0;
-                    if (!empty($order2->total['final'])) {
-                        $amountMinor = (int) round(((float) $order2->total['final']) * 100);
+                    if (!empty($order->total['final'])) {
+                        $amountMinor = (int) round(((float) $order->total['final']) * 100);
                     } elseif ($amountStr !== '') {
                         $num = preg_replace('#[^0-9\.,]#', '', $amountStr);
                         $num = str_replace(' ', '', $num);
                         $num = str_replace(',', '.', $num);
                         $amountMinor = (int) round(((float) $num) * 100);
                     }
+                    LogHelper::debug('[checkout] Telegram Payment invoice: total_final=' . ($order->total['final'] ?? 'null') . ', shipping_price_base=' . ($order->shipping->order->price['base'] ?? 'null') . ', amountMinor=' . $amountMinor);
                     if ($amountMinor > 0) {
                         $title = 'Заказ ' . ($number ?: ('#' . $orderId));
                         $desc  = 'Оплата заказа в магазине';
@@ -1265,7 +1414,7 @@ class ApiController extends BaseController
             // Clear checkout data from SessionStore after successful order creation
             try {
                 $checkoutSvc->clearCheckoutData($chat);
-                Log::add('[checkout] Cleared checkout data for chat=' . $chat . ' after order ' . $number, Log::DEBUG, 'com_radicalmart.telegram');
+                LogHelper::debug('[checkout] Cleared checkout data for chat=' . $chat . ' after order ' . $number);
             } catch (\Throwable $e) { /* ignore */ }
 
             echo new JsonResponse([
@@ -1317,7 +1466,7 @@ class ApiController extends BaseController
             'lon'      => (float) $app->input->get('lon', 0, 'float'),
         ];
 
-        Log::add("[setpvz] INPUT: shippingId=$shippingId, provider={$pvzData['provider']}, extId={$pvzData['id']}, tariffId=$tariffId, chat=$chat", Log::DEBUG, 'com_radicalmart.telegram');
+        LogHelper::debug("[setpvz] INPUT: shippingId=$shippingId, provider={$pvzData['provider']}, extId={$pvzData['id']}, tariffId=$tariffId, chat=$chat");
 
         try {
             $svc = new CheckoutService();
@@ -1325,7 +1474,7 @@ class ApiController extends BaseController
             echo new JsonResponse($result);
             $app->close();
         } catch (\Throwable $e) {
-            Log::add("[setpvz] ERROR: " . $e->getMessage(), Log::ERROR, 'com_radicalmart.telegram');
+            LogHelper::error("[setpvz] ERROR: " . $e->getMessage());
             echo new JsonResponse(null, $e->getMessage(), true);
             $app->close();
         }
@@ -1461,7 +1610,7 @@ class ApiController extends BaseController
             echo new JsonResponse(['results' => $result['results']]);
             $app->close();
         } catch (\Throwable $e) {
-            Log::add("[tariffs] Exception: " . $e->getMessage(), Log::ERROR, 'com_radicalmart.telegram');
+            LogHelper::error("[tariffs] Exception: " . $e->getMessage());
             echo new JsonResponse(null, $e->getMessage(), true);
             $app->close();
         }
@@ -1778,4 +1927,84 @@ class ApiController extends BaseController
         $app->close();
     }
 
+    /**
+     * Get bonuses/points info for user
+     */
+    public function bonuses(): void
+    {
+        $app = Factory::getApplication();
+        $this->guardInitData();
+        $this->guardRateLimitDb('bonuses', 60);
+        $chat = $this->getChatId();
+
+        if ($chat <= 0) {
+            echo new JsonResponse(null, 'Invalid chat', true);
+            $app->close();
+        }
+
+        try {
+            $svc = new BonusesService();
+            $data = $svc->getUserBonusesInfo($chat);
+            echo new JsonResponse($data);
+        } catch (\Throwable $e) {
+            echo new JsonResponse(null, $e->getMessage(), true);
+        }
+
+        $app->close();
+    }
+
+    /**
+     * Get summary info (cart count, bonus balance, etc.)
+     */
+    public function summary(): void
+    {
+        $app = Factory::getApplication();
+        $this->guardInitData();
+        $this->guardRateLimitDb('summary', 60);
+        $chat = $this->getChatId();
+
+        if ($chat <= 0) {
+            echo new JsonResponse(null, 'Invalid chat', true);
+            $app->close();
+        }
+
+        try {
+            // Cart count
+            $cartSvc = new CartService();
+            $cart = $cartSvc->getCart($chat);
+            $cartCount = 0;
+            if ($cart && !empty($cart->products)) {
+                foreach ($cart->products as $p) {
+                    $cartCount += (int) ($p->quantity ?? 1);
+                }
+            }
+
+            // Bonus balance
+            $bonusBalance = 0;
+            try {
+                $db = Factory::getContainer()->get('DatabaseDriver');
+                $q = $db->getQuery(true)
+                    ->select('user_id')
+                    ->from($db->quoteName('#__radicalmart_telegram_users'))
+                    ->where($db->quoteName('chat_id') . ' = ' . (int) $chat);
+                $userId = (int) $db->setQuery($q)->loadResult();
+
+                if ($userId > 0 && class_exists(PointsHelper::class)) {
+                    $bonusBalance = (int) PointsHelper::getBalance($userId);
+                }
+            } catch (\Throwable $e) {}
+
+            echo new JsonResponse([
+                'cart_count' => $cartCount,
+                'bonus_balance' => $bonusBalance
+            ]);
+        } catch (\Throwable $e) {
+            echo new JsonResponse(null, $e->getMessage(), true);
+        }
+
+        $app->close();
+    }
+
 }
+
+

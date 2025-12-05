@@ -148,7 +148,7 @@ class SessionStore
         if ($row && !empty($row['payload'])) {
             $payload = json_decode((string)$row['payload'], true) ?: [];
         }
-        
+
         // Merge checkout data into payload
         $payload['checkout'] = $checkoutData;
         $payloadJson = json_encode($payload, JSON_UNESCAPED_UNICODE);

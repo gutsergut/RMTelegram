@@ -358,7 +358,7 @@ class CheckoutService
                     ];
                     $inactiveToMark[] = ['ext_id' => $extId, 'provider' => $provider];
                 }
-            } catch (\Throwable $e) {
+            } catch (\\Throwable $e) {
                 LogHelper::warning("[getTariffsBatch] Error calculating for $extId: " . $e->getMessage());
                 $results[$extId] = [
                     'error' => $e->getMessage(),

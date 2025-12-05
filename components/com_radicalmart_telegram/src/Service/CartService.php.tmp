@@ -32,7 +32,7 @@ class CartService
         // Получаем user_id связанного с этим chat_id
         $userId = TelegramUserHelper::getUserIdByChatId($chatId);
         if ($userId <= 0) {
-            LogHelper::debug('CartService::loginTelegramUser chat=' . $chatId . ' - no linked user');
+            LogHelper::DEBUG.ToLower()('CartService::loginTelegramUser chat=' . $chatId . ' - no linked user');
             return null;
         }
 
@@ -40,14 +40,14 @@ class CartService
         $currentUser = Factory::getUser();
         if (!$currentUser->guest && (int)$currentUser->id === $userId) {
             // Уже авторизован нужный пользователь
-            LogHelper::debug('CartService::loginTelegramUser chat=' . $chatId . ' - user ' . $userId . ' already logged in');
+            LogHelper::DEBUG.ToLower()('CartService::loginTelegramUser chat=' . $chatId . ' - user ' . $userId . ' already logged in');
             return $userId;
         }
 
         // Загружаем пользователя
         $user = User::getInstance($userId);
         if ($user->guest || (int)$user->id <= 0) {
-            LogHelper::warning('CartService::loginTelegramUser chat=' . $chatId . ' - user ' . $userId . ' not found');
+            LogHelper::WARNING.ToLower()('CartService::loginTelegramUser chat=' . $chatId . ' - user ' . $userId . ' not found');
             return null;
         }
 
@@ -62,7 +62,7 @@ class CartService
         // Также обновляем identity в приложении
         $app->loadIdentity($user);
 
-        LogHelper::debug('CartService::loginTelegramUser chat=' . $chatId . ' - logged in user ' . $userId . ' (' . $user->username . ')');
+        LogHelper::DEBUG.ToLower()('CartService::loginTelegramUser chat=' . $chatId . ' - logged in user ' . $userId . ' (' . $user->username . ')');
 
         return $userId;
     }
@@ -73,25 +73,25 @@ class CartService
      */
     public function addProduct(int $chatId, int $productId, float $quantity = 1.0): array|false
     {
-        LogHelper::debug('CartService::addProduct chatId=' . $chatId . ' productId=' . $productId . ' qty=' . $quantity);
+        LogHelper::DEBUG.ToLower()('CartService::addProduct chatId=' . $chatId . ' productId=' . $productId . ' qty=' . $quantity);
 
         // Авторизуем пользователя для привязки корзины
         $linkedUserId = $this->loginTelegramUser($chatId);
-        LogHelper::debug('CartService::addProduct linkedUserId=' . ($linkedUserId ?? 'null'));
+        LogHelper::DEBUG.ToLower()('CartService::addProduct linkedUserId=' . ($linkedUserId ?? 'null'));
 
         $model = new CartModel();
 
         $res = $model->addProduct($productId, $quantity, []);
         if ($res === false) {
             $errors = $model->getErrors();
-            LogHelper::warning('CartService::addProduct FAILED: ' . json_encode($errors));
+            LogHelper::WARNING.ToLower()('CartService::addProduct FAILED: ' . json_encode($errors));
             return false;
         }
 
         // Сохраняем cookies как в оригинальном CartController
         if (!empty($res['cart']) && is_object($res['cart'])) {
             $model->setCookies((int) $res['cart']->id, (string) $res['cart']->code);
-            LogHelper::debug('CartService::addProduct SUCCESS cart.id=' . $res['cart']->id . ' user_id=' . ($res['cart']->user_id ?? 'null'));
+            LogHelper::DEBUG.ToLower()('CartService::addProduct SUCCESS cart.id=' . $res['cart']->id . ' user_id=' . ($res['cart']->user_id ?? 'null'));
         }
 
         return $res;
@@ -103,16 +103,16 @@ class CartService
      */
     public function getCart(int $chatId)
     {
-        LogHelper::debug('CartService::getCart chatId=' . $chatId);
+        LogHelper::DEBUG.ToLower()('CartService::getCart chatId=' . $chatId);
 
         // Авторизуем пользователя для загрузки его корзины
         $linkedUserId = $this->loginTelegramUser($chatId);
-        LogHelper::debug('CartService::getCart linkedUserId=' . ($linkedUserId ?? 'null'));
+        LogHelper::DEBUG.ToLower()('CartService::getCart linkedUserId=' . ($linkedUserId ?? 'null'));
 
         $model = new CartModel();
         $cart = $model->getItem();
 
-        LogHelper::debug('CartService::getCart result=' . ($cart ? 'cart.id=' . ($cart->id ?? 'null') . ' user_id=' . ($cart->user_id ?? 'null') . ' products=' . (isset($cart->products) ? count($cart->products) : 0) : 'false/null'));
+        LogHelper::DEBUG.ToLower()('CartService::getCart result=' . ($cart ? 'cart.id=' . ($cart->id ?? 'null') . ' user_id=' . ($cart->user_id ?? 'null') . ' products=' . (isset($cart->products) ? count($cart->products) : 0) : 'false/null'));
 
         return $cart;
     }
@@ -122,7 +122,7 @@ class CartService
      */
     public function setQuantity(int $chatId, int $productId, float $quantity)
     {
-        LogHelper::debug('CartService::setQuantity chatId=' . $chatId . ' productId=' . $productId . ' qty=' . $quantity);
+        LogHelper::DEBUG.ToLower()('CartService::setQuantity chatId=' . $chatId . ' productId=' . $productId . ' qty=' . $quantity);
 
         // Авторизуем пользователя
         $linkedUserId = $this->loginTelegramUser($chatId);
@@ -146,7 +146,7 @@ class CartService
      */
     public function remove(int $chatId, int $productId)
     {
-        LogHelper::debug('CartService::remove chatId=' . $chatId . ' productId=' . $productId);
+        LogHelper::DEBUG.ToLower()('CartService::remove chatId=' . $chatId . ' productId=' . $productId);
 
         // Авторизуем пользователя
         $linkedUserId = $this->loginTelegramUser($chatId);

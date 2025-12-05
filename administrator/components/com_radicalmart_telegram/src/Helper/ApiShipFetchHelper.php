@@ -5,6 +5,8 @@
 
 namespace Joomla\Component\RadicalMartTelegram\Administrator\Helper;
 
+use Joomla\Component\RadicalMartTelegram\Administrator\Helper\LogHelper;
+
 \defined('_JEXEC') or die;
 
 use Joomla\CMS\Factory;
@@ -22,18 +24,12 @@ use Joomla\Registry\Registry;
 class ApiShipFetchHelper
 {
 	/**
-	 * Инициализация логирования
+	 * Инициализация логирования - handled by LogHelper
+	 * @deprecated Use LogHelper instead
 	 */
 	protected static function initLogger(): void
 	{
-		Log::addLogger(
-			[
-				'text_file' => 'com_radicalmart_telegram.php',
-				'text_entry_format' => '{DATETIME} {PRIORITY} {MESSAGE}'
-			],
-			Log::ALL,
-			['com_radicalmart_telegram']
-		);
+		// LogHelper handles logger initialization automatically
 	}
 
 	/**
@@ -47,7 +43,7 @@ class ApiShipFetchHelper
 	 */
 	public static function fetchAllPoints(?array $providersList = null): array
 	{
-		self::initLogger();
+		// LogHelper handles logger initialization
 		$params  = ComponentHelper::getParams('com_radicalmart_telegram');
 		$token   = (string) $params->get('apiship_api_key', '');
 
@@ -67,11 +63,8 @@ class ApiShipFetchHelper
 
 		if ($token === '' || empty($providersList))
 		{
-			Log::add(
-				'ApiShip fetch failed: missing token or providers. Token length=' . strlen($token) . ', providers=' . count($providersList),
-				Log::WARNING,
-				'com_radicalmart_telegram'
-			);
+			LogHelper::warning(
+				'ApiShip fetch failed: missing token or providers. Token length=' . strlen($token) . ', providers=' . count($providersList));
 			return [
 				'success' => false,
 				'message' => 'Missing API token or providers list',
@@ -79,11 +72,8 @@ class ApiShipFetchHelper
 			];
 		}
 
-		Log::add(
-			'ApiShip fetch started: providers=' . implode(',', $providersList),
-			Log::INFO,
-			'com_radicalmart_telegram'
-		);
+		LogHelper::info(
+			'ApiShip fetch started: providers=' . implode(',', $providersList));
 
 		$db = Factory::getContainer()->get('DatabaseDriver');
 		// Operations: 2 = pickup, 3 = pickup+return (see plg_radicalmart_shipping_apiship)
@@ -97,20 +87,14 @@ class ApiShipFetchHelper
 				try
 				{
 					$total = ApiShipHelper::getPointsTotal($token, [$prov], $operation);
-					Log::add(
-						"ApiShip provider '{$prov}': total points = {$total}",
-						Log::INFO,
-						'com_radicalmart_telegram'
-					);
+					LogHelper::info(
+						"ApiShip provider '{$prov}': total points = {$total}");
 					$totalAll += $total;
 				}
 				catch (\Throwable $e)
 				{
-					Log::add(
-						"ApiShip provider '{$prov}': ERROR getting total - " . $e->getMessage(),
-						Log::ERROR,
-						'com_radicalmart_telegram'
-					);
+					LogHelper::error(
+						"ApiShip provider '{$prov}': ERROR getting total - " . $e->getMessage());
 					continue;
 				}
 
@@ -122,19 +106,13 @@ class ApiShipFetchHelper
 					$chunk = ApiShipHelper::getPoints($token, [$prov], $operation, $offset, $limit);
 					if (!$chunk)
 					{
-						Log::add(
-							"ApiShip provider '{$prov}': empty chunk at offset {$offset}",
-							Log::WARNING,
-							'com_radicalmart_telegram'
-						);
+						LogHelper::warning(
+							"ApiShip provider '{$prov}': empty chunk at offset {$offset}");
 						break;
 					}
 
-					Log::add(
-						"ApiShip provider '{$prov}': fetched " . count($chunk) . " points at offset {$offset}",
-						Log::INFO,
-						'com_radicalmart_telegram'
-					);
+					LogHelper::info(
+						"ApiShip provider '{$prov}': fetched " . count($chunk) . " points at offset {$offset}");
 
 					// Batch INSERT для производительности
 					$values = [];
@@ -206,17 +184,11 @@ class ApiShipFetchHelper
 						try {
 							$db->setQuery($sql)->execute();
 
-							Log::add(
-								"ApiShip provider '{$prov}': inserted " . count($values) . " points at offset {$offset}",
-								Log::INFO,
-								'com_radicalmart_telegram'
-							);
+							LogHelper::info(
+								"ApiShip provider '{$prov}': inserted " . count($values) . " points at offset {$offset}");
 						} catch (\Exception $e) {
-							Log::add(
-								"ApiShip provider '{$prov}': INSERT ERROR at offset {$offset}: " . $e->getMessage(),
-								Log::ERROR,
-								'com_radicalmart_telegram'
-							);
+							LogHelper::error(
+								"ApiShip provider '{$prov}': INSERT ERROR at offset {$offset}: " . $e->getMessage());
 							throw $e;
 						}
 					}					$offset += $limit;
@@ -239,11 +211,8 @@ class ApiShipFetchHelper
 				$db->setQuery($metaSql)->execute();
 			}
 
-			Log::add(
-				'ApiShip fetch completed: total=' . $totalAll . ', providers=' . implode(',', $providersList),
-				Log::INFO,
-				'com_radicalmart_telegram'
-			);
+			LogHelper::info(
+				'ApiShip fetch completed: total=' . $totalAll . ', providers=' . implode(',', $providersList));
 
 			return [
 				'success' => true,
@@ -253,11 +222,8 @@ class ApiShipFetchHelper
 		}
 		catch (\Throwable $e)
 		{
-			Log::add(
-				'ApiShip fetch error: ' . $e->getMessage(),
-				Log::ERROR,
-				'com_radicalmart_telegram'
-			);
+			LogHelper::error(
+				'ApiShip fetch error: ' . $e->getMessage());
 
 			return [
 				'success' => false,
@@ -329,11 +295,8 @@ class ApiShipFetchHelper
 		$debug = [];
 		$debug[] = "fetchPointsStep called: provider=$provider, offset=$offset, batchSize=$batchSize";
 		// Внешний лог для быстрой диагностики шагов
-		Log::add(
-			"[PVZ] Step begin provider=$provider mode=init offset=$offset batch=$batchSize",
-			Log::INFO,
-			'com_radicalmart_telegram'
-		);
+		LogHelper::info(
+			"[PVZ] Step begin provider=$provider mode=init offset=$offset batch=$batchSize");
 
 		$app = \Joomla\CMS\Factory::getApplication();
 		$session = $app->getSession();
@@ -461,11 +424,9 @@ class ApiShipFetchHelper
 				$bodyLen = is_string($response->body) ? strlen($response->body) : 0;
 				$snippet = is_string($response->body) ? substr($response->body, 0, 1024) : '';
 				$status = property_exists($response, 'code') ? (int) $response->code : 0;
-				Log::add(
+				LogHelper::info(
 					"[PVZ] ApiShip cursor GET status=$status len=$bodyLen metaTotal=" . (isset($meta->total)?$meta->total:'n/a') .
-					"; snippet=" . $snippet,
-					Log::INFO,
-					'com_radicalmart_telegram'
+					"; snippet=" . $snippet
 				);
 			} catch (\Throwable $e) {
 				$debug[] = 'Cursor HTTP error: ' . $e->getMessage();
@@ -510,9 +471,9 @@ class ApiShipFetchHelper
 					$rawHttpStatus = property_exists($response, 'code') ? (int) $response->code : 0;
 					$rawHttpBodySnippet = is_string($response->body) ? substr($response->body, 0, 2048) : '';
 					$rawHttpLen = is_string($response->body) ? strlen($response->body) : 0;
-					Log::add('[PVZ] x5 sweep raw GET status=' . $rawHttpStatus . ' len=' . $rawHttpLen . ' snippet=' . $rawHttpBodySnippet, Log::INFO, 'com_radicalmart_telegram');
+					LogHelper::info('[PVZ] x5 sweep raw GET status=' . $rawHttpStatus . ' len=' . $rawHttpLen . ' snippet=' . $rawHttpBodySnippet);
 				} catch (\Throwable $e) {
-					Log::add('[PVZ] x5 sweep raw GET error=' . $e->getMessage(), Log::ERROR, 'com_radicalmart_telegram');
+					LogHelper::error('[PVZ] x5 sweep raw GET error=' . $e->getMessage());
 				}
 			}
 			if (method_exists(ApiShipHelper::class, 'getPointsRegistry')) {
@@ -588,11 +549,8 @@ class ApiShipFetchHelper
 			}
 		}
 		$debug[] = 'getPoints returned ' . count($chunk) . ' items';
-		Log::add(
-			"[PVZ] Step fetch result provider=$provider mode=$mode items=" . count($chunk),
-			Log::INFO,
-			'com_radicalmart_telegram'
-		);
+		LogHelper::info(
+			"[PVZ] Step fetch result provider=$provider mode=$mode items=" . count($chunk));
 		$firstIds = [];
 		$allExtIdsInChunk = []; // Для подсчёта distinct внутри чанка
 		foreach ($chunk as $ci => $crow) {
@@ -682,11 +640,8 @@ class ApiShipFetchHelper
 			// Доп. лог текущего состояния курсора и направления
 			$curDir = $useCursor ? ($session->get($dirKey, '') ?: '') : '';
 			$curAnchor = $useCursor ? (int) ($session->get($cursorKey, 0) ?: 0) : 0;
-			Log::add(
-				"[PVZ] Empty chunk state provider=$provider mode=$mode dir=$curDir anchor=$curAnchor offset=$offset",
-				Log::WARNING,
-				'com_radicalmart_telegram'
-			);
+			LogHelper::warning(
+				"[PVZ] Empty chunk state provider=$provider mode=$mode dir=$curDir anchor=$curAnchor offset=$offset");
 			// Переопределяем remaining исходя из providerTotal
 			if (isset($providerTotal) && $providerTotal > 0) {
 				$remainingCalc = max(0, $providerTotal - $offset);
@@ -737,7 +692,7 @@ class ApiShipFetchHelper
 							// Если пусто слишком долго (>=30) — переключаемся на sweep offset прямо сейчас
 							if ($emptyCount >= 30) {
 								$debug[] = 'x5 excessive empties (' . $emptyCount . ') -> activating sweep fallback (offset scan)';
-								Log::add('[PVZ] x5 sweep fallback activation (excessive empties)', Log::INFO, 'com_radicalmart_telegram');
+								LogHelper::info('[PVZ] x5 sweep fallback activation (excessive empties)');
 								$session->set($sweepPhaseKey, 'offset');
 								$session->set($sweepOffsetKey, 0);
 								$session->set($sweepEmptyCountKey, 0);
@@ -759,7 +714,7 @@ class ApiShipFetchHelper
 							// Вместо мгновенного завершения для x5 попробуем запустить sweep fallback, если providerTotal ещё далёк
 							if ($provider === 'x5' && isset($providerTotal) && $providerTotal > 0 && $remainingCalc > 0) {
 								$debug[] = 'Desc anchor drained to 0 for x5 with remaining>0 -> activating sweep fallback (offset scan)';
-								Log::add('[PVZ] x5 sweep fallback activation (desc drained anchor)', Log::INFO, 'com_radicalmart_telegram');
+								LogHelper::info('[PVZ] x5 sweep fallback activation (desc drained anchor)');
 								$session->set($sweepPhaseKey, 'offset');
 								$session->set($sweepOffsetKey, 0);
 								$session->set($sweepEmptyCountKey, 0);
@@ -792,12 +747,9 @@ class ApiShipFetchHelper
 				$debug[] = 'ANOMALY: empty chunk before reaching providerTotal';
 			}
 			// Короткая сводка в лог перед возвратом пустого шага
-			Log::add(
+			LogHelper::info(
 				"[PVZ] Step empty summary provider=$provider mode=$mode remaining=" . ($remainingCalc ?? -1) .
-				" completed=" . ($completedLocal?'1':'0') . " reason=$completedReason",
-				Log::INFO,
-				'com_radicalmart_telegram'
-			);
+				" completed=" . ($completedLocal?'1':'0') . " reason=$completedReason");
 			// Поля sweep
 			$sweepPhase = ($provider === 'x5') ? (string) ($session->get($sweepPhaseKey, '') ?: '') : '';
 			$sweepOffsetCurrent = ($sweepPhase === 'offset') ? (int) ($session->get($sweepOffsetKey, 0) ?: 0) : 0;
@@ -943,12 +895,9 @@ class ApiShipFetchHelper
 		$inserted = 0;
 		$updated = 0;
 		$debug[] = 'Prepared ' . count($values) . ' values for INSERT';
-		Log::add(
+		LogHelper::info(
 			"[PVZ] Prepare insert provider=$provider values=" . count($values) .
-			" skippedEmptyExtId=$skippedEmptyExtId skippedNoCoords=$skippedNoCoords",
-			Log::INFO,
-			'com_radicalmart_telegram'
-		);
+			" skippedEmptyExtId=$skippedEmptyExtId skippedNoCoords=$skippedNoCoords");
 		if ($skippedEmptyExtId > 0 || $skippedNoCoords > 0) {
 			$debug[] = 'Skipped: empty extId=' . $skippedEmptyExtId . ', no coords=' . $skippedNoCoords;
 		}
@@ -1002,7 +951,7 @@ class ApiShipFetchHelper
 
 			$sql = (string) $query . $onDup;
 			$debug[] = 'SQL built, length: ' . strlen($sql);
-			Log::add('[PVZ] SQL built length=' . strlen($sql) . ' rows=' . count($values), Log::INFO, 'com_radicalmart_telegram');
+			LogHelper::info('[PVZ] SQL built length=' . strlen($sql) . ' rows=' . count($values));
 
 			// Предварительно оценим, сколько записей уже существует (для статистики updated)
 			try {
@@ -1026,10 +975,10 @@ class ApiShipFetchHelper
 				$db->transactionCommit();
 				$inserted = max(0, count($values) - $updated);
 				$debug[] = "INSERT successful, new=$inserted, updated=$updated";
-				Log::add("[PVZ] Insert OK provider=$provider new=$inserted updated=$updated", Log::INFO, 'com_radicalmart_telegram');
+				LogHelper::info("[PVZ] Insert OK provider=$provider new=$inserted updated=$updated");
 			} catch (\Exception $e) {
 				$debug[] = 'INSERT FAILED: ' . $e->getMessage();
-				Log::add('[PVZ] Insert FAILED provider=' . $provider . ' error=' . $e->getMessage(), Log::ERROR, 'com_radicalmart_telegram');
+				LogHelper::error('[PVZ] Insert FAILED provider=' . $provider . ' error=' . $e->getMessage());
 				// Safe rollback without relying on transactionDepth (not available in mysqli driver)
 				try {
 					$db->transactionRollback();
@@ -1039,11 +988,8 @@ class ApiShipFetchHelper
 
 				$params = ComponentHelper::getParams('com_radicalmart_telegram');
 				if ($params->get('logs_enabled', 1)) {
-					Log::add(
-						sprintf('Error inserting points for %s: %s', $provider, $e->getMessage()),
-						Log::ERROR,
-						'com_radicalmart_telegram'
-					);
+					LogHelper::error(
+						sprintf('Error inserting points for %s: %s', $provider, $e->getMessage()));
 				}
 				throw $e;
 			}
@@ -1052,13 +998,10 @@ class ApiShipFetchHelper
 		}
 
 		$debug[] = 'Returning result';
-		Log::add(
+		LogHelper::info(
 			"[PVZ] Step end provider=$provider mode=$mode fetched=" . count($chunk) .
 			" inserted=$inserted updated=$updated completed=" . ($completedLocal?'1':'0') .
-			" reason=$completedReason remaining=" . ($remainingCalc ?? -1),
-			Log::INFO,
-			'com_radicalmart_telegram'
-		);
+			" reason=$completedReason remaining=" . ($remainingCalc ?? -1));
 		$hash = ($extIdsForCheck) ? md5(implode('|', $extIdsForCheck)) : '';
 		// Расчёт remaining и completed на основе providerTotal (для offset) и meta (для cursor)
 		$nextOffset = $offset + $batchSize;
@@ -1118,7 +1061,7 @@ class ApiShipFetchHelper
 				if ($emptyCnt >= 10) {
 					$completedLocal = true; $completedReason = 'x5-sweep-exhausted';
 					$debug[] = 'Sweep exhausted: too many consecutive empty chunks';
-					Log::add('[PVZ] x5 sweep exhausted (10 empty chunks)', Log::INFO, 'com_radicalmart_telegram');
+					LogHelper::info('[PVZ] x5 sweep exhausted (10 empty chunks)');
 				}
 			} else {
 				$session->set($sweepEmptyCountKey, 0);
@@ -1279,7 +1222,7 @@ class ApiShipFetchHelper
 	 */
 	public static function importFromFile(string $provider, string $filePath, int $batchSize = 1000): array
 	{
-		self::initLogger();
+		// LogHelper handles logger initialization
 		$debug = [];
 		$debug[] = 'importFromFile called provider=' . $provider . ' file=' . $filePath . ' batchSize=' . $batchSize;
 		if (!is_file($filePath)) {
@@ -1449,7 +1392,7 @@ class ApiShipFetchHelper
 		} catch (\Throwable $e) { $debug[] = 'Meta update failed: ' . $e->getMessage(); }
 
 		$message = 'Processed=' . $totalProcessed . ' inserted=' . $totalInserted . ' updated=' . $totalUpdated . ' skippedEmptyExtId=' . $skippedEmptyExtId . ' skippedNoCoords=' . $skippedNoCoords . ' skippedFileDuplicates=' . $skippedFileDuplicates;
-		Log::add('[PVZ] Import from file done provider=' . $provider . ' ' . $message, Log::INFO, 'com_radicalmart_telegram');
+		LogHelper::info('[PVZ] Import from file done provider=' . $provider . ' ' . $message);
 		return [
 			'success' => true,
 			'provider' => $provider,
