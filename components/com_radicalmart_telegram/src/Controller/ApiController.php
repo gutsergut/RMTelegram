@@ -1945,7 +1945,7 @@ class ApiController extends BaseController
 
         try {
             $svc = new BonusesService();
-            $data = $svc->getUserBonusesInfo($chat);
+            $data = $svc->getBonusesData($chat);
             echo new JsonResponse($data);
         } catch (\Throwable $e) {
             echo new JsonResponse(null, $e->getMessage(), true);

@@ -1208,6 +1208,137 @@ $chatId = $tgUser['chat_id'] ?? 0;
             }
         }
 
+        // ============== Search Functions ==============
+        let searchTimeout = null;
+
+        function onSearchInput(e) {
+            const q = (e.target?.value || '').trim();
+            clearTimeout(searchTimeout);
+            if (q.length < 2) {
+                document.getElementById('search-results').innerHTML = '';
+                return;
+            }
+            // Debounce 300ms
+            searchTimeout = setTimeout(() => runSearch(), 300);
+        }
+
+        async function runSearch() {
+            const q = (document.getElementById('search-input')?.value || '').trim();
+            const resultsEl = document.getElementById('search-results');
+            if (!resultsEl) return;
+
+            if (q.length < 2) {
+                resultsEl.innerHTML = '<div class="uk-text-meta"><?php echo Text::_('COM_RADICALMART_TELEGRAM_SEARCH_MIN_CHARS'); ?></div>';
+                return;
+            }
+
+            resultsEl.innerHTML = '<div class="uk-text-center"><div uk-spinner></div></div>';
+
+            try {
+                const data = await api('search', { q });
+                const items = data.items || [];
+
+                if (items.length === 0) {
+                    resultsEl.innerHTML = '<div class="uk-text-meta uk-text-center"><?php echo Text::_('COM_RADICALMART_TELEGRAM_SEARCH_NO_RESULTS'); ?></div>';
+                    return;
+                }
+
+                // Рендерим мета-карточки результатов поиска
+                let html = '<div class="uk-grid-small uk-child-width-1-1" uk-grid>';
+                items.forEach(p => {
+                    if (!p || !p.is_meta) return;
+                    const children = Array.isArray(p.children) ? p.children : [];
+                    const hasVariants = children.length > 0;
+                    const first = hasVariants ? children[0] : null;
+                    const inStock = children.some(ch => ch.in_stock);
+                    const priceRange = (p.price_min && p.price_max && p.price_min !== p.price_max)
+                        ? `${p.price_min} – ${p.price_max}`
+                        : (p.price_min || p.price_max || '');
+
+                    // Варианты веса для отображения
+                    let variantsHtml = '';
+                    if (hasVariants && children.length > 1) {
+                        const weights = children.slice(0, 4).map(ch => ch.field_weight || '').filter(Boolean);
+                        if (weights.length > 0) {
+                            variantsHtml = `<div class="uk-text-meta uk-text-small">${weights.join(' / ')}${children.length > 4 ? '...' : ''}</div>`;
+                        }
+                    }
+
+                    html += `
+                        <div>
+                            <a href="#" onclick="openMetaFromSearch(${p.id}); return false;" class="uk-link-reset">
+                                <div class="uk-card uk-card-default uk-card-small uk-card-hover">
+                                    <div class="uk-grid-small uk-flex-middle" uk-grid>
+                                        <div class="uk-width-auto">
+                                            ${p.image
+                                                ? `<img src="${p.image}" alt="" style="width:60px;height:60px;object-fit:cover;border-radius:4px">`
+                                                : `<div style="width:60px;height:60px;background:#f5f5f5;border-radius:4px" class="uk-flex uk-flex-center uk-flex-middle"><span uk-icon="image"></span></div>`
+                                            }
+                                        </div>
+                                        <div class="uk-width-expand">
+                                            <div class="uk-text-bold uk-text-truncate">${p.title || ''}</div>
+                                            <div class="uk-text-meta uk-text-small">${p.category || ''}</div>
+                                            ${variantsHtml}
+                                            <div class="uk-margin-xsmall-top">
+                                                <span class="uk-text-bold">${priceRange}</span>
+                                                ${!inStock ? '<span class="uk-label uk-label-danger uk-margin-small-left" style="font-size:10px">Нет в наличии</span>' : ''}
+                                            </div>
+                                        </div>
+                                        <div class="uk-width-auto">
+                                            <span uk-icon="chevron-right"></span>
+                                        </div>
+                                    </div>
+                                </div>
+                            </a>
+                        </div>`;
+                });
+                html += '</div>';
+                resultsEl.innerHTML = html;
+
+            } catch (e) {
+                console.error('Search error:', e);
+                resultsEl.innerHTML = '<div class="uk-text-danger"><?php echo Text::_('JERROR_AN_ERROR_HAS_OCCURRED'); ?></div>';
+            }
+        }
+
+        function openMetaFromSearch(metaId) {
+            // Закрываем модалку поиска
+            try { UIkit.modal('#search-modal').hide(); } catch(e) {}
+            // Очищаем поле поиска
+            const input = document.getElementById('search-input');
+            if (input) input.value = '';
+            document.getElementById('search-results').innerHTML = '';
+            // Открываем карточку товара
+            const card = document.querySelector(`[data-card="${metaId}"]`);
+            if (card) {
+                card.click();
+            } else {
+                // Если карточка не найдена в DOM, открываем напрямую через API
+                openMetaModal(metaId);
+            }
+        }
+
+        async function openMetaModal(metaId) {
+            try {
+                // Загружаем данные о мета-товаре
+                const data = await api('list', { limit: 0 });
+                const items = data.items || [];
+                const meta = items.find(p => p.id === metaId);
+                if (meta) {
+                    // Эмулируем клик по карточке — карточка создаётся при загрузке каталога
+                    // Прокручиваем до неё или открываем модалку
+                    loadCatalog().then(() => {
+                        setTimeout(() => {
+                            const card = document.querySelector(`[data-card="${metaId}"]`);
+                            if (card) card.click();
+                        }, 500);
+                    });
+                }
+            } catch(e) {
+                console.error('openMetaModal error:', e);
+            }
+        }
+
         // ============== Product Map View Functions ==============
         let productsMap = null;
         let productsMapPlacemarks = [];
@@ -2389,6 +2520,7 @@ $chatId = $tgUser['chat_id'] ?? 0;
         <div class="uk-flex uk-flex-middle" style="gap:8px">
             <span uk-icon="search"></span>
             <input id="top-search-input" class="uk-input" type="text" placeholder="<?php echo Text::_('COM_RADICALMART_TELEGRAM_SEARCH_INPUT_PLACEHOLDER'); ?>" />
+            <button type="submit" class="uk-button uk-button-primary" title="<?php echo Text::_('COM_RADICALMART_TELEGRAM_SEARCH_TITLE'); ?>"><span uk-icon="search"></span></button>
             <button type="button" class="uk-button uk-button-default" onclick="toggleTopSearch(false)" title="<?php echo Text::_('JCLOSE'); ?>"><span uk-icon="close"></span></button>
         </div>
     </form>
