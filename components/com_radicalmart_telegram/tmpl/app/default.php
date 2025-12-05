@@ -95,31 +95,43 @@ $chatId = $tgUser['chat_id'] ?? 0;
             #app-bottom-nav .uk-icon > svg { width: 18px; height: 18px; }
             /* Cart badge */
             #cart-badge { position: absolute; top: 2px; right: 6px; background: #f0506e; color: white; border-radius: 10px; padding: 2px 6px; font-size: 10px; font-weight: bold; min-width: 18px; text-align: center; }
-            /* Category filter buttons bar */
-            #catalog-category-bar { position: sticky; top: 0; z-index: 10001; background: var(--tg-theme-bg-color, #fff); padding: 8px; border-bottom: 1px solid rgba(0,0,0,0.06); }
-            .catalog-category-btn { margin: 4px 6px 4px 0; }
+            /* Product Map Markers */
+            .rmt-map-marker {
+                position: relative;
+                transform: translate(-50%, -100%);
+                cursor: pointer;
+            }
+            .rmt-map-marker-content {
+                display: inline-flex;
+                align-items: center;
+                background: #fff;
+                padding: 6px 12px;
+                border-radius: 18px;
+                box-shadow: 0 2px 8px rgba(0,0,0,0.25);
+                white-space: nowrap;
+            }
+            .rmt-map-marker-flag {
+                width: 28px;
+                height: 18px;
+                object-fit: cover;
+                border-radius: 3px;
+                margin-right: 8px;
+                border: 1px solid rgba(0,0,0,0.1);
+                flex-shrink: 0;
+            }
+            .rmt-map-marker-text {
+                font-size: 13px;
+                font-weight: 500;
+                color: #333;
+            }
+            .rmt-map-marker:hover .rmt-map-marker-content {
+                background: #f8f9fa;
+                box-shadow: 0 3px 12px rgba(0,0,0,0.3);
+            }
         </style>
         <script>
             // Переводы для внешнего JS
             window.RMT_LANG = {
-        <?php
-        // Render category buttons only in list mode
-        $isMapMode = isset($this->isMapMode) ? (bool)$this->isMapMode : (isset($_GET['mode']) && $_GET['mode'] === 'map');
-        $categoryButtons = is_array($this->categoryButtons ?? null) ? $this->categoryButtons : [];
-        if (!$isMapMode && !empty($categoryButtons)):
-        ?>
-        <div id="catalog-category-bar" class="uk-container">
-            <?php foreach ($categoryButtons as $btn):
-                $cid = (int)($btn['id'] ?? 0);
-                $ctitle = (string)($btn['title'] ?? '');
-                $url = Uri::current() . '?option=com_radicalmart_telegram&view=app&category_id=' . $cid;
-            ?>
-            <a class="uk-button uk-button-default catalog-category-btn" href="<?php echo htmlspecialchars($url, ENT_QUOTES, 'UTF-8'); ?>">
-                <?php echo htmlspecialchars($ctitle, ENT_QUOTES, 'UTF-8'); ?>
-            </a>
-            <?php endforeach; ?>
-        </div>
-        <?php endif; ?>
                 COM_RADICALMART_TELEGRAM_PROFILE_NO_USER: '<?php echo Text::_('COM_RADICALMART_TELEGRAM_PROFILE_NO_USER'); ?>',
                 COM_RADICALMART_TELEGRAM_EMAIL: '<?php echo Text::_('COM_RADICALMART_TELEGRAM_EMAIL'); ?>',
                 COM_RADICALMART_TELEGRAM_PHONE: '<?php echo Text::_('COM_RADICALMART_TELEGRAM_PHONE'); ?>',
@@ -215,6 +227,40 @@ $chatId = $tgUser['chat_id'] ?? 0;
                 variant_show_weight: <?php echo (int)$this->params->get('card_variant_show_weight', 1); ?>,
                 variant_show_discount: <?php echo (int)$this->params->get('card_variant_show_discount', 1); ?>,
                 variant_show_final_price: <?php echo (int)$this->params->get('card_variant_show_final_price', 1); ?>
+            };
+
+            // Product Map configuration
+            <?php
+            // Загружаем опции поля "страна" с флагами
+            $countryFieldId = (int)$this->params->get('map_country_field', 0);
+            $countryOptions = [];
+            if ($countryFieldId > 0) {
+                try {
+                    $db = Factory::getContainer()->get('DatabaseDriver');
+                    $q = $db->getQuery(true)
+                        ->select($db->quoteName('options'))
+                        ->from($db->quoteName('#__radicalmart_fields'))
+                        ->where($db->quoteName('id') . ' = ' . $countryFieldId);
+                    $optionsJson = $db->setQuery($q)->loadResult();
+                    if ($optionsJson) {
+                        $opts = json_decode($optionsJson, true);
+                        if (is_array($opts)) {
+                            foreach ($opts as $alias => $data) {
+                                $countryOptions[$alias] = [
+                                    'text' => $data['text'] ?? $alias,
+                                    'image' => isset($data['image']) ? preg_replace('/#joomlaImage:.*$/', '', $data['image']) : ''
+                                ];
+                            }
+                        }
+                    }
+                } catch (\Throwable $e) {}
+            }
+            ?>
+            window.RMT_PRODUCT_MAP = {
+                enabled: <?php echo ($this->params->get('map_view_enabled', 1) && $this->params->get('map_coordinates_field')) ? 1 : 0; ?>,
+                coordinates_field: '<?php echo addslashes($this->params->get('map_coordinates_field', '')); ?>',
+                country_field: '<?php echo addslashes($this->params->get('map_country_field', '')); ?>',
+                country_options: <?php echo json_encode($countryOptions, JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES); ?>
             };
 
             function qs(name){ const p=new URLSearchParams(location.search); return p.get(name); }
@@ -825,6 +871,11 @@ $chatId = $tgUser['chat_id'] ?? 0;
                 });
                 console.log('[FILTER] Final params:', params);
                                 const { items } = await api('list', params);
+                                // Save items for product map
+                                productsMapData = items || [];
+                                if (currentCatalogView === 'map' && productsMap) {
+                                    renderProductsOnMap(productsMapData);
+                                }
                                 if (window.RMT_DEBUG) {
                                     console.log('[FILTER] in_stock param:', params.in_stock, 'items count:', items ? items.length : 0);
                                     if (items && items.length > 0) {
@@ -1166,6 +1217,476 @@ $chatId = $tgUser['chat_id'] ?? 0;
                 loadCatalog();
             }
         }
+
+        // ============== Product Map View Functions ==============
+        let productsMap = null;
+        let productsMapPlacemarks = [];
+        let productsMapData = [];
+        let currentCatalogView = 'list';
+
+        function switchCatalogView(view) {
+            currentCatalogView = view;
+            const listEl = document.getElementById('catalog-list');
+            const mapContainer = document.getElementById('catalog-map-container');
+            const catBar = document.getElementById('catalog-category-bar');
+            const btnList = document.getElementById('btn-view-list');
+            const btnMap = document.getElementById('btn-view-map');
+
+            if (view === 'map') {
+                if (listEl) listEl.style.display = 'none';
+                if (mapContainer) mapContainer.style.display = 'block';
+                if (catBar) catBar.style.display = 'none';
+                if (btnList) { btnList.classList.remove('uk-button-primary'); btnList.classList.add('uk-button-default'); }
+                if (btnMap) { btnMap.classList.remove('uk-button-default'); btnMap.classList.add('uk-button-primary'); }
+                initProductsMap();
+            } else {
+                if (listEl) listEl.style.display = '';
+                if (mapContainer) mapContainer.style.display = 'none';
+                if (catBar) catBar.style.display = '';
+                if (btnList) { btnList.classList.remove('uk-button-default'); btnList.classList.add('uk-button-primary'); }
+                if (btnMap) { btnMap.classList.remove('uk-button-primary'); btnMap.classList.add('uk-button-default'); }
+            }
+        }
+
+        function initProductsMap() {
+            if (!window.ymaps) {
+                console.warn('[RMT] Yandex Maps not loaded');
+                return;
+            }
+            if (productsMap) {
+                renderProductsOnMap(productsMapData);
+                return;
+            }
+            ymaps.ready(function() {
+                const mapEl = document.getElementById('catalog-products-map');
+                if (!mapEl) return;
+                productsMap = new ymaps.Map('catalog-products-map', {
+                    center: [0, 20],
+                    zoom: 2,
+                    controls: ['zoomControl']
+                }, {
+                    // Оптимизация для мобильных устройств
+                    suppressMapOpenBlock: true
+                });
+                // Отключаем поведения, которые могут вызывать зависания
+                productsMap.behaviors.disable('scrollZoom');
+                renderProductsOnMap(productsMapData);
+            });
+        }
+
+        let renderMapInProgress = false;
+
+        function renderProductsOnMap(items) {
+            if (!productsMap || !window.ymaps) {
+                console.warn('[RMT][Map] renderProductsOnMap: map or ymaps not ready');
+                return;
+            }
+            // Защита от множественных вызовов
+            if (renderMapInProgress) {
+                console.log('[RMT][Map] Render already in progress, skipping');
+                return;
+            }
+            renderMapInProgress = true;
+            console.log('[RMT][Map] renderProductsOnMap called with', items?.length, 'items');
+
+            // Очищаем предыдущие маркеры (без кластеризации)
+            productsMapPlacemarks.forEach(pm => productsMap.geoObjects.remove(pm));
+            productsMapPlacemarks = [];
+
+            const cfg = window.RMT_PRODUCT_MAP || {};
+            const coordsFieldId = cfg.coordinates_field || '';
+
+            const bounds = [];
+            let processedCount = 0;
+
+            (items || []).forEach((meta) => {
+                if (!meta || !meta.is_meta) return;
+
+                const children = Array.isArray(meta.children) ? meta.children : [];
+                let coords = null;
+                let countryDisplay = '';
+                let flagImage = '';
+
+                // Берём данные из первого дочернего товара с координатами
+                for (const child of children) {
+                    if (!child) continue;
+
+                    // Извлекаем данные страны из полей CatalogService
+                    if (!countryDisplay && child.map_country) {
+                        countryDisplay = String(child.map_country);
+                    }
+                    if (!flagImage && child.map_country_image) {
+                        flagImage = String(child.map_country_image);
+                    }
+
+                    // Извлекаем координаты
+                    let c = extractProductCoordinates(child, coordsFieldId);
+                    if (c) {
+                        coords = c;
+                        break;
+                    }
+                }
+
+                // Если нет координат — пропускаем товар
+                if (!coords) return;
+
+                bounds.push([coords.lat, coords.lon]);
+
+                // Создаём маркер с картинкой флага и названием страны
+                let markerHtml = '';
+                const escapedTitle = (countryDisplay || meta.title || '').replace(/"/g, '&quot;').replace(/'/g, '&#39;');
+                if (flagImage) {
+                    markerHtml = `<div class="rmt-map-marker" data-meta-id="${meta.id}">
+                        <div class="rmt-map-marker-content">
+                            <img src="${flagImage}" class="rmt-map-marker-flag" alt="">
+                            <span class="rmt-map-marker-text">${escapedTitle}</span>
+                        </div>
+                    </div>`;
+                } else {
+                    markerHtml = `<div class="rmt-map-marker" data-meta-id="${meta.id}">
+                        <div class="rmt-map-marker-content">
+                            <span class="rmt-map-marker-text">${escapedTitle}</span>
+                        </div>
+                    </div>`;
+                }
+
+                // Создаём кастомный layout с обработкой кликов
+                const CustomLayout = ymaps.templateLayoutFactory.createClass(markerHtml, {
+                    build: function() {
+                        CustomLayout.superclass.build.call(this);
+                        const el = this.getParentElement().querySelector('.rmt-map-marker');
+                        if (el) {
+                            el.addEventListener('click', (e) => {
+                                e.stopPropagation();
+                                const metaId = parseInt(el.dataset.metaId);
+                                if (metaId) openMetaModal(metaId);
+                            });
+                        }
+                    }
+                });
+
+                const placemark = new ymaps.Placemark([coords.lat, coords.lon], {
+                    hintContent: meta.title || ''
+                }, {
+                    iconLayout: CustomLayout,
+                    // Увеличенная кликабельная область (пиксели от центра маркера)
+                    iconShape: {
+                        type: 'Rectangle',
+                        coordinates: [[-100, -25], [100, 25]]
+                    }
+                });
+
+                // Резервный обработчик клика через API Яндекс Карт
+                placemark.events.add('click', function(e) {
+                    e.stopPropagation();
+                    openMetaModal(meta.id);
+                });
+
+                productsMap.geoObjects.add(placemark);
+                productsMapPlacemarks.push(placemark);
+                processedCount++;
+            });
+
+            console.log('[RMT][Map] Render complete:', { total: items?.length, processed: processedCount });
+
+            if (bounds.length > 0) {
+                try {
+                    productsMap.setBounds(ymaps.util.bounds.fromPoints(bounds), {
+                        checkZoomRange: true,
+                        zoomMargin: 50,
+                        duration: 300
+                    }).then(() => {
+                        renderMapInProgress = false;
+                    }).catch(() => {
+                        renderMapInProgress = false;
+                    });
+                } catch(e) {
+                    console.warn('[RMT] setBounds error:', e);
+                    renderMapInProgress = false;
+                }
+            } else {
+                renderMapInProgress = false;
+            }
+        }
+
+        function extractProductCoordinates(product, fieldId) {
+            if (!product) return null;
+
+            // Приоритет 1: map_coords от CatalogService
+            if (product.map_coords) {
+                return parseCoordinates(product.map_coords);
+            }
+
+            // Приоритет 2: поле по ID
+            if (fieldId) {
+                const fieldKey = 'field_' + fieldId;
+                if (product[fieldKey]) {
+                    return parseCoordinates(product[fieldKey]);
+                }
+            }
+
+            return null;
+        }
+
+        function parseCoordinates(val) {
+            if (!val) return null;
+
+            // If it's an object with lat/lng
+            if (typeof val === 'object') {
+                const lat = val.lat || val.latitude;
+                const lon = val.lng || val.lon || val.longitude;
+                if (lat && lon) {
+                    return { lat: parseFloat(lat), lon: parseFloat(lon) };
+                }
+                // Try location sub-object
+                if (val.location) {
+                    return parseCoordinates(val.location);
+                }
+            }
+
+            // If it's a string like "lat,lon" or "lat;lon"
+            if (typeof val === 'string') {
+                // Try JSON
+                try {
+                    const parsed = JSON.parse(val);
+                    return parseCoordinates(parsed);
+                } catch(e) {}
+
+                // Try comma or semicolon separated
+                const parts = val.split(/[,;]/);
+                if (parts.length >= 2) {
+                    const lat = parseFloat(parts[0].trim());
+                    const lon = parseFloat(parts[1].trim());
+                    if (!isNaN(lat) && !isNaN(lon) && lat >= -90 && lat <= 90 && lon >= -180 && lon <= 180) {
+                        return { lat, lon };
+                    }
+                }
+            }
+
+            return null;
+        }
+
+        // Открытие модалки с карточкой мета-товара
+        function openMetaModal(metaId) {
+            const meta = (productsMapData || []).find(m => m && m.id === metaId);
+            if (!meta) {
+                console.warn('[RMT][Map] Meta product not found:', metaId);
+                return;
+            }
+
+            // Закрываем предыдущую модалку если есть
+            const existingModal = document.getElementById('meta-product-modal');
+            if (existingModal) {
+                existingModal.remove();
+            }
+
+            // Получаем children для кнопок вариантов
+            const children = Array.isArray(meta.children) ? meta.children : [];
+            const hasVariants = children.length > 0;
+            const first = hasVariants ? children[0] : meta;
+
+            // Используем те же функции что и в каталоге для создания карточки
+            const cfg = window.RMT_CARDVIEW || {};
+            const enabled = cfg.enabled === 1;
+            const showWeight = cfg.variant_show_weight === 1;
+            const badgeFields = (cfg.badge_fields||'').split(/\s*,\s*/).filter(Boolean);
+            const subtitleFields = (cfg.subtitle_fields||'').split(/\s*,\s*/).filter(Boolean);
+            const fieldTitles = cfg.field_titles || {};
+
+            function makeBadge(ch){
+                if (!enabled || !badgeFields.length) return [];
+                const vals = [];
+                badgeFields.forEach(bf => {
+                    if (bf==='in_stock' && typeof ch.in_stock!=='undefined') vals.push(ch.in_stock?'В наличии':'Нет');
+                    else if (bf==='discount' && ch.discount_percent) vals.push('-' + ch.discount_percent + '%');
+                    else if (ch[bf]) vals.push(ch[bf]);
+                });
+                return vals;
+            }
+            function makeSubtitle(ch){
+                if (!enabled || !subtitleFields.length) return '';
+                const lines = [];
+                subtitleFields.forEach(sf => {
+                    let value = '';
+                    if (sf==='discount' && ch.discount_percent) {
+                        value = '-'+ch.discount_percent+'%';
+                    } else if (ch[sf]) {
+                        value = ch[sf];
+                    }
+                    if (value) {
+                        const label = fieldTitles[sf] || sf;
+                        lines.push(`${label}: ${value}`);
+                    }
+                });
+                return lines.join('<br>');
+            }
+            function variantLabel(ch){
+                let label = '';
+                if (showWeight && ch.field_weight) {
+                    label = String(ch.field_weight).trim();
+                }
+                if (!label) {
+                    const t = ch.title||'';
+                    const m = /([0-9]+(?:[.,][0-9]+)?\s?(?:кг|г))$/i.exec(t);
+                    if (m) label = m[1].replace(',', '.');
+                }
+                if (!label) {
+                    label = (ch.title||'').replace(/\(ID\s+\d+\)/i,'').trim();
+                }
+                if (!label) label = String(ch.id);
+                return label;
+            }
+
+            // Создаём кнопки вариантов
+            const variantBtns = children.map(ch =>
+                `<button class="uk-button uk-button-default uk-button-small rmt-modal-variant" data-vid="${ch.id}" title="${(ch.title||'').replace(/"/g,'&quot;')}">${variantLabel(ch)}</button>`
+            ).join(' ');
+
+            // Создаём модалку с той же структурой что и карточка в каталоге
+            const modalHtml = `
+                <div id="meta-product-modal" class="uk-modal" uk-modal>
+                    <div class="uk-modal-dialog uk-margin-auto-vertical" style="max-width:400px;padding:0;">
+                        <button class="uk-modal-close-default" type="button" uk-close style="z-index:10;"></button>
+                        <div class="uk-card uk-card-default uk-card-small">
+                            <div class="uk-card-media-top" style="position:relative;">
+                                ${meta.image ? `<img src="${meta.image}" alt="" class="uk-width-1-1 uk-object-cover" style="height:200px">` : `<div class="uk-height-small uk-flex uk-flex-middle uk-flex-center uk-background-muted"><?php echo Text::_('COM_RADICALMART_TELEGRAM_IMAGE'); ?></div>`}
+                                <div class="rmt-card-badges" style="position:absolute;left:6px;top:6px;display:flex;flex-direction:column;gap:4px;align-items:flex-start;"></div>
+                            </div>
+                            <div class="uk-card-body">
+                                <div class="uk-text-small uk-text-muted">${meta.category || '\u00A0'}</div>
+                                <h5 class="uk-margin-remove">${meta.title || '<?php echo Text::_('COM_RADICALMART_TELEGRAM_PRODUCT'); ?>'}</h5>
+                                <div class="uk-text-meta uk-margin-xsmall-top js-modal-subtitle"></div>
+                                <div class="uk-margin-small js-modal-variants">${variantBtns}</div>
+                                <div class="uk-margin-small tg-safe-text js-modal-price-block">
+                                    <div class="js-modal-price-base uk-text-muted uk-text-small" style="text-decoration:line-through;display:none;"></div>
+                                    <div class="js-modal-price-final" style="font-size:1.1em;"><strong></strong></div>
+                                    <div class="js-modal-price-discount uk-text-danger uk-text-small" style="display:none;"></div>
+                                </div>
+                                <div class="uk-flex uk-flex-between uk-margin-small-top">
+                                    <button class="uk-button uk-button-primary js-modal-add" data-vid="${first.id}"><?php echo Text::_('COM_RADICALMART_TELEGRAM_ADD_TO_CART'); ?></button>
+                                    <a class="uk-button uk-button-default js-modal-link" href="<?php echo $root; ?>/index.php?option=com_radicalmart_telegram&view=product&id=${first.id}<?php echo $chatId ? '&chat=' . $chatId : ''; ?>"><?php echo Text::_('COM_RADICALMART_TELEGRAM_MORE'); ?></a>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </div>`;
+
+            document.body.insertAdjacentHTML('beforeend', modalHtml);
+            const modal = document.getElementById('meta-product-modal');
+
+            const badgesContainer = modal.querySelector('.rmt-card-badges');
+            const subtitleEl = modal.querySelector('.js-modal-subtitle');
+            const priceFinalEl = modal.querySelector('.js-modal-price-final');
+            const priceDiscEl = modal.querySelector('.js-modal-price-discount');
+            const priceBaseEl = modal.querySelector('.js-modal-price-base');
+            const addBtn = modal.querySelector('.js-modal-add');
+            const linkEl = modal.querySelector('.js-modal-link');
+
+            function applyModalVariant(ch){
+                // Обновляем badges
+                const badgeValues = makeBadge(ch);
+                badgesContainer.innerHTML = '';
+                badgeValues.forEach(val => {
+                    const badge = document.createElement('div');
+                    badge.className = 'rmt-card-badge';
+                    badge.style.cssText = 'background:#f0506e;color:#fff;font-size:11px;padding:2px 6px;border-radius:4px;line-height:1;';
+                    badge.textContent = val;
+                    badgesContainer.appendChild(badge);
+                });
+                subtitleEl.innerHTML = makeSubtitle(ch) || '';
+
+                // Обновляем цены
+                const finalPrice = ch.price_final || '';
+                const basePrice = ch.base_string || ch.price_base || '';
+                const hasDiscount = !!(ch.discount_enable && basePrice && finalPrice !== basePrice);
+
+                if (finalPrice) {
+                    priceFinalEl.innerHTML = `<strong>${finalPrice}</strong>`;
+                } else {
+                    priceFinalEl.innerHTML = '';
+                }
+
+                if (hasDiscount){
+                    priceBaseEl.style.display='block';
+                    priceBaseEl.textContent = basePrice;
+
+                    let discountText = '';
+                    if (ch.discount_string && ch.discount_value) {
+                        discountText = `Скидка ${ch.discount_value} (${ch.discount_string})`;
+                    } else if (ch.discount_value) {
+                        discountText = `Скидка ${ch.discount_value}`;
+                    } else if (ch.discount_string) {
+                        discountText = ch.discount_string;
+                    } else if (ch.discount_percent) {
+                        discountText = `-${ch.discount_percent}%`;
+                    }
+                    priceDiscEl.textContent = discountText;
+                    priceDiscEl.style.display = discountText ? 'block' : 'none';
+                } else {
+                    priceBaseEl.style.display='none';
+                    priceBaseEl.textContent='';
+                    priceDiscEl.style.display='none';
+                    priceDiscEl.textContent='';
+                }
+
+                // Обновляем кнопку в зависимости от наличия
+                if (ch.in_stock) {
+                    addBtn.disabled = false;
+                    addBtn.classList.remove('uk-button-muted');
+                } else {
+                    addBtn.disabled = true;
+                    addBtn.classList.add('uk-button-muted');
+                }
+
+                addBtn.dataset.vid = ch.id;
+                linkEl.href = `<?php echo $root; ?>/index.php?option=com_radicalmart_telegram&view=product&id=${ch.id}<?php echo $chatId ? '&chat=' . $chatId : ''; ?>`;
+            }
+
+            // Применяем первый вариант
+            applyModalVariant(first);
+
+            // Обработчики для кнопок вариантов
+            modal.querySelectorAll('.rmt-modal-variant').forEach(btn => {
+                btn.addEventListener('click', function() {
+                    const vid = parseInt(this.dataset.vid);
+                    const child = children.find(c => c.id === vid);
+                    if (!child) return;
+
+                    // Обновляем активную кнопку
+                    modal.querySelectorAll('.rmt-modal-variant').forEach(b => b.classList.remove('uk-button-primary'));
+                    this.classList.add('uk-button-primary');
+
+                    applyModalVariant(child);
+                });
+            });
+
+            // Обработчик кнопки "В корзину"
+            modal.querySelector('.js-modal-add').addEventListener('click', async function() {
+                const vid = parseInt(this.dataset.vid);
+                try {
+                    this.disabled = true;
+                    this.innerHTML = '<span uk-spinner="ratio:0.5"></span>';
+                    await api('add', { id: vid, quantity: 1, nonce: makeNonce() });
+                    await refreshCart();
+                    UIkit.notification('<?php echo Text::_('COM_RADICALMART_TELEGRAM_ADDED_TO_CART'); ?>', {status:'success', timeout:2000});
+                    UIkit.modal(modal).hide();
+                } catch(e) {
+                    UIkit.notification(e.message || '<?php echo Text::_('COM_RADICALMART_TELEGRAM_ERROR'); ?>', {status:'danger'});
+                } finally {
+                    this.disabled = false;
+                    this.innerHTML = '<?php echo Text::_('COM_RADICALMART_TELEGRAM_ADD_TO_CART'); ?>';
+                }
+            });
+
+            // Активируем первый вариант
+            const firstBtn = modal.querySelector('.rmt-modal-variant');
+            if (firstBtn) firstBtn.classList.add('uk-button-primary');
+
+            // Показываем модалку
+            UIkit.modal(modal).show();
+        }
+        // ============== End Product Map View Functions ==============
+
         function updateInstockQuickButton(isActive) {
             const btn = document.getElementById('btn-instock-quick');
             if (btn) {
@@ -1862,6 +2383,17 @@ $chatId = $tgUser['chat_id'] ?? 0;
                     <button type="button" id="btn-sort" class="uk-icon-button" uk-tooltip="title: <?php echo Text::_('COM_RADICALMART_TELEGRAM_SORT'); ?>" uk-icon="list"></button>
                     <button type="button" id="btn-filters" class="uk-icon-button" uk-tooltip="title: <?php echo Text::_('COM_RADICALMART_TELEGRAM_FILTERS'); ?>" uk-icon="settings"></button>
                     <button type="button" id="btn-instock-quick" class="uk-button uk-button-default uk-button-small" style="border-radius:20px; padding:0 12px; font-size:13px;" onclick="toggleInstockFilter()"><?php echo Text::_('COM_RADICALMART_TELEGRAM_ONLY_IN_STOCK'); ?></button>
+                    <?php if ($this->params->get('map_view_enabled', 1) && $this->params->get('map_coordinates_field') && !empty($ymKey)): ?>
+                    <!-- View mode toggle: List/Map -->
+                    <div class="uk-button-group uk-margin-small-left" id="catalog-view-toggle">
+                        <button type="button" id="btn-view-list" class="uk-button uk-button-small uk-button-primary" onclick="switchCatalogView('list')" uk-tooltip="Списком">
+                            <span uk-icon="icon: grid; ratio: 0.8"></span>
+                        </button>
+                        <button type="button" id="btn-view-map" class="uk-button uk-button-small uk-button-default" onclick="switchCatalogView('map')" uk-tooltip="На карте">
+                            <span uk-icon="icon: location; ratio: 0.8"></span>
+                        </button>
+                    </div>
+                    <?php endif; ?>
                     <div id="active-filter-tags" class="uk-flex uk-flex-wrap" style="gap:6px"></div>
                     <input type="hidden" id="filter-sort" value="">
                 </div>
@@ -2029,6 +2561,21 @@ $chatId = $tgUser['chat_id'] ?? 0;
                         </div>
                     </div>
                 </div>
+                <?php if ($this->params->get('map_view_enabled', 1) && $this->params->get('map_coordinates_field') && !empty($ymKey)): ?>
+                <!-- Products Map View -->
+                <div id="catalog-map-container" style="display:none;">
+                    <div id="catalog-products-map" style="width:100%; height:400px; border-radius:8px;"></div>
+                </div>
+                <?php endif; ?>
+
+                <!-- Meta Product Modal (for map markers click) -->
+                <div id="meta-product-modal" class="uk-flex-top" uk-modal>
+                    <div class="uk-modal-dialog uk-modal-body uk-margin-auto-vertical" style="max-width:400px;">
+                        <button class="uk-modal-close-default" type="button" uk-close></button>
+                        <div id="meta-product-modal-content"></div>
+                    </div>
+                </div>
+
                 <div class="uk-child-width-1-1 uk-child-width-1-2@s uk-child-width-1-3@m" uk-grid id="catalog-list"></div>
             </div>
 

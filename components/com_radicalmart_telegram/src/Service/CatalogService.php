@@ -192,13 +192,13 @@ class CatalogService
         $hasPriceFilter = !empty($filters['price']) && is_array($filters['price']) && ((string)($filters['price']['from'] ?? '') !== '' || (string)($filters['price']['to'] ?? '') !== '');
         $hasFieldFilters = !empty($filters['fields']) && is_array($filters['fields']);
         $hasSort = !empty($filters['sort']) && (string)$filters['sort'] !== '';
-        $hasCategoryFilter = !empty($filters['categories']) && is_array($filters['categories']) && count(array_filter($filters['categories']))>0;
+        $hasCategoryFilter = !empty($filters['categories']) && is_array($filters['categories']) && count(array_filter($filters['categories'])) > 0;
         // Автоматически включаем фильтр "в наличии" при любых фильтрах ИЛИ сортировке
         $hasAnyFilter = $hasStockFilter || $hasPriceFilter || $hasFieldFilters || $hasSort || $hasCategoryFilter;
-        if ($debug) { LogHelper::debug('listMetas: hasStockFilter=' . (int)$hasStockFilter . ' hasPriceFilter=' . (int)$hasPriceFilter . ' hasFieldFilters=' . (int)$hasFieldFilters . ' hasSort=' . (int)$hasSort . ' hasAnyFilter=' . (int)$hasAnyFilter . ' filters=' . json_encode($filters), 'radicalmart_telegram_catalog'); }
+        if ($debug) { LogHelper::debug('listMetas: hasStockFilter=' . (int)$hasStockFilter . ' hasPriceFilter=' . (int)$hasPriceFilter . ' hasFieldFilters=' . (int)$hasFieldFilters . ' hasSort=' . (int)$hasSort . ' hasCategoryFilter=' . (int)$hasCategoryFilter . ' hasAnyFilter=' . (int)$hasAnyFilter . ' filters=' . json_encode($filters), 'radicalmart_telegram_catalog'); }
 
         $model = new MetasModel(); try { $model->populateState(); } catch (\Throwable $e) {}
-        if ($limit<=0) { $model->setState('list.limit',0); $model->setState('list.start',0); } else { $model->setState('list.limit',$limit); $model->setState('list.start',($page-1)*$limit); }
+        // limit устанавливаем ПОСЛЕДНИМ перед getItems, см. ниже
         $model->setState('list.select',[ 'm.id','m.title','m.alias','m.code','m.type','m.category','m.categories','m.introtext','m.products','m.prices','m.state','m.media','m.params','m.ordering','m.plugins','m.language' ]);
 
         // Сортировка будет применена позже к массиву $out после фильтрации детей и вычисления цен
@@ -227,11 +227,49 @@ class CatalogService
         }
         $model->setState('filter.fields',[]); $model->setState('filter.price',[]); $model->setState('filter.categories',[]); $model->setState('filter.manufacturers',[]); $model->setState('filter.badges',[]); $model->setState('filter.in_stock',[]); $model->setState('filter.search',''); $model->setState('filter.item_id',null); $model->setState('filter.item_id.include',true); $model->setState('products.metas',1);
         if (!empty($filters['sort'])) { $sort=(string)$filters['sort']; if($sort==='price_asc') $model->setState('products.ordering','p.ordering_price asc'); elseif($sort==='price_desc') $model->setState('products.ordering','p.ordering_price desc'); elseif($sort==='new') $model->setState('products.ordering','p.created desc'); }
-        if ($hasCategoryFilter) { $cats = array_map('intval', array_filter($filters['categories'])); if(!empty($cats)) { $model->setState('filter.categories', $cats); } }
-        if ($debug) { LogHelper::debug('listMetas: states pre-query: published=' . json_encode($model->getState('filter.published')) . ' language=' . (int)$model->getState('filter.language') . ' products.metas=' . (int)$model->getState('products.metas') . ' ordering=' . (string)$model->getState('list.ordering'), 'radicalmart_telegram_catalog'); }
+        // Фильтрация по категориям: MetasModel использует category.id (одна категория)
+        // Для нескольких категорий — отфильтруем результаты вручную после запроса
+        $categoryFilterIds = [];
+        if ($hasCategoryFilter) {
+            $categoryFilterIds = array_map('intval', array_filter($filters['categories']));
+            // Если одна категория — используем нативный фильтр MetasModel
+            if (count($categoryFilterIds) === 1) {
+                $model->setState('category.id', $categoryFilterIds[0]);
+            }
+        }
+        if ($debug) { LogHelper::debug('listMetas: states pre-query: published=' . json_encode($model->getState('filter.published')) . ' language=' . (int)$model->getState('filter.language') . ' products.metas=' . (int)$model->getState('products.metas') . ' category.id=' . json_encode($model->getState('category.id')) . ' list.limit=' . json_encode($model->getState('list.limit')) . ' list.start=' . json_encode($model->getState('list.start')) . ' ordering=' . (string)$model->getState('list.ordering'), 'radicalmart_telegram_catalog'); }
+        // КРИТИЧЕСКИ ВАЖНО: устанавливаем limit ПОСЛЕДНИМ, прямо перед getItems!
+        // Потому что getState() для некоторых ключей может вызвать повторный populateState()
+        if ($limit <= 0) {
+            $model->setState('list.limit', 0);
+            $model->setState('list.start', 0);
+        } else {
+            $model->setState('list.limit', $limit);
+            $model->setState('list.start', ($page - 1) * $limit);
+        }
         $items = $model->getItems();
-        if ($limit<=0) {
-            try { $dbAll=Factory::getContainer()->get('DatabaseDriver'); $qAll=$dbAll->getQuery(true)->select(['m.id','m.title','m.alias','m.type','m.category','m.products','m.prices','m.media','m.language'])->from($dbAll->quoteName('#__radicalmart_metas','m'))->where($dbAll->quoteName('m.state').' = 1')->order($dbAll->escape('m.ordering').' ASC'); $rowsAll=$dbAll->setQuery($qAll)->loadObjectList()?:[]; if(is_array($items)&&count($rowsAll)>count($items)) { $items=$rowsAll; if($debug) LogHelper::debug('listMetas: expanded to full set count=' . count($items), 'radicalmart_telegram_catalog'); } elseif(!is_array($items)||empty($items)) { $items=$rowsAll; if($debug) LogHelper::debug('listMetas: model empty full SQL count=' . count($items), 'radicalmart_telegram_catalog'); } } catch (\Throwable $e) { if($debug) LogHelper::warning('listMetas: full SQL fetch error=' . $e->getMessage(), 'radicalmart_telegram_catalog'); }
+        if ($debug) {
+            $itemIds = [];
+            if (is_array($items)) { foreach ($items as $it) { $itemIds[] = (int)($it->id ?? 0); } }
+            LogHelper::debug('listMetas: getItems returned ' . count($items ?? []) . ' items, IDs: ' . json_encode($itemIds), 'radicalmart_telegram_catalog');
+        }
+        if ($limit<=0 && !$hasCategoryFilter) {
+            // Fallback на полный список ТОЛЬКО если нет фильтра по категориям
+            try { $dbAll=Factory::getContainer()->get('DatabaseDriver'); $qAll=$dbAll->getQuery(true)->select(['m.id','m.title','m.alias','m.type','m.category','m.categories','m.products','m.prices','m.media','m.language'])->from($dbAll->quoteName('#__radicalmart_metas','m'))->where($dbAll->quoteName('m.state').' = 1')->order($dbAll->escape('m.ordering').' ASC'); $rowsAll=$dbAll->setQuery($qAll)->loadObjectList()?:[]; if(is_array($items)&&count($rowsAll)>count($items)) { $items=$rowsAll; if($debug) LogHelper::debug('listMetas: expanded to full set count=' . count($items), 'radicalmart_telegram_catalog'); } elseif(!is_array($items)||empty($items)) { $items=$rowsAll; if($debug) LogHelper::debug('listMetas: model empty full SQL count=' . count($items), 'radicalmart_telegram_catalog'); } } catch (\Throwable $e) { if($debug) LogHelper::warning('listMetas: full SQL fetch error=' . $e->getMessage(), 'radicalmart_telegram_catalog'); }
+        }
+        // Фильтрация по нескольким категориям (если > 1)
+        if (count($categoryFilterIds) > 1 && !empty($items)) {
+            $items = array_filter($items, function($m) use ($categoryFilterIds) {
+                $metaCats = [];
+                if (!empty($m->categories)) {
+                    $metaCats = is_string($m->categories) ? array_map('intval', explode(',', $m->categories)) : (array)$m->categories;
+                }
+                if (!empty($m->category)) {
+                    $metaCats[] = (int)$m->category;
+                }
+                return !empty(array_intersect($metaCats, $categoryFilterIds));
+            });
+            $items = array_values($items);
         }
         if (!is_array($items) || empty($items)) return [];
         $allIds=[]; $metaProductsMap=[]; $addedByMetaRef=[]; $dbProbe=null; try { $dbProbe=Factory::getContainer()->get('DatabaseDriver'); } catch (\Throwable $e) {}
