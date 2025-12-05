@@ -98,8 +98,8 @@ $chatId = $tgUser['chat_id'] ?? 0;
             /* Product Map Markers */
             .rmt-map-marker {
                 position: relative;
-                transform: translate(-50%, -100%);
                 cursor: pointer;
+                pointer-events: auto;
             }
             .rmt-map-marker-content {
                 display: inline-flex;
@@ -109,6 +109,7 @@ $chatId = $tgUser['chat_id'] ?? 0;
                 border-radius: 18px;
                 box-shadow: 0 2px 8px rgba(0,0,0,0.25);
                 white-space: nowrap;
+                pointer-events: auto;
             }
             .rmt-map-marker-flag {
                 width: 28px;
@@ -241,37 +242,10 @@ $chatId = $tgUser['chat_id'] ?? 0;
             };
 
             // Product Map configuration
-            <?php
-            // Загружаем опции поля "страна" с флагами
-            $countryFieldId = (int)$this->params->get('map_country_field', 0);
-            $countryOptions = [];
-            if ($countryFieldId > 0) {
-                try {
-                    $db = Factory::getContainer()->get('DatabaseDriver');
-                    $q = $db->getQuery(true)
-                        ->select($db->quoteName('options'))
-                        ->from($db->quoteName('#__radicalmart_fields'))
-                        ->where($db->quoteName('id') . ' = ' . $countryFieldId);
-                    $optionsJson = $db->setQuery($q)->loadResult();
-                    if ($optionsJson) {
-                        $opts = json_decode($optionsJson, true);
-                        if (is_array($opts)) {
-                            foreach ($opts as $alias => $data) {
-                                $countryOptions[$alias] = [
-                                    'text' => $data['text'] ?? $alias,
-                                    'image' => isset($data['image']) ? preg_replace('/#joomlaImage:.*$/', '', $data['image']) : ''
-                                ];
-                            }
-                        }
-                    }
-                } catch (\Throwable $e) {}
-            }
-            ?>
             window.RMT_PRODUCT_MAP = {
                 enabled: <?php echo ($this->params->get('map_view_enabled', 1) && $this->params->get('map_coordinates_field')) ? 1 : 0; ?>,
                 coordinates_field: '<?php echo addslashes($this->params->get('map_coordinates_field', '')); ?>',
-                country_field: '<?php echo addslashes($this->params->get('map_country_field', '')); ?>',
-                country_options: <?php echo json_encode($countryOptions, JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES); ?>
+                country_field: '<?php echo addslashes($this->params->get('map_country_field', '')); ?>'
             };
 
             function qs(name){ const p=new URLSearchParams(location.search); return p.get(name); }
@@ -855,6 +829,7 @@ $chatId = $tgUser['chat_id'] ?? 0;
         function cleanPhone(p){ if(!p) return ''; const d=p.replace(/[^0-9+]/g,''); let s=d; if(d[0]==='8' && d.length===11){ s='+7'+d.slice(1);} else if(d[0]==='7' && d.length===11){ s='+7'+d.slice(1);} else if(d.startsWith('+7') && d.length===12){ s=d; } else if(d.startsWith('+')){ s=d; } return s; }
         function isValidRuPhone(p){ const s=cleanPhone(p); return /^\+7\d{10}$/.test(s); }
         function isValidEmail(e){ if(!e) return true; return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(e); }
+
         async function loadCatalog(){
             try {
                 const inStock = document.getElementById('filter-instock')?.checked ? 1 : 0;
@@ -864,6 +839,10 @@ $chatId = $tgUser['chat_id'] ?? 0;
                 // limit: 0 => запросить все мета‑товары и их варианты
                 const params = { limit: 0, in_stock: inStock, sort };
                 if (from) params.price_from = from; if (to) params.price_to = to;
+                // Category filter from buttons
+                if (window.RMT_CATEGORY_FILTER && window.RMT_CATEGORY_FILTER > 0) {
+                    params.category_id = window.RMT_CATEGORY_FILTER;
+                }
                 document.querySelectorAll('[data-field-alias]').forEach(el => {
                     const alias = el.getAttribute('data-field-alias');
                     const type = el.getAttribute('data-field-type') || 'text';
@@ -1446,28 +1425,25 @@ $chatId = $tgUser['chat_id'] ?? 0;
         function parseCoordinates(val) {
             if (!val) return null;
 
-            // If it's an object with lat/lng
+            // Объект с lat/lng
             if (typeof val === 'object') {
                 const lat = val.lat || val.latitude;
                 const lon = val.lng || val.lon || val.longitude;
                 if (lat && lon) {
                     return { lat: parseFloat(lat), lon: parseFloat(lon) };
                 }
-                // Try location sub-object
                 if (val.location) {
                     return parseCoordinates(val.location);
                 }
             }
 
-            // If it's a string like "lat,lon" or "lat;lon"
+            // Строка "lat,lon" или JSON
             if (typeof val === 'string') {
-                // Try JSON
                 try {
                     const parsed = JSON.parse(val);
                     return parseCoordinates(parsed);
                 } catch(e) {}
 
-                // Try comma or semicolon separated
                 const parts = val.split(/[,;]/);
                 if (parts.length >= 2) {
                     const lat = parseFloat(parts[0].trim());
@@ -2614,15 +2590,34 @@ $chatId = $tgUser['chat_id'] ?? 0;
                     <div id="catalog-products-map" style="width:100%; height:400px; border-radius:8px;"></div>
                 </div>
                 <?php endif; ?>
-
-                <!-- Meta Product Modal (for map markers click) -->
-                <div id="meta-product-modal" class="uk-flex-top" uk-modal>
-                    <div class="uk-modal-dialog uk-modal-body uk-margin-auto-vertical" style="max-width:400px;">
-                        <button class="uk-modal-close-default" type="button" uk-close></button>
-                        <div id="meta-product-modal-content"></div>
-                    </div>
+                <?php
+                // Category filter buttons (only shown in list mode, hidden when map is active)
+                $categoryButtons = is_array($this->categoryButtons ?? null) ? $this->categoryButtons : [];
+                if (!empty($categoryButtons)):
+                ?>
+                <div id="catalog-category-bar" class="uk-margin-small-bottom" style="overflow-x:auto; white-space:nowrap;">
+                    <button type="button" class="uk-button uk-button-small uk-button-default catalog-cat-btn active" data-category-id="0" onclick="filterByCategory(0)"><?php echo Text::_('JALL'); ?></button>
+                    <?php foreach ($categoryButtons as $btn):
+                        $cid = (int)($btn['id'] ?? 0);
+                        $ctitle = (string)($btn['title'] ?? '');
+                    ?>
+                    <button type="button" class="uk-button uk-button-small uk-button-default catalog-cat-btn" data-category-id="<?php echo $cid; ?>" onclick="filterByCategory(<?php echo $cid; ?>)"><?php echo htmlspecialchars($ctitle, ENT_QUOTES, 'UTF-8'); ?></button>
+                    <?php endforeach; ?>
                 </div>
-
+                <script>
+                window.RMT_CATEGORY_FILTER = 0;
+                function filterByCategory(catId){
+                    window.RMT_CATEGORY_FILTER = catId;
+                    document.querySelectorAll('.catalog-cat-btn').forEach(b => {
+                        const isActive = parseInt(b.dataset.categoryId) === catId;
+                        b.classList.toggle('uk-button-primary', isActive);
+                        b.classList.toggle('uk-button-default', !isActive);
+                        b.classList.toggle('active', isActive);
+                    });
+                    if (typeof loadCatalog === 'function') loadCatalog();
+                }
+                </script>
+                <?php endif; ?>
                 <div class="uk-child-width-1-1 uk-child-width-1-2@s uk-child-width-1-3@m" uk-grid id="catalog-list"></div>
             </div>
 
@@ -2702,8 +2697,11 @@ $chatId = $tgUser['chat_id'] ?? 0;
 <div id="search-modal" uk-modal>
     <div class="uk-modal-dialog uk-modal-body">
         <button class="uk-modal-close-default" type="button" uk-close></button>
-    <h4 class="uk-margin-remove"><?php echo Text::_('COM_RADICALMART_TELEGRAM_SEARCH_TITLE'); ?></h4>
-    <input id="search-input" class="uk-input uk-margin-small" type="text" placeholder="<?php echo Text::_('COM_RADICALMART_TELEGRAM_SEARCH_INPUT_PLACEHOLDER'); ?>" oninput="onSearchInput(event)">
+        <h4 class="uk-margin-remove"><?php echo Text::_('COM_RADICALMART_TELEGRAM_SEARCH_TITLE'); ?></h4>
+        <div class="uk-margin-small uk-flex" style="gap: 8px;">
+            <input id="search-input" class="uk-input uk-flex-1" type="text" placeholder="<?php echo Text::_('COM_RADICALMART_TELEGRAM_SEARCH_INPUT_PLACEHOLDER'); ?>" onkeypress="if(event.key==='Enter')runSearch()">
+            <button type="button" class="uk-button uk-button-primary" onclick="runSearch()" uk-icon="search"></button>
+        </div>
         <div id="search-results" class="uk-margin-small"></div>
     </div>
 </div>
