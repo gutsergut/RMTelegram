@@ -60,6 +60,7 @@ class ApiController extends BaseController
         if ($priceFrom !== '' || $priceTo !== '') { $filters['price'] = ['from'=>$priceFrom, 'to'=>$priceTo]; }
         // Category filter from buttons
         $categoryId = $app->input->getInt('category_id', 0);
+        LogHelper::debug('ApiController.list: RAW category_id=' . $categoryId . ' (from input->getInt)', 'radicalmart_telegram_catalog');
         if ($categoryId > 0) {
             $filters['categories'] = [$categoryId];
             LogHelper::debug('ApiController.list: category_id=' . $categoryId . ' applied to filters', 'radicalmart_telegram_catalog');
@@ -877,13 +878,31 @@ class ApiController extends BaseController
         $this->guardRateLimitDb('search', 40);
         $q    = trim((string) $app->input->get('q', '', 'string'));
         $lim  = $app->input->getInt('limit', 12);
+        $debug = $app->input->getInt('debug', 0) === 1;
         if ($lim <= 0 || $lim > 50) { $lim = 12; }
         if ($q === '') { echo new JsonResponse(['items'=>[]]); $app->close(); }
         try {
             // Используем listMetas с фильтром search для полных карточек
             $filters = ['search' => $q];
-            $items = (new CatalogService())->listMetas(1, $lim, $filters);
-            echo new JsonResponse(['items' => $items]);
+            if ($debug) { $filters['_search_debug'] = true; }
+            $result = (new CatalogService())->listMetas(1, $lim, $filters);
+            // Если debug и result массив с _debug
+            if ($debug && is_array($result) && isset($result['_debug'])) {
+                $items = $result['items'] ?? [];
+                $response = ['items' => $items, '_debug' => $result['_debug']];
+            } else {
+                $items = is_array($result) && isset($result['items']) ? $result['items'] : (is_array($result) ? $result : []);
+                $response = ['items' => $items];
+            }
+            if ($debug) {
+                $response['_debug'] = array_merge($response['_debug'] ?? [], [
+                    'query' => $q,
+                    'query_len' => mb_strlen($q, 'UTF-8'),
+                    'query_hex' => bin2hex($q),
+                    'items_count' => count($items),
+                ]);
+            }
+            echo new JsonResponse($response);
             $app->close();
         } catch (\Throwable $e) { echo new JsonResponse(null, $e->getMessage(), true); $app->close(); }
     }

@@ -198,11 +198,19 @@ class CatalogService
         $searchQuery = $hasSearchFilter ? trim((string)$filters['search']) : '';
         $searchMetaIds = []; // ID мета-товаров найденных через поиск
 
+        // DEBUG: временный флаг для отладки поиска (удалить после)
+        $searchDebug = !empty($filters['_search_debug']);
+        $debugInfo = [];
+
         // Если есть поисковый запрос, сначала ищем по products (title, search_text, fields)
         if ($hasSearchFilter) {
             try {
                 $db = Factory::getContainer()->get('DatabaseDriver');
                 $searchLike = '%' . $db->escape($searchQuery, true) . '%';
+
+                if ($searchDebug) {
+                    $debugInfo['searchLike'] = $searchLike;
+                }
 
                 // Unicode-экранированная версия для поиска в JSON полях (кириллица как \u0437\u0435\u0440\u043d\u043e)
                 $searchUnicode = '';
@@ -238,10 +246,10 @@ class CatalogService
                         if (!is_array($opts)) continue;
                         foreach ($opts as $alias => $opt) {
                             if (!is_array($opt)) continue;
-                            // Ищем совпадение в text, title, label
+                            // Ищем совпадение в text, title, label (mb_stripos для unicode/кириллицы)
                             $textVals = [$opt['text'] ?? '', $opt['title'] ?? '', $opt['label'] ?? ''];
                             foreach ($textVals as $tv) {
-                                if ($tv !== '' && stripos($tv, $searchQuery) !== false) {
+                                if ($tv !== '' && mb_stripos($tv, $searchQuery, 0, 'UTF-8') !== false) {
                                     $matchingFieldAliases[] = is_string($alias) ? $alias : ($opt['value'] ?? '');
                                     break;
                                 }
@@ -277,7 +285,17 @@ class CatalogService
                 }
 
                 $qProducts->extendWhere('AND', $orConditions, 'OR');
+
+                // DEBUG: выводим SQL запрос
+                if ($searchDebug) {
+                    $debugInfo['products_sql'] = $qProducts->__toString();
+                }
+
                 $foundProductIds = $db->setQuery($qProducts)->loadColumn();
+
+                if ($searchDebug) {
+                    $debugInfo['foundProductIds'] = $foundProductIds;
+                }
 
                 if ($debug) { LogHelper::debug('listMetas: search products found IDs: ' . json_encode($foundProductIds), 'radicalmart_telegram_catalog'); }
 
@@ -594,6 +612,12 @@ class CatalogService
         // Для 'new' сортировка уже применена к MetasModel, для 'default' тоже
 
         if($debug){ LogHelper::debug('listMetas: metas_count=' . count($out) . ' with_children=' . $metasWith . ' without_children=' . $metasWithout . ' children_total=' . $childrenTotal . ' skipped_by_stock=' . $skippedByStock, 'radicalmart_telegram_catalog'); LogHelper::debug('[catalog] metas_count=' . count($out) . ' with_children=' . $metasWith . ' without_children=' . $metasWithout, 'com_radicalmart.telegram'); }
+
+        // DEBUG: возвращаем debug info если запрошено
+        if ($searchDebug && !empty($debugInfo)) {
+            return ['items' => $out, '_debug' => $debugInfo];
+        }
+
         return $out;
     }
 
@@ -1098,7 +1122,7 @@ class CatalogService
         if(isset($fv['value'])){
             $v = $fv['value'];
             if(is_string($v)){
-                $decoded = json_decode($v, true);
+                $decoded = json_decode($v, true); 
                 if(is_array($decoded)) $v = $decoded;
             }
             if(is_object($v)) $v = (array)$v;

@@ -23,7 +23,6 @@ use Joomla\Plugin\RadicalMartShipping\ApiShip\Helper\ApiShipHelper;
 use Joomla\CMS\Filesystem\Folder;
 use Joomla\CMS\Filesystem\File;
 use Joomla\Component\RadicalMartTelegram\Site\Helper\LogHelper;
-use Joomla\CMS\Log\Log;
 use Joomla\Component\RadicalMart\Administrator\Model\OrderModel as AdminOrderModel;
 use Joomla\Component\RadicalMartTelegram\Site\Helper\ConsentHelper;
 use Joomla\Plugin\RadicalMartShipping\ApiShip\Extension\ApiShip;
@@ -59,6 +58,13 @@ class ApiController extends BaseController
         if ($inStock) { $filters['in_stock'] = 1; }
         if ($sort !== '') { $filters['sort'] = $sort; }
         if ($priceFrom !== '' || $priceTo !== '') { $filters['price'] = ['from'=>$priceFrom, 'to'=>$priceTo]; }
+        // Category filter from buttons
+        $categoryId = $app->input->getInt('category_id', 0);
+        LogHelper::debug('ApiController.list: RAW category_id=' . $categoryId . ' (from input->getInt)', 'radicalmart_telegram_catalog');
+        if ($categoryId > 0) {
+            $filters['categories'] = [$categoryId];
+            LogHelper::debug('ApiController.list: category_id=' . $categoryId . ' applied to filters', 'radicalmart_telegram_catalog');
+        }
         // Field filters: read configured field_ids, load aliases from DB, pick values from request
         try {
             $params = $app->getParams('com_radicalmart_telegram');
@@ -863,6 +869,7 @@ class ApiController extends BaseController
     /**
      * Поиск товаров (быстрый search в WebApp)
      * Параметры: q (строка), limit (int)
+     * Возвращает мета-товары с детьми (полные карточки как в каталоге)
      */
     public function search(): void
     {
@@ -870,14 +877,32 @@ class ApiController extends BaseController
         $this->guardInitData();
         $this->guardRateLimitDb('search', 40);
         $q    = trim((string) $app->input->get('q', '', 'string'));
-        $lim  = $app->input->getInt('limit', 10);
-        if ($lim <= 0 || $lim > 50) { $lim = 10; }
+        $lim  = $app->input->getInt('limit', 12);
+        $debug = $app->input->getInt('debug', 0) === 1;
+        if ($lim <= 0 || $lim > 50) { $lim = 12; }
         if ($q === '') { echo new JsonResponse(['items'=>[]]); $app->close(); }
         try {
-            // Используем CatalogService с фильтром по имени (оставляем как text search)
+            // Используем listMetas с фильтром search для полных карточек
             $filters = ['search' => $q];
-            $items = (new CatalogService())->listProducts(1, $lim, $filters);
-            echo new JsonResponse(['items' => $items]);
+            if ($debug) { $filters['_search_debug'] = true; }
+            $result = (new CatalogService())->listMetas(1, $lim, $filters);
+            // Если debug и result массив с _debug
+            if ($debug && is_array($result) && isset($result['_debug'])) {
+                $items = $result['items'] ?? [];
+                $response = ['items' => $items, '_debug' => $result['_debug']];
+            } else {
+                $items = is_array($result) && isset($result['items']) ? $result['items'] : (is_array($result) ? $result : []);
+                $response = ['items' => $items];
+            }
+            if ($debug) {
+                $response['_debug'] = array_merge($response['_debug'] ?? [], [
+                    'query' => $q,
+                    'query_len' => mb_strlen($q, 'UTF-8'),
+                    'query_hex' => bin2hex($q),
+                    'items_count' => count($items),
+                ]);
+            }
+            echo new JsonResponse($response);
             $app->close();
         } catch (\Throwable $e) { echo new JsonResponse(null, $e->getMessage(), true); $app->close(); }
     }
@@ -1917,6 +1942,84 @@ class ApiController extends BaseController
 
         } catch (\Throwable $e) {
             echo new JsonResponse(['success' => false, 'message' => $e->getMessage()]);
+        }
+
+        $app->close();
+    }
+
+    /**
+     * Get bonuses/points info for user
+     */
+    public function bonuses(): void
+    {
+        $app = Factory::getApplication();
+        $this->guardInitData();
+        $this->guardRateLimitDb('bonuses', 60);
+        $chat = $this->getChatId();
+
+        if ($chat <= 0) {
+            echo new JsonResponse(null, 'Invalid chat', true);
+            $app->close();
+        }
+
+        try {
+            $svc = new BonusesService();
+            $data = $svc->getBonusesData($chat);
+            echo new JsonResponse($data);
+        } catch (\Throwable $e) {
+            echo new JsonResponse(null, $e->getMessage(), true);
+        }
+
+        $app->close();
+    }
+
+    /**
+     * Get summary info (cart count, bonus balance, etc.)
+     */
+    public function summary(): void
+    {
+        $app = Factory::getApplication();
+        $this->guardInitData();
+        $this->guardRateLimitDb('summary', 60);
+        $chat = $this->getChatId();
+
+        if ($chat <= 0) {
+            echo new JsonResponse(null, 'Invalid chat', true);
+            $app->close();
+        }
+
+        try {
+            // Cart count
+            $cartSvc = new CartService();
+            $cart = $cartSvc->getCart($chat);
+            $cartCount = 0;
+            if ($cart && !empty($cart->products)) {
+                foreach ($cart->products as $p) {
+                    $cartCount += (int) ($p->quantity ?? 1);
+                }
+            }
+
+            // Bonus balance
+            $bonusBalance = 0;
+            try {
+                $db = Factory::getContainer()->get('DatabaseDriver');
+                $q = $db->getQuery(true)
+                    ->select('user_id')
+                    ->from($db->quoteName('#__radicalmart_telegram_users'))
+                    ->where($db->quoteName('chat_id') . ' = ' . (int) $chat);
+                $userId = (int) $db->setQuery($q)->loadResult();
+
+                if ($userId > 0 && class_exists(PointsHelper::class)) {
+                    $bonusBalance = (int) PointsHelper::getBalance($userId);
+                }
+            } catch (\Throwable $e) {}
+
+            echo new JsonResponse([
+                'cart_count' => $cartCount,
+                'bonus_balance' => $bonusBalance
+            ]);
+        } catch (\Throwable $e) {
+            echo new JsonResponse(null, $e->getMessage(), true);
         }
 
         $app->close();
