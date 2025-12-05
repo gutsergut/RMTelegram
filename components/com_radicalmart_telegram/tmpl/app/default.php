@@ -1485,6 +1485,38 @@ $chatId = $tgUser['chat_id'] ?? 0;
             const hasVariants = children.length > 0;
             const first = hasVariants ? children[0] : meta;
 
+            // Проверяем, есть ли хоть один вариант в наличии
+            const allOutOfStock = hasVariants && children.every(ch => !ch.in_stock);
+
+            // Если все варианты не в наличии — показываем упрощённую модалку
+            if (allOutOfStock || !hasVariants) {
+                const outOfStockModalHtml = `
+                    <div id="meta-product-modal" class="uk-modal" uk-modal>
+                        <div class="uk-modal-dialog uk-margin-auto-vertical" style="max-width:400px;padding:0;">
+                            <button class="uk-modal-close-default" type="button" uk-close style="z-index:10;"></button>
+                            <div class="uk-card uk-card-default uk-card-small">
+                                <div class="uk-card-media-top" style="position:relative;">
+                                    ${meta.image ? `<img src="${meta.image}" alt="" class="uk-width-1-1 uk-object-cover" style="height:200px">` : `<div class="uk-height-small uk-flex uk-flex-middle uk-flex-center uk-background-muted"><?php echo Text::_('COM_RADICALMART_TELEGRAM_IMAGE'); ?></div>`}
+                                </div>
+                                <div class="uk-card-body">
+                                    <div class="uk-text-small uk-text-muted">${meta.category || '\u00A0'}</div>
+                                    <h5 class="uk-margin-remove">${meta.title || '<?php echo Text::_('COM_RADICALMART_TELEGRAM_PRODUCT'); ?>'}</h5>
+                                    <div class="uk-margin-small uk-text-danger uk-text-center">
+                                        <strong><?php echo Text::_('COM_RADICALMART_NOT_IN_STOCK'); ?></strong>
+                                    </div>
+                                    <div class="uk-flex uk-flex-center uk-margin-small-top">
+                                        <a class="uk-button uk-button-default" href="<?php echo $root; ?>/index.php?option=com_radicalmart_telegram&view=product&id=${first.id}<?php echo $chatId ? '&chat=' . $chatId : ''; ?>"><?php echo Text::_('COM_RADICALMART_TELEGRAM_MORE'); ?></a>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                    </div>`;
+                document.body.insertAdjacentHTML('beforeend', outOfStockModalHtml);
+                const modal = document.getElementById('meta-product-modal');
+                UIkit.modal(modal).show();
+                return;
+            }
+
             // Используем те же функции что и в каталоге для создания карточки
             const cfg = window.RMT_CARDVIEW || {};
             const enabled = cfg.enabled === 1;
