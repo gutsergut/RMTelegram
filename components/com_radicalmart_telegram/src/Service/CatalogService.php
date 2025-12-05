@@ -194,7 +194,68 @@ class CatalogService
         $hasSort = !empty($filters['sort']) && (string)$filters['sort'] !== '';
         $hasCategoryFilter = !empty($filters['categories']) && is_array($filters['categories']) && count(array_filter($filters['categories'])) > 0;
         $hasSearchFilter = !empty($filters['search']) && trim((string)$filters['search']) !== '';
-        $searchQuery = $hasSearchFilter ? mb_strtolower(trim((string)$filters['search'])) : '';
+        $searchQuery = $hasSearchFilter ? trim((string)$filters['search']) : '';
+        $searchMetaIds = []; // ID мета-товаров найденных через поиск
+        
+        // Если есть поисковый запрос, сначала ищем по products (title, search_text, fields)
+        if ($hasSearchFilter) {
+            try {
+                $db = Factory::getContainer()->get('DatabaseDriver');
+                $searchLike = '%' . $db->escape($searchQuery, true) . '%';
+                
+                // Поиск по products: title, alias, code, search_text, fields (JSON)
+                $qProducts = $db->getQuery(true)
+                    ->select('DISTINCT p.id')
+                    ->from($db->quoteName('#__radicalmart_products', 'p'))
+                    ->where($db->quoteName('p.state') . ' = 1')
+                    ->extendWhere('AND', [
+                        $db->quoteName('p.title') . ' LIKE ' . $db->quote($searchLike),
+                        $db->quoteName('p.alias') . ' LIKE ' . $db->quote($searchLike),
+                        $db->quoteName('p.code') . ' LIKE ' . $db->quote($searchLike),
+                        $db->quoteName('p.search_text') . ' LIKE ' . $db->quote($searchLike),
+                        $db->quoteName('p.fields') . ' LIKE ' . $db->quote($searchLike),
+                    ], 'OR');
+                $foundProductIds = $db->setQuery($qProducts)->loadColumn();
+                
+                if ($debug) { LogHelper::debug('listMetas: search products found IDs: ' . json_encode($foundProductIds), 'radicalmart_telegram_catalog'); }
+                
+                // Теперь ищем мета-товары которые содержат эти products
+                if (!empty($foundProductIds)) {
+                    // Также ищем по title самих мета-товаров
+                    $qMetas = $db->getQuery(true)
+                        ->select('m.id')
+                        ->from($db->quoteName('#__radicalmart_metas', 'm'))
+                        ->where($db->quoteName('m.state') . ' = 1');
+                    
+                    // Условие: мета title LIKE search ИЛИ products содержит найденные ID
+                    $orConditions = [$db->quoteName('m.title') . ' LIKE ' . $db->quote($searchLike)];
+                    foreach ($foundProductIds as $pid) {
+                        $orConditions[] = $db->quoteName('m.products') . ' LIKE ' . $db->quote('%"id":"' . (int)$pid . '"%');
+                        $orConditions[] = $db->quoteName('m.products') . ' LIKE ' . $db->quote('%"id":' . (int)$pid . '%');
+                    }
+                    $qMetas->extendWhere('AND', $orConditions, 'OR');
+                    $searchMetaIds = array_map('intval', $db->setQuery($qMetas)->loadColumn());
+                } else {
+                    // Если products не найдены, ищем только по title мета
+                    $qMetas = $db->getQuery(true)
+                        ->select('m.id')
+                        ->from($db->quoteName('#__radicalmart_metas', 'm'))
+                        ->where($db->quoteName('m.state') . ' = 1')
+                        ->where($db->quoteName('m.title') . ' LIKE ' . $db->quote($searchLike));
+                    $searchMetaIds = array_map('intval', $db->setQuery($qMetas)->loadColumn());
+                }
+                
+                if ($debug) { LogHelper::debug('listMetas: search found meta IDs: ' . json_encode($searchMetaIds), 'radicalmart_telegram_catalog'); }
+                
+                // Если ничего не найдено, возвращаем пустой результат
+                if (empty($searchMetaIds)) {
+                    return [];
+                }
+            } catch (\Throwable $e) {
+                if ($debug) { LogHelper::warning('listMetas: search query error: ' . $e->getMessage(), 'radicalmart_telegram_catalog'); }
+            }
+        }
+        
         // Автоматически включаем фильтр "в наличии" при любых фильтрах ИЛИ сортировке
         $hasAnyFilter = $hasStockFilter || $hasPriceFilter || $hasFieldFilters || $hasSort || $hasCategoryFilter;
         if ($debug) { LogHelper::debug('listMetas: hasStockFilter=' . (int)$hasStockFilter . ' hasPriceFilter=' . (int)$hasPriceFilter . ' hasFieldFilters=' . (int)$hasFieldFilters . ' hasSort=' . (int)$hasSort . ' hasCategoryFilter=' . (int)$hasCategoryFilter . ' hasAnyFilter=' . (int)$hasAnyFilter . ' filters=' . json_encode($filters), 'radicalmart_telegram_catalog'); }
@@ -273,14 +334,13 @@ class CatalogService
             });
             $items = array_values($items);
         }
-        // Фильтрация по поисковому запросу (search) — ищем подстроку в title
-        if ($hasSearchFilter && !empty($items)) {
-            $items = array_filter($items, function($m) use ($searchQuery) {
-                $title = mb_strtolower(trim((string)($m->title ?? '')));
-                return mb_strpos($title, $searchQuery) !== false;
+        // Фильтрация по результатам поиска (ранее найденные searchMetaIds)
+        if ($hasSearchFilter && !empty($searchMetaIds) && !empty($items)) {
+            $items = array_filter($items, function($m) use ($searchMetaIds) {
+                return in_array((int)($m->id ?? 0), $searchMetaIds, true);
             });
             $items = array_values($items);
-            if ($debug) { LogHelper::debug('listMetas: after search filter "' . $searchQuery . '" count=' . count($items), 'radicalmart_telegram_catalog'); }
+            if ($debug) { LogHelper::debug('listMetas: after search filter by IDs count=' . count($items), 'radicalmart_telegram_catalog'); }
         }
         if (!is_array($items) || empty($items)) return [];
         $allIds=[]; $metaProductsMap=[]; $addedByMetaRef=[]; $dbProbe=null; try { $dbProbe=Factory::getContainer()->get('DatabaseDriver'); } catch (\Throwable $e) {}

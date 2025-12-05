@@ -114,10 +114,10 @@
     const L = window.RMT_LANG || {};
     // Текст для шаринга
     const shareText = (L.COM_RADICALMART_TELEGRAM_SHARE_TEXT || 'Используй мой промокод {code} и получи скидку!').replace('{code}', code);
-    
+
     // Формируем URL для Telegram share
     const shareUrl = 'https://t.me/share/url?url=' + encodeURIComponent(link) + '&text=' + encodeURIComponent(shareText);
-    
+
     // Пробуем открыть через Telegram WebApp API
     if (window.Telegram && window.Telegram.WebApp && window.Telegram.WebApp.openTelegramLink) {
       window.Telegram.WebApp.openTelegramLink(shareUrl);
@@ -134,7 +134,7 @@
   let SEARCH_TIMER=null; let LAST_SEARCH_Q='';
   window.openSearch = function(){ UIkit.modal('#search-modal').show(); document.getElementById('search-input')?.focus(); };
   window.onSearchInput = function(ev){ const q=(ev.target.value||'').trim(); if(q===LAST_SEARCH_Q) return; LAST_SEARCH_Q=q; clearTimeout(SEARCH_TIMER); SEARCH_TIMER=setTimeout(()=>runSearch(q), 250); };
-  
+
   // Полноценные карточки для поиска (как в каталоге)
   async function runSearch(q) {
     const box = document.getElementById('search-results');
@@ -144,31 +144,31 @@
       return;
     }
     box.innerHTML = '<div class="uk-text-center uk-padding-small"><span uk-spinner></span></div>';
-    
+
     try {
       const res = await api('search', { q, limit: 12 });
       const items = res.items || [];
-      
+
       if (!items.length) {
         box.innerHTML = '<p class="uk-text-meta">' + (L.COM_RADICALMART_TELEGRAM_SEARCH_NO_RESULTS || 'Ничего не найдено') + '</p>';
         return;
       }
-      
+
       // Отображаем мета-карточки с вариантами
       const root = window.RMT_ROOT || '';
       const chatParam = new URLSearchParams(location.search).get('chat');
       const chatSuffix = chatParam ? '&chat=' + encodeURIComponent(chatParam) : '';
-      
+
       let html = '<div class="uk-grid-small uk-child-width-1-2@s" uk-grid>';
-      
+
       items.forEach(p => {
         if (!p.is_meta) return;
-        
+
         const children = Array.isArray(p.children) ? p.children : [];
         const hasVariants = children.length > 0;
         const allOutOfStock = hasVariants && children.every(ch => !ch.in_stock);
         const first = hasVariants ? children[0] : null;
-        
+
         // Карточка без вариантов
         if (!hasVariants) {
           html += '<div><div class="uk-card uk-card-default uk-card-small">';
@@ -180,7 +180,7 @@
           html += '</div></div></div>';
           return;
         }
-        
+
         // Карточка "Нет в наличии"
         if (allOutOfStock) {
           html += '<div><div class="uk-card uk-card-default uk-card-small">';
@@ -192,7 +192,7 @@
           html += '</div></div></div>';
           return;
         }
-        
+
         // Полная карточка с вариантами
         const variantBtns = children.map(ch => {
           let label = '';
@@ -208,7 +208,7 @@
           if (!label) label = String(ch.id);
           return '<button class="uk-button uk-button-default uk-button-small rmt-variant" data-vid="' + ch.id + '" title="' + (ch.title || '').replace(/"/g, '&quot;') + '">' + label + '</button>';
         }).join(' ');
-        
+
         html += '<div><div class="uk-card uk-card-default uk-card-small">';
         html += '<div class="uk-card-media-top" style="position:relative;">' + (p.image ? '<img src="' + p.image + '" alt="" class="uk-width-1-1 uk-object-cover" style="height:160px">' : '<div class="uk-height-small uk-background-muted"></div>') + '</div>';
         html += '<div class="uk-card-body" data-search-card="' + p.id + '" data-children=\'' + JSON.stringify(children).replace(/'/g, '&#39;') + '\'>';
@@ -226,10 +226,10 @@
         html += '</div>';
         html += '</div></div></div>';
       });
-      
+
       html += '</div>';
       box.innerHTML = html;
-      
+
       // Инициализируем обработчики для кнопок вариантов
       box.querySelectorAll('[data-search-card]').forEach(cardBody => {
         const children = JSON.parse(cardBody.dataset.children || '[]');
@@ -239,56 +239,56 @@
         const priceDiscEl = cardBody.querySelector('.js-price-discount');
         const addBtn = cardBody.querySelector('.js-add');
         const linkEl = cardBody.querySelector('.js-link');
-        
+
         function applyVariant(ch) {
           // Обновляем цены
           const finalPrice = ch.price_final || '';
           const basePrice = ch.base_string || ch.price_base || '';
           const hasDiscount = !!(ch.discount_enable && basePrice && finalPrice !== basePrice);
-          
+
           if (hasDiscount && priceBaseEl) {
             priceBaseEl.textContent = basePrice;
             priceBaseEl.style.display = '';
           } else if (priceBaseEl) {
             priceBaseEl.style.display = 'none';
           }
-          
+
           if (priceFinalEl) {
             priceFinalEl.innerHTML = '<strong>' + finalPrice + '</strong>';
           }
-          
+
           if (hasDiscount && ch.discount_percent && priceDiscEl) {
             priceDiscEl.textContent = '-' + ch.discount_percent + '%';
             priceDiscEl.style.display = '';
           } else if (priceDiscEl) {
             priceDiscEl.style.display = 'none';
           }
-          
+
           // Обновляем кнопку добавления
           if (addBtn) {
             addBtn.dataset.vid = ch.id;
             addBtn.disabled = !ch.in_stock;
           }
-          
+
           // Обновляем ссылку
           if (linkEl) {
             const chatParam = new URLSearchParams(location.search).get('chat');
             const chatSuffix = chatParam ? '&chat=' + encodeURIComponent(chatParam) : '';
             linkEl.href = (window.RMT_ROOT || '') + '/index.php?option=com_radicalmart_telegram&view=product&id=' + ch.id + chatSuffix;
           }
-          
+
           // Выделяем активную кнопку варианта
           variantBtns.forEach(btn => {
             btn.classList.toggle('uk-button-primary', parseInt(btn.dataset.vid) === ch.id);
             btn.classList.toggle('uk-button-default', parseInt(btn.dataset.vid) !== ch.id);
           });
         }
-        
+
         // Применяем первый вариант по умолчанию
         if (children.length > 0) {
           applyVariant(children[0]);
         }
-        
+
         // Обработчики кликов по вариантам
         variantBtns.forEach(btn => {
           btn.addEventListener('click', function() {
@@ -298,7 +298,7 @@
           });
         });
       });
-      
+
     } catch (e) {
       console.error('Search error:', e);
       box.innerHTML = '<p class="uk-text-danger">' + (L.COM_RADICALMART_TELEGRAM_SEARCH_ERROR || 'Ошибка поиска') + '</p>';
