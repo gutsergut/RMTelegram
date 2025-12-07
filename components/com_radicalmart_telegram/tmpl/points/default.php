@@ -143,8 +143,24 @@ $hasMore = $this->hasMore ?? false;
             document.documentElement.style.setProperty('--tg-theme-secondary-bg-color', '#f5f5f5');
         })();
     </script>
+    <style>
+        #app-top-nav { min-height: 44px; }
+        #app-top-nav .uk-navbar-center { flex-grow: 1; display: flex; justify-content: center; }
+        #app-top-nav .uk-navbar-item { min-height: 44px; padding-top: 4px; padding-bottom: 4px; }
+        #app-top-nav .uk-logo img { height: 32px; display: block; }
+        body.tg-fullscreen #app-top-nav { margin-top: var(--tg-fullscreen-padding, 60px); }
+    </style>
 </head>
 <body>
+
+<nav id="app-top-nav" class="uk-navbar-container" uk-navbar>
+    <div class="uk-navbar-center">
+        <a class="uk-navbar-item uk-logo" href="<?php echo $root; ?>index.php?option=com_radicalmart_telegram&view=app<?php echo $baseQuery; ?>" title="cacao.land">
+            <img src="/images/logo/cacao_logo.svg" alt="cacao.land">
+        </a>
+    </div>
+</nav>
+
     <!-- Points Balance Header -->
     <div class="points-balance">
         <div class="balance-label"><?php echo Text::_('COM_RADICALMART_TELEGRAM_POINTS_BALANCE'); ?></div>
@@ -225,6 +241,11 @@ $hasMore = $this->hasMore ?? false;
         if (window.Telegram && Telegram.WebApp) {
             Telegram.WebApp.ready();
             Telegram.WebApp.expand();
+
+            // Add fullscreen class to body (navbar already has margin-top)
+            if (Telegram.WebApp.isFullscreen) {
+                document.body.classList.add('tg-fullscreen');
+            }
         }
 
         // Apply light theme

@@ -12,6 +12,7 @@ namespace Joomla\Component\RadicalMartTelegram\Site\Service;
 
 use Joomla\CMS\Factory;
 use Joomla\CMS\User\User;
+use Joomla\Database\ParameterType;
 use Joomla\Component\RadicalMart\Site\Model\CartModel;
 use Joomla\Component\RadicalMartTelegram\Site\Helper\TelegramUserHelper;
 use Joomla\Component\RadicalMartTelegram\Site\Helper\LogHelper;
@@ -100,6 +101,7 @@ class CartService
     /**
      * Получить корзину
      * Загружает корзину по user_id если пользователь связан
+     * ВАЖНО: Принудительно ищем корзину по user_id, игнорируя старые cookies
      */
     public function getCart(int $chatId)
     {
@@ -110,6 +112,30 @@ class CartService
         LogHelper::debug('CartService::getCart linkedUserId=' . ($linkedUserId ?? 'null'));
 
         $model = new CartModel();
+
+        // Если пользователь связан — найти его последнюю корзину напрямую
+        // Это обходит проблему со старыми cookies в Telegram WebApp контексте
+        if ($linkedUserId) {
+            $db = Factory::getContainer()->get('DatabaseDriver');
+            $query = $db->getQuery(true)
+                ->select(['id', 'code'])
+                ->from($db->quoteName('#__radicalmart_carts'))
+                ->where($db->quoteName('user_id') . ' = :userId')
+                ->order($db->quoteName('modified') . ' DESC')
+                ->setLimit(1);
+            $query->bind(':userId', $linkedUserId, \Joomla\Database\ParameterType::INTEGER);
+            $db->setQuery($query);
+            $userCart = $db->loadObject();
+
+            if ($userCart && $userCart->id > 0) {
+                LogHelper::debug('CartService::getCart found user cart id=' . $userCart->id . ' code=' . $userCart->code);
+                // Устанавливаем cookies на правильную корзину
+                $model->setCookies((int) $userCart->id, (string) $userCart->code);
+            } else {
+                LogHelper::debug('CartService::getCart no cart found for user ' . $linkedUserId);
+            }
+        }
+
         $cart = $model->getItem();
 
         LogHelper::debug('CartService::getCart result=' . ($cart ? 'cart.id=' . ($cart->id ?? 'null') . ' user_id=' . ($cart->user_id ?? 'null') . ' products=' . (isset($cart->products) ? count($cart->products) : 0) : 'false/null'));

@@ -11,6 +11,7 @@ use Joomla\Component\RadicalMartTelegram\Site\Helper\TelegramUserHelper;
 
 $root = rtrim(Uri::root(), '/');
 $storeTitle = isset($this->params) ? (string) $this->params->get('store_title', 'магазин Cacao.Land') : 'магазин Cacao.Land';
+$fullscreenPadding = isset($this->params) ? (int) $this->params->get('fullscreen_top_padding', 60) : 60;
 
 // Данные пользователя из View (через TelegramUserHelper)
 $tgUser = $this->tgUser ?? null;
@@ -72,6 +73,11 @@ $chatId = $tgUser['chat_id'] ?? 0;
             html, body { background-color: var(--tg-theme-bg-color, #ffffff); color: var(--tg-theme-text-color, #222); }
             /* Neutralize Joomla contentpane padding/margins */
             body.contentpane { padding: 0 !important; margin: 0 !important; }
+            /* Fullscreen mode top padding for Telegram header buttons */
+            body { padding-top: env(safe-area-inset-top, 0px); }
+            :root { --tg-fullscreen-padding: <?php echo $fullscreenPadding; ?>px; }
+            .tg-fullscreen-padding { padding-top: var(--tg-fullscreen-padding, 60px); }
+            body.tg-fullscreen #app-top-nav { margin-top: var(--tg-fullscreen-padding, 60px); }
             /* Fullscreen consent overlay hidden by default */
             #consent-overlay { position: fixed; inset: 0; background: var(--tg-theme-bg-color, rgba(255,255,255,.96)); z-index: 9999; overflow: auto; display: none; }
             body.consent-block { overflow: hidden; }
@@ -2372,6 +2378,11 @@ $chatId = $tgUser['chat_id'] ?? 0;
                     Telegram.WebApp.ready();
                     Telegram.WebApp.expand();
 
+                    // Add fullscreen class to body (navbar already has margin-top)
+                    if (Telegram.WebApp.isFullscreen) {
+                        document.body.classList.add('tg-fullscreen');
+                    }
+
                     const tgUser = Telegram.WebApp.initDataUnsafe?.user;
                     const chatId = tgUser?.id;
                     console.log('[TG] User:', tgUser, 'chatId:', chatId);
@@ -2468,25 +2479,16 @@ $chatId = $tgUser['chat_id'] ?? 0;
 
 <style>
   #app-top-nav { min-height: 44px; }
-  #app-top-nav .uk-navbar-right {margin-right: 10px; }
+  #app-top-nav .uk-navbar-center { flex-grow: 1; display: flex; justify-content: center; }
   #app-top-nav .uk-navbar-item { min-height: 44px; padding-top: 4px; padding-bottom: 4px; }
-  #app-top-nav .uk-logo { margin-left: 10px; }
   #app-top-nav .uk-logo img { height: 32px; display: block; }
 
 </style>
 <nav id="app-top-nav" class="uk-navbar-container" uk-navbar>
-    <div class="uk-navbar-left">
+    <div class="uk-navbar-center">
         <a class="uk-navbar-item uk-logo" href="#" title="cacao.land">
             <img id="brand-logo" src="/images/logo/cacao_logo.svg" alt="cacao.land">
         </a>
-    </div>
-    <div class="uk-navbar-right">
-        <div class="uk-navbar-item">
-            <a href="#" id="top-search-toggle" class="uk-icon-link" uk-icon="icon: search" title="<?php echo Text::_('COM_RADICALMART_TELEGRAM_SEARCH_TITLE'); ?>" onclick="toggleTopSearch(); return false;"></a>
-        </div>
-        <div class="uk-navbar-item">
-            <a href="<?php echo $root; ?>/index.php?option=com_radicalmart_telegram&view=profile<?php echo $chatId ? '&chat=' . $chatId : ''; ?>" id="profile-top" class="uk-icon-link" uk-icon="icon: user" title="<?php echo Text::_('COM_RADICALMART_TELEGRAM_PROFILE'); ?>"></a>
-        </div>
     </div>
     <script>
         function toggleTopSearch(force){
@@ -2533,7 +2535,10 @@ $chatId = $tgUser['chat_id'] ?? 0;
     <div class="uk-container">
         <div class="uk-grid-small" uk-grid>
             <div class="uk-width-1-1">
-                <h3 id="catalog" class="tg-safe-text"><?php echo Text::_('COM_RADICALMART_TELEGRAM_CATALOG'); ?></h3>
+                <div class="uk-flex uk-flex-middle uk-flex-between">
+                    <h3 id="catalog" class="tg-safe-text uk-margin-remove"><?php echo Text::_('COM_RADICALMART_TELEGRAM_CATALOG'); ?></h3>
+                    <a href="#" id="catalog-search-toggle" class="uk-icon-link" uk-icon="icon: search; ratio: 1.2" title="<?php echo Text::_('COM_RADICALMART_TELEGRAM_SEARCH_TITLE'); ?>" onclick="toggleTopSearch(); return false;"></a>
+                </div>
                 <div class="uk-flex uk-flex-middle uk-margin-small" style="gap:8px">
                     <button type="button" id="btn-sort" class="uk-icon-button" uk-tooltip="title: <?php echo Text::_('COM_RADICALMART_TELEGRAM_SORT'); ?>" uk-icon="list"></button>
                     <button type="button" id="btn-filters" class="uk-icon-button" uk-tooltip="title: <?php echo Text::_('COM_RADICALMART_TELEGRAM_FILTERS'); ?>" uk-icon="settings"></button>

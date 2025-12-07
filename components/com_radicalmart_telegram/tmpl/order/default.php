@@ -59,8 +59,24 @@ $order = $this->order;
             document.documentElement.style.setProperty('--tg-theme-secondary-bg-color', '#f5f5f5');
         })();
     </script>
+    <style>
+        #app-top-nav { min-height: 44px; }
+        #app-top-nav .uk-navbar-center { flex-grow: 1; display: flex; justify-content: center; }
+        #app-top-nav .uk-navbar-item { min-height: 44px; padding-top: 4px; padding-bottom: 4px; }
+        #app-top-nav .uk-logo img { height: 32px; display: block; }
+        body.tg-fullscreen #app-top-nav { margin-top: var(--tg-fullscreen-padding, 60px); }
+    </style>
 </head>
 <body>
+
+<nav id="app-top-nav" class="uk-navbar-container" uk-navbar>
+    <div class="uk-navbar-center">
+        <a class="uk-navbar-item uk-logo" href="<?php echo $root; ?>/index.php?option=com_radicalmart_telegram&view=app<?php echo $baseQuery; ?>" title="cacao.land">
+            <img src="/images/logo/cacao_logo.svg" alt="cacao.land">
+        </a>
+    </div>
+</nav>
+
     <div class="uk-container uk-container-small uk-padding-small">
         <!-- Back link -->
         <a href="<?php echo $root; ?>/index.php?option=com_radicalmart_telegram&view=orders<?php echo $baseQuery; ?>" class="uk-link-muted uk-margin-small-bottom uk-display-block">
@@ -249,6 +265,11 @@ $order = $this->order;
                 if (window.Telegram && window.Telegram.WebApp) {
                     Telegram.WebApp.ready();
                     Telegram.WebApp.expand();
+
+                    // Fullscreen mode support (navbar already has margin-top)
+                    if (Telegram.WebApp.isFullscreen) {
+                        document.body.classList.add('tg-fullscreen');
+                    }
 
                     // BackButton - navigate to orders
                     try {

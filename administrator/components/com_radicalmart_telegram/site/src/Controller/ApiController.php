@@ -941,6 +941,227 @@ class ApiController extends BaseController
         } catch (\Throwable $e) { echo new JsonResponse(null, $e->getMessage(), true); $app->close(); }
     }
 
+    /**
+     * Update profile (phone, name, etc.) via WebApp
+     * Endpoint: task=api.updateprofile
+     */
+    public function updateprofile(): void
+    {
+        $app = Factory::getApplication();
+        $this->guardInitData();
+        $this->guardRateLimitDb('mut', 30);
+        $chat = $this->getChatId();
+        if ($chat <= 0) {
+            echo new JsonResponse(null, Text::_('COM_RADICALMART_TELEGRAM_ERR_INVALID_CHAT'), true);
+            $app->close();
+        }
+
+        try {
+            // Read JSON body
+            $rawInput = file_get_contents('php://input');
+            $jsonData = json_decode($rawInput, true) ?: [];
+
+            $phone = trim($jsonData['phone'] ?? $app->input->getString('phone', ''));
+            $firstName = trim($jsonData['first_name'] ?? '');
+            $secondName = trim($jsonData['second_name'] ?? '');
+            $lastName = trim($jsonData['last_name'] ?? '');
+            $email = trim($jsonData['email'] ?? '');
+
+            $db = Factory::getContainer()->get('DatabaseDriver');
+
+            // Get current user_id from telegram_users
+            $query = $db->getQuery(true)
+                ->select('user_id')
+                ->from($db->quoteName('#__radicalmart_telegram_users'))
+                ->where($db->quoteName('chat_id') . ' = :chat')
+                ->bind(':chat', $chat);
+            $userId = (int) $db->setQuery($query, 0, 1)->loadResult();
+
+            // Update phone in telegram_users
+            if (!empty($phone)) {
+                $phone = RMUserHelper::cleanPhone($phone) ?: $phone;
+                if (!preg_match('#^\+?7?\d{10,11}$#', $phone)) {
+                    throw new \RuntimeException(Text::_('COM_RADICALMART_TELEGRAM_ERR_PHONE_FORMAT'), 400);
+                }
+
+                $upd = $db->getQuery(true)
+                    ->update($db->quoteName('#__radicalmart_telegram_users'))
+                    ->set($db->quoteName('phone') . ' = ' . $db->quote($phone))
+                    ->where($db->quoteName('chat_id') . ' = :chat')
+                    ->bind(':chat', $chat);
+                $db->setQuery($upd)->execute();
+
+                // Try to link by phone if not already linked
+                if ($userId <= 0) {
+                    $found = RMUserHelper::findUser(['phone' => $phone]);
+                    if ($found && $found->id) {
+                        $userId = (int) $found->id;
+                        $upd2 = $db->getQuery(true)
+                            ->update($db->quoteName('#__radicalmart_telegram_users'))
+                            ->set($db->quoteName('user_id') . ' = ' . (int) $userId)
+                            ->where($db->quoteName('chat_id') . ' = :chat')
+                            ->bind(':chat', $chat);
+                        $db->setQuery($upd2)->execute();
+                        LogHelper::debug('[updateprofile] Linked user ' . $userId . ' by phone for chat=' . $chat);
+                    }
+                }
+            }
+
+            // Update RadicalMart user contacts if user is linked
+            if ($userId > 0 && ($firstName || $secondName || $lastName || $phone)) {
+                $query = $db->getQuery(true)
+                    ->select('contacts')
+                    ->from($db->quoteName('#__radicalmart_users'))
+                    ->where($db->quoteName('user_id') . ' = ' . (int) $userId);
+                $contactsJson = $db->setQuery($query, 0, 1)->loadResult();
+                $contacts = $contactsJson ? json_decode($contactsJson, true) : [];
+
+                // Update only non-empty fields
+                if ($firstName) $contacts['first_name'] = $firstName;
+                if ($secondName) $contacts['second_name'] = $secondName;
+                if ($lastName) $contacts['last_name'] = $lastName;
+                if ($phone) $contacts['phone'] = $phone;
+
+                $upd = $db->getQuery(true)
+                    ->update($db->quoteName('#__radicalmart_users'))
+                    ->set($db->quoteName('contacts') . ' = ' . $db->quote(json_encode($contacts)))
+                    ->where($db->quoteName('user_id') . ' = ' . (int) $userId);
+                $db->setQuery($upd)->execute();
+
+                LogHelper::debug('[updateprofile] Updated RM contacts for user=' . $userId);
+            }
+
+            // Update Joomla user email if needed
+            if ($userId > 0 && !empty($email) && filter_var($email, FILTER_VALIDATE_EMAIL)) {
+                $jUser = Factory::getUser($userId);
+                if ($jUser && !$jUser->guest && $jUser->email !== $email) {
+                    // Check if email is already taken
+                    $query = $db->getQuery(true)
+                        ->select('id')
+                        ->from($db->quoteName('#__users'))
+                        ->where($db->quoteName('email') . ' = ' . $db->quote($email))
+                        ->where($db->quoteName('id') . ' != ' . (int) $userId);
+                    $existing = $db->setQuery($query, 0, 1)->loadResult();
+                    if (!$existing) {
+                        $jUser->email = $email;
+                        $jUser->save();
+                        LogHelper::debug('[updateprofile] Updated email for user=' . $userId);
+                    }
+                }
+            }
+
+            LogHelper::debug('[updateprofile] Profile updated for chat=' . $chat);
+
+            // Return updated profile
+            $svc = new ProfileService();
+            $data = $svc->getProfile($chat);
+            echo new JsonResponse($data);
+            $app->close();
+        } catch (\Throwable $e) {
+            echo new JsonResponse(null, $e->getMessage(), true);
+            $app->close();
+        }
+    }
+
+    /**
+     * Update marketing consent via WebApp
+     * Endpoint: task=api.updateconsent
+     */
+    public function updateconsent(): void
+    {
+        $app = Factory::getApplication();
+        $this->guardInitData();
+        $this->guardRateLimitDb('mut', 30);
+        $chat = $this->getChatId();
+        if ($chat <= 0) {
+            echo new JsonResponse(null, Text::_('COM_RADICALMART_TELEGRAM_ERR_INVALID_CHAT'), true);
+            $app->close();
+        }
+
+        try {
+            $rawInput = file_get_contents('php://input');
+            $jsonData = json_decode($rawInput, true) ?: [];
+            $marketing = isset($jsonData['marketing']) ? (bool) $jsonData['marketing'] : null;
+
+            if ($marketing !== null) {
+                $db = Factory::getContainer()->get('DatabaseDriver');
+
+                // Update marketing consent flag
+                $upd = $db->getQuery(true)
+                    ->update($db->quoteName('#__radicalmart_telegram_users'))
+                    ->set($db->quoteName('consent_marketing') . ' = ' . ($marketing ? 1 : 0))
+                    ->where($db->quoteName('chat_id') . ' = :chat')
+                    ->bind(':chat', $chat);
+                $db->setQuery($upd)->execute();
+
+                LogHelper::debug('[updateconsent] Updated marketing consent for chat=' . $chat . ' marketing=' . ($marketing ? 'true' : 'false'));
+            }
+
+            echo new JsonResponse(['success' => true]);
+            $app->close();
+        } catch (\Throwable $e) {
+            echo new JsonResponse(null, $e->getMessage(), true);
+            $app->close();
+        }
+    }
+
+    /**
+     * Delete user data via WebApp (GDPR right to be forgotten)
+     * Endpoint: task=api.deletedata
+     */
+    public function deletedata(): void
+    {
+        $app = Factory::getApplication();
+        $this->guardInitData();
+        $this->guardRateLimitDb('mut', 10);
+        $chat = $this->getChatId();
+        if ($chat <= 0) {
+            echo new JsonResponse(null, Text::_('COM_RADICALMART_TELEGRAM_ERR_INVALID_CHAT'), true);
+            $app->close();
+        }
+
+        try {
+            $rawInput = file_get_contents('php://input');
+            $jsonData = json_decode($rawInput, true) ?: [];
+            $confirm = isset($jsonData['confirm']) && $jsonData['confirm'] === true;
+
+            if (!$confirm) {
+                throw new \RuntimeException('Confirmation required', 400);
+            }
+
+            $db = Factory::getContainer()->get('DatabaseDriver');
+
+            // Delete from telegram_users table
+            $del = $db->getQuery(true)
+                ->delete($db->quoteName('#__radicalmart_telegram_users'))
+                ->where($db->quoteName('chat_id') . ' = :chat')
+                ->bind(':chat', $chat);
+            $db->setQuery($del)->execute();
+
+            // Delete from telegram_sessions table
+            $del2 = $db->getQuery(true)
+                ->delete($db->quoteName('#__radicalmart_telegram_sessions'))
+                ->where($db->quoteName('chat_id') . ' = :chat')
+                ->bind(':chat', $chat);
+            $db->setQuery($del2)->execute();
+
+            // Delete from telegram_links table
+            $del3 = $db->getQuery(true)
+                ->delete($db->quoteName('#__radicalmart_telegram_links'))
+                ->where($db->quoteName('chat_id') . ' = :chat')
+                ->bind(':chat', $chat);
+            $db->setQuery($del3)->execute();
+
+            LogHelper::debug('[deletedata] Deleted all data for chat=' . $chat);
+
+            echo new JsonResponse(['success' => true, 'deleted' => true]);
+            $app->close();
+        } catch (\Throwable $e) {
+            echo new JsonResponse(null, $e->getMessage(), true);
+            $app->close();
+        }
+    }
+
     public function qty(): void
     {
         $app  = Factory::getApplication();
@@ -1130,17 +1351,38 @@ class ApiController extends BaseController
             $db = Factory::getContainer()->get('DatabaseDriver');
             $userId = 0;
 
+            // Check if user already exists by chat_id
             $query = $db->getQuery(true)
-                ->select('user_id')
+                ->select(['user_id', 'phone'])
                 ->from($db->quoteName('#__radicalmart_telegram_users'))
                 ->where($db->quoteName('chat_id') . ' = :chat')
                 ->bind(':chat', $chat);
-            $userId = (int) $db->setQuery($query, 0, 1)->loadResult();
+            $existingRecord = $db->setQuery($query, 0, 1)->loadAssoc();
+            $userId = (int) ($existingRecord['user_id'] ?? 0);
+            $existingPhone = (string) ($existingRecord['phone'] ?? '');
 
             if ($userId <= 0 && !empty($phone)) {
                 $found = RMUserHelper::findUser(['phone' => $phone]);
                 if ($found && $found->id) {
                     $userId = (int) $found->id;
+                }
+            }
+
+            // Update phone in telegram_users table if it's missing or different
+            if (!empty($phone) && $existingRecord !== null && (empty($existingPhone) || $existingPhone !== $phone)) {
+                try {
+                    $upd = $db->getQuery(true)
+                        ->update($db->quoteName('#__radicalmart_telegram_users'))
+                        ->set($db->quoteName('phone') . ' = ' . $db->quote($phone))
+                        ->where($db->quoteName('chat_id') . ' = :chat')
+                        ->bind(':chat', $chat);
+                    if ($userId > 0 && (int)($existingRecord['user_id'] ?? 0) <= 0) {
+                        $upd->set($db->quoteName('user_id') . ' = ' . (int) $userId);
+                    }
+                    $db->setQuery($upd)->execute();
+                    LogHelper::debug('[checkout] Updated phone in telegram_users for chat=' . $chat . ' phone=' . $phone);
+                } catch (\Throwable $e) {
+                    LogHelper::warning('[checkout] Failed to update phone: ' . $e->getMessage());
                 }
             }
 

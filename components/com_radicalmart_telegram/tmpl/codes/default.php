@@ -12,6 +12,12 @@ $root = rtrim(Uri::root(), '/');
 $app = Factory::getApplication();
 $chat = $app->input->getInt('chat', 0);
 $chatParam = $chat ? '&chat=' . $chat : '';
+
+// Get fullscreen padding from component params
+$fullscreenPadding = isset($this->params) ? (int) $this->params->get('fullscreen_top_padding', 35) : 35;
+
+// Get referral codes for this user
+$referralCodes = $this->referralCodes ?? [];
 ?>
 <!DOCTYPE html>
 <html lang="ru" dir="ltr">
@@ -82,8 +88,25 @@ $chatParam = $chat ? '&chat=' . $chat : '';
             document.documentElement.style.setProperty('--tg-theme-secondary-bg-color', '#f5f5f5');
         })();
     </script>
+    <style>
+        #app-top-nav { min-height: 44px; }
+        #app-top-nav .uk-navbar-center { flex-grow: 1; display: flex; justify-content: center; }
+        #app-top-nav .uk-navbar-item { min-height: 44px; padding-top: 4px; padding-bottom: 4px; }
+        #app-top-nav .uk-logo img { height: 32px; display: block; }
+        :root { --tg-fullscreen-padding: <?php echo $fullscreenPadding; ?>px; }
+        body.tg-fullscreen #app-top-nav { margin-top: var(--tg-fullscreen-padding, 35px); }
+    </style>
 </head>
 <body>
+
+<nav id="app-top-nav" class="uk-navbar-container" uk-navbar>
+    <div class="uk-navbar-center">
+        <a class="uk-navbar-item uk-logo" href="<?php echo $root; ?>/index.php?option=com_radicalmart_telegram&view=app<?php echo $chatParam; ?>" title="cacao.land">
+            <img src="/images/logo/cacao_logo.svg" alt="cacao.land">
+        </a>
+    </div>
+</nav>
+
 <div class="codes-container">
     <div class="page-header">
         <a href="<?php echo $root; ?>/index.php?option=com_radicalmart_telegram&view=profile<?php echo $chatParam; ?>" class="back-btn">←</a>
@@ -188,6 +211,62 @@ $chatParam = $chat ? '&chat=' . $chat : '';
             </button>
         <?php endif; ?>
     <?php endif; ?>
+
+    <!-- Referral Codes Section -->
+    <?php if ($userId > 0 && !empty($referralCodes)): ?>
+        <div class="uk-margin-top">
+            <h2 class="uk-h4 uk-margin-small-bottom">
+                <span uk-icon="icon: users; ratio: 1.2" class="uk-margin-small-right"></span>
+                <?php echo Text::_('COM_RADICALMART_TELEGRAM_REFERRALS_MY_CODES'); ?>
+            </h2>
+
+            <?php foreach ($referralCodes as $refCode): ?>
+                <div class="code-card <?php echo !$refCode->enabled ? 'expired' : ''; ?>">
+                    <div class="code-header">
+                        <div class="code-value <?php echo !$refCode->enabled ? 'expired' : ''; ?>">
+                            <?php echo htmlspecialchars($refCode->code); ?>
+                        </div>
+                        <?php if ($refCode->enabled): ?>
+                            <span class="code-status active"><?php echo Text::_('COM_RADICALMART_TELEGRAM_CODE_ACTIVE'); ?></span>
+                        <?php else: ?>
+                            <span class="code-status expired"><?php echo Text::_('COM_RADICALMART_TELEGRAM_CODE_EXPIRED'); ?></span>
+                        <?php endif; ?>
+                    </div>
+
+                    <div class="code-meta">
+                        <div class="code-discount" style="display: inline-block; margin-bottom: 8px;">
+                            <?php echo Text::_('COM_RADICALMART_TELEGRAM_DISCOUNT'); ?>: <?php echo $refCode->discount_string; ?>
+                        </div>
+
+                        <div class="code-meta-item">
+                            👥 <?php echo Text::sprintf('COM_RADICALMART_TELEGRAM_REFERRALS_CODE_USED_TIMES', $refCode->used_count); ?>
+                        </div>
+
+                        <?php if ($refCode->link): ?>
+                            <div class="code-meta-item uk-margin-small-top">
+                                <strong>🔗 <?php echo Text::_('COM_RADICALMART_TELEGRAM_REFERRALS_SITE_LINK'); ?>:</strong><br>
+                                <span class="uk-text-small" style="word-break: break-all;"><?php echo htmlspecialchars($refCode->link); ?></span>
+                            </div>
+                        <?php endif; ?>
+                    </div>
+
+                    <div class="code-actions">
+                        <?php if ($refCode->link): ?>
+                            <button type="button" class="copy-btn" data-code="<?php echo htmlspecialchars($refCode->link); ?>" <?php echo !$refCode->enabled ? 'disabled' : ''; ?>>
+                                📋 <?php echo Text::_('COM_RADICALMART_TELEGRAM_COPY'); ?>
+                            </button>
+                        <?php endif; ?>
+                    </div>
+                </div>
+            <?php endforeach; ?>
+
+            <p class="uk-text-small uk-text-muted uk-text-center uk-margin-small-top">
+                <a href="<?php echo $root; ?>/index.php?option=com_radicalmart_telegram&view=referrals<?php echo $chatParam; ?>">
+                    <?php echo Text::_('COM_RADICALMART_TELEGRAM_REFERRALS'); ?> →
+                </a>
+            </p>
+        </div>
+    <?php endif; ?>
 </div>
 
 <script>
@@ -201,6 +280,12 @@ $chatParam = $chat ? '&chat=' . $chat : '';
         if (window.Telegram && window.Telegram.WebApp) {
             Telegram.WebApp.ready();
             Telegram.WebApp.expand();
+
+            // Fullscreen mode support (navbar already has margin-top)
+            if (Telegram.WebApp.isFullscreen) {
+                document.body.classList.add('tg-fullscreen');
+            }
+
             Telegram.WebApp.BackButton.show();
             Telegram.WebApp.BackButton.onClick(function() {
                 window.location.href = '<?php echo $root; ?>/index.php?option=com_radicalmart_telegram&view=profile<?php echo $chatParam; ?>';

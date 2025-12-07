@@ -17,6 +17,7 @@ use Joomla\Component\RadicalMartTelegram\Site\Helper\TelegramUserHelper;
 $root = rtrim(Uri::root(), '/');
 $app = Factory::getApplication();
 $chat = $app->input->getInt('chat', 0);
+$fullscreenPadding = isset($this->params) ? (int) $this->params->get('fullscreen_top_padding', 60) : 60;
 
 // Данные пользователя из View (через TelegramUserHelper)
 $tgUser = $this->tgUser;
@@ -36,10 +37,35 @@ $baseQuery = $chatId > 0 ? '&chat=' . $chatId : '';
     <script src="<?php echo $root; ?>/templates/yootheme/vendor/assets/uikit/dist/js/uikit.min.js"></script>
     <script src="<?php echo $root; ?>/templates/yootheme/vendor/assets/uikit/dist/js/uikit-icons.min.js"></script>
     <script src="https://telegram.org/js/telegram-web-app.js"></script>
+    <script>
+    // UIkit Icons fallback: load from CDN if icons plugin not present
+    (function(){
+        function hasIcons(){ try { return !!(window.UIkit && UIkit.icon); } catch(e){ return false; } }
+        function loadCdnIcons(){
+            try {
+                var s=document.createElement('script');
+                s.src='https://cdn.jsdelivr.net/npm/uikit@3.17.11/dist/js/uikit-icons.min.js';
+                s.async=true;
+                s.onload=function(){ try{ window.UIkit && UIkit.update && UIkit.update(); }catch(e){} };
+                document.head.appendChild(s);
+            } catch(e){}
+        }
+        if (!hasIcons()){
+            if (document.readyState==='loading'){
+                document.addEventListener('DOMContentLoaded', function(){ if (!hasIcons()) loadCdnIcons(); });
+            } else {
+                loadCdnIcons();
+            }
+        }
+    })();
+    </script>
     <style>
         html, body { background: #ffffff !important; color: #222 !important; margin: 0; padding: 0; }
-        body { padding-bottom: 52px; }
+        body { padding-bottom: 52px; padding-top: env(safe-area-inset-top, 0px); }
         body.contentpane { padding: 0 !important; margin: 0 !important; }
+        /* Fullscreen mode top padding for Telegram header buttons */
+        :root { --tg-fullscreen-padding: <?php echo $fullscreenPadding; ?>px; }
+        .tg-fullscreen-padding { padding-top: var(--tg-fullscreen-padding, 60px); }
 
         /* Cart badge */
         #cart-badge { position: absolute; top: 2px; right: 6px; background: #f0506e; color: white; border-radius: 10px; padding: 2px 6px; font-size: 10px; font-weight: bold; min-width: 18px; text-align: center; }
@@ -64,8 +90,24 @@ $baseQuery = $chatId > 0 ? '&chat=' . $chatId : '';
             document.documentElement.style.setProperty('--tg-theme-secondary-bg-color', '#f5f5f5');
         })();
     </script>
+    <style>
+        #app-top-nav { min-height: 44px; }
+        #app-top-nav .uk-navbar-center { flex-grow: 1; display: flex; justify-content: center; }
+        #app-top-nav .uk-navbar-item { min-height: 44px; padding-top: 4px; padding-bottom: 4px; }
+        #app-top-nav .uk-logo img { height: 32px; display: block; }
+        body.tg-fullscreen #app-top-nav { margin-top: var(--tg-fullscreen-padding, 60px); }
+    </style>
 </head>
 <body>
+
+<nav id="app-top-nav" class="uk-navbar-container" uk-navbar>
+    <div class="uk-navbar-center">
+        <a class="uk-navbar-item uk-logo" href="<?php echo $root; ?>/index.php?option=com_radicalmart_telegram&view=app<?php echo $baseQuery; ?>" title="cacao.land">
+            <img src="/images/logo/cacao_logo.svg" alt="cacao.land">
+        </a>
+    </div>
+</nav>
+
     <div class="uk-container uk-container-small uk-padding-small">
         <h1 class="uk-h3 uk-margin-small-bottom"><?php echo Text::_('COM_RADICALMART_TELEGRAM_ORDERS'); ?></h1>
 
@@ -199,6 +241,20 @@ $baseQuery = $chatId > 0 ? '&chat=' . $chatId : '';
     </div>
 
     <script>
+        // Force UIkit icons rendering
+        function forceUikitIcons(){
+            try {
+                if (!window.UIkit || !UIkit.icon) return;
+                document.querySelectorAll('[uk-icon]').forEach(function(el){
+                    if (el.querySelector('svg')) return;
+                    var attr = el.getAttribute('uk-icon');
+                    var name = attr ? (attr.match(/icon\s*:\s*([^;]+)/) ? attr.match(/icon\s*:\s*([^;]+)/)[1].trim() : attr.trim()) : '';
+                    if (name) try { UIkit.icon(el, { icon: name }); } catch(e){}
+                });
+                UIkit.update();
+            } catch(e){}
+        }
+
         document.addEventListener('DOMContentLoaded', function() {
             // Force light theme again after DOM loaded
             document.documentElement.style.setProperty('--tg-theme-bg-color', '#ffffff');
@@ -206,10 +262,12 @@ $baseQuery = $chatId > 0 ? '&chat=' . $chatId : '';
             document.body.style.backgroundColor = '#ffffff';
             document.body.style.color = '#222222';
 
-            // Initialize UIkit icons
+            // Initialize UIkit icons - multiple attempts
             if (typeof UIkit !== 'undefined') {
                 UIkit.update(document.body);
             }
+            setTimeout(forceUikitIcons, 100);
+            setTimeout(forceUikitIcons, 500);
 
             try { document.body.classList.remove('contentpane'); } catch(e){}
             try { document.cookie = 'tg_webapp=1; path=/; max-age=7200; SameSite=Lax'; } catch(e) {}
@@ -218,6 +276,11 @@ $baseQuery = $chatId > 0 ? '&chat=' . $chatId : '';
                 if (window.Telegram && window.Telegram.WebApp) {
                     Telegram.WebApp.ready();
                     Telegram.WebApp.expand();
+
+                    // Add fullscreen class to body (navbar already has margin-top)
+                    if (Telegram.WebApp.isFullscreen) {
+                        document.body.classList.add('tg-fullscreen');
+                    }
 
                     // Setup BackButton
                     Telegram.WebApp.BackButton.show();

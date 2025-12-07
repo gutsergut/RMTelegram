@@ -50,14 +50,19 @@ class PvzService
             return; // Already reported by this user
         }
 
-        // Record this report
-        $obj = (object)[
-            'chat_id' => $chatId,
-            'scope' => $scope,
-            'nonce' => $nonce,
-            'created' => (new \DateTime())->format('Y-m-d H:i:s'),
-        ];
-        $db->insertObject('#__radicalmart_telegram_nonces', $obj);
+        // Record this report using INSERT IGNORE to handle race conditions
+        $created = (new \DateTime())->format('Y-m-d H:i:s');
+        $insertSql = 'INSERT IGNORE INTO ' . $db->quoteName('#__radicalmart_telegram_nonces')
+            . ' (' . $db->quoteName('chat_id') . ', ' . $db->quoteName('scope') . ', '
+            . $db->quoteName('nonce') . ', ' . $db->quoteName('created') . ')'
+            . ' VALUES (' . (int) $chatId . ', ' . $db->quote($scope) . ', '
+            . $db->quote($nonce) . ', ' . $db->quote($created) . ')';
+        $db->setQuery($insertSql)->execute();
+
+        // Check if insert actually happened (affected rows > 0)
+        if ($db->getAffectedRows() === 0) {
+            return; // Duplicate, already exists
+        }
 
         // Increment inactive_count
         $q2 = $db->getQuery(true)

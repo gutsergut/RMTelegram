@@ -23,7 +23,7 @@ class ProfileService
 
         // Get user_id and phone from telegram_users table
         $query = $db->getQuery(true)
-            ->select(['user_id', 'phone AS tg_phone'])
+            ->select(['user_id', 'phone AS tg_phone', 'email AS tg_email', 'email_verified', 'acymailing_subscribed'])
             ->from($db->quoteName('#__radicalmart_telegram_users'))
             ->where($db->quoteName('chat_id') . ' = :chat')
             ->bind(':chat', $chatId);
@@ -31,6 +31,9 @@ class ProfileService
 
         $userId = (int) ($tgUser->user_id ?? 0);
         $tgPhone = (string) ($tgUser->tg_phone ?? '');
+        $tgEmail = (string) ($tgUser->tg_email ?? '');
+        $emailVerified = (bool) ($tgUser->email_verified ?? false);
+        $acymailingSubscribed = (bool) ($tgUser->acymailing_subscribed ?? false);
 
         $user = null;
         $phone = '';
@@ -114,6 +117,9 @@ class ProfileService
                 'last_name' => $lastName,
             ] : null),
             'phone' => $phone, // Phone even if user not linked (from tg_users table)
+            'email' => $tgEmail ?: $email, // Email from telegram_users or Joomla user
+            'email_verified' => $emailVerified,
+            'acymailing_subscribed' => $acymailingSubscribed,
             'points' => $points,
             'referrals_info' => $info,
             'referral_codes' => array_map(function($c) {

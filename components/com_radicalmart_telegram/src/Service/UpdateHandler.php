@@ -15,6 +15,7 @@ use Joomla\CMS\Language\Text;
 use Joomla\CMS\Uri\Uri;
 use Joomla\Registry\Registry;
 use Joomla\Component\RadicalMartTelegram\Site\Helper\ConsentHelper;
+use Joomla\Component\RadicalMartTelegram\Site\Helper\EmailVerificationHelper;
 use Joomla\Component\RadicalMart\Administrator\Helper\UserHelper as RMUserHelper;
 
 class UpdateHandler
@@ -113,12 +114,16 @@ class UpdateHandler
                 ]));
                 $username = (string) ($message['from']['username'] ?? '');
                 $tgUserId = (int) ($message['from']['id'] ?? 0);
+                $tgFirstName = (string) ($message['from']['first_name'] ?? '');
+                $tgLastName = (string) ($message['from']['last_name'] ?? '');
                 $db = \Joomla\CMS\Factory::getContainer()->get('DatabaseDriver');
                 // upsert row for chat_id
                 $row = (object) [
                     'chat_id' => $chatId,
                     'tg_user_id' => $tgUserId,
                     'username' => $username,
+                    'tg_first_name' => $tgFirstName,
+                    'tg_last_name' => $tgLastName,
                     'phone' => $phoneClean,
                     'created' => (new \Joomla\CMS\Date\Date())->toSql(),
                 ];
@@ -160,6 +165,8 @@ class UpdateHandler
                         ->update($db->quoteName('#__radicalmart_telegram_users'))
                         ->set($db->quoteName('tg_user_id') . ' = ' . (int) $tgUserId)
                         ->set($db->quoteName('username') . ' = ' . $db->quote($username))
+                        ->set($db->quoteName('tg_first_name') . ' = ' . $db->quote($tgFirstName))
+                        ->set($db->quoteName('tg_last_name') . ' = ' . $db->quote($tgLastName))
                         ->set($db->quoteName('phone') . ' = ' . $db->quote($phoneClean));
                     if ($userId > 0) { $upd->set($db->quoteName('user_id') . ' = ' . (int) $userId); }
                     $upd->where($db->quoteName('id') . ' = ' . (int) $exist['id']);
@@ -178,6 +185,12 @@ class UpdateHandler
                     ? \Joomla\CMS\Language\Text::_('COM_RADICALMART_TELEGRAM_CONTACT_LINKED')
                     : \Joomla\CMS\Language\Text::_('COM_RADICALMART_TELEGRAM_CONTACT_SAVED');
                 $this->client->sendMessage($chatId, $msg);
+
+                // Ask for email if enabled in settings
+                $params = Factory::getApplication()->getParams('com_radicalmart_telegram');
+                if ($params->get('email_ask_after_phone', 1)) {
+                    $this->promptForEmail($chatId);
+                }
                 return;
             } catch (\Throwable $e) {
                 LogHelper::warning('Contact link error: ' . $e->getMessage(), 'com_radicalmart.telegram');
@@ -343,6 +356,12 @@ class UpdateHandler
             // In case of DB issues, just continue
         }
 
+        // Handle email collection states
+        [$currentState, $statePayload] = $this->store->getStatePayload($chatId);
+        if ($this->handleEmailStates($chatId, $text, $currentState, $statePayload)) {
+            return;
+        }
+
         switch ($cmd) {
             case '/catalog':
             case 'каталог':
@@ -423,6 +442,48 @@ class UpdateHandler
             return;
         }
 
+        // Email collection callbacks
+        if ($data === 'email_skip') {
+            $this->store->setState($chatId, 'idle');
+            if ($messageId) {
+                $this->client->editMessageText($chatId, $messageId, Text::_('COM_RADICALMART_TELEGRAM_EMAIL_SKIPPED'));
+            }
+            $this->sendMainMenu($chatId);
+            return;
+        }
+
+        if ($data === 'email_resend') {
+            [$state, $payload] = $this->store->getStatePayload($chatId);
+            if ($state === 'awaiting_email_code' && !empty($payload['email'])) {
+                $email = $payload['email'];
+
+                if (!EmailVerificationHelper::canRequestCode($chatId)) {
+                    $this->client->sendMessage($chatId, Text::_('COM_RADICALMART_TELEGRAM_EMAIL_RATE_LIMIT'));
+                    return;
+                }
+
+                $code = EmailVerificationHelper::generateCode();
+                try {
+                    EmailVerificationHelper::saveCode($chatId, $email, $code);
+                    EmailVerificationHelper::sendVerificationEmail($email, $code, $chatId);
+                    $this->client->sendMessage($chatId, Text::sprintf('COM_RADICALMART_TELEGRAM_EMAIL_CODE_RESENT', $email));
+                } catch (\Exception $e) {
+                    LogHelper::error('Failed to resend email code: ' . $e->getMessage(), 'com_radicalmart.telegram');
+                    $this->client->sendMessage($chatId, Text::_('COM_RADICALMART_TELEGRAM_ERR_EMAIL_SEND'));
+                }
+            }
+            return;
+        }
+
+        if ($data === 'email_cancel') {
+            $this->store->setState($chatId, 'idle');
+            if ($messageId) {
+                $this->client->editMessageText($chatId, $messageId, Text::_('COM_RADICALMART_TELEGRAM_EMAIL_CANCELLED'));
+            }
+            $this->sendMainMenu($chatId);
+            return;
+        }
+
         // Unified consent callbacks first
         try {
             // Toggle individual consent
@@ -432,15 +493,29 @@ class UpdateHandler
                     ConsentHelper::saveConsent($chatId, $type, true);
                     $st = ConsentHelper::getConsents($chatId);
                     if (!empty($st['personal_data']) && !empty($st['terms'])) {
-                        // Если это переключение маркетинга после обязательных — просто подтвердим и уберём клавиатуру
+                        // Если это переключение маркетинга после обязательных — обновляем сообщение с галочкой и подтверждаем
                         if ($type === 'marketing') {
+                            // Обновляем текущее сообщение маркетинга с подтверждением
+                            $confirmText = Text::_('COM_RADICALMART_TELEGRAM_MARKETING_ENABLED')
+                                . "\n\n" . Text::_('COM_RADICALMART_TELEGRAM_MARKETING_CONSENT_GIVEN');
                             if ($messageId) {
-                                $this->client->editMessageText($chatId, $messageId, Text::_('COM_RADICALMART_TELEGRAM_MARKETING_ENABLED'));
+                                $this->client->editMessageText($chatId, $messageId, $confirmText);
                             } else {
-                                $this->client->sendMessage($chatId, Text::_('COM_RADICALMART_TELEGRAM_MARKETING_ENABLED'));
+                                $this->client->sendMessage($chatId, $confirmText);
                             }
                             return;
                         }
+
+                        // Обязательные согласия приняты — сначала обновим исходное сообщение с галочками
+                        if ($messageId) {
+                            $updatedText = $this->composeConsentMessage($st);
+                            $this->client->editMessageText($chatId, $messageId, $updatedText, [
+                                'parse_mode' => 'HTML',
+                                'reply_markup' => $this->buildConsentKeyboard($st)
+                            ]);
+                        }
+
+                        // Теперь отправляем сообщение о том, что все согласия получены
                         $this->client->sendMessage($chatId, Text::_('COM_RADICALMART_TELEGRAM_CONSENT_ALL_ACCEPTED'));
                         $params = Factory::getApplication()->getParams('com_radicalmart_telegram');
                         $storeTitle = (string) ($params->get('store_title', 'магазин Cacao.Land'));
@@ -770,14 +845,15 @@ class UpdateHandler
      */
     protected function sendMarketingPrompt(int $chatId): void
     {
-        $text = Text::_('COM_RADICALMART_TELEGRAM_MARKETING_PROMPT');
+        $text = Text::_('COM_RADICALMART_TELEGRAM_MARKETING_PROMPT')
+            . "\n\n" . '<i>' . Text::_('COM_RADICALMART_TELEGRAM_MARKETING_CONSENT_GIVEN') . '</i>';
         $keyboard = [
             'inline_keyboard' => [[
                 [ 'text' => Text::_('COM_RADICALMART_TELEGRAM_MARKETING_ENABLE'), 'callback_data' => 'consent_toggle:marketing' ],
                 [ 'text' => Text::_('COM_RADICALMART_TELEGRAM_MARKETING_SKIP'), 'callback_data' => 'marketing_skip' ],
             ]],
         ];
-        $this->client->sendMessage($chatId, $text, [ 'reply_markup' => $keyboard ]);
+        $this->client->sendMessage($chatId, $text, [ 'parse_mode' => 'HTML', 'reply_markup' => $keyboard ]);
     }
 
     /**
@@ -875,5 +951,180 @@ class UpdateHandler
         } catch (\Throwable $e) {
             LogHelper::warning('Error applying referral code: ' . $e->getMessage(), 'com_radicalmart.telegram');
         }
+    }
+
+    /**
+     * Prompt user to enter email after contact sharing
+     */
+    protected function promptForEmail(int $chatId): void
+    {
+        $this->store->setState($chatId, 'awaiting_email');
+
+        $keyboard = [
+            'inline_keyboard' => [
+                [['text' => Text::_('COM_RADICALMART_TELEGRAM_SKIP_EMAIL'), 'callback_data' => 'email_skip']],
+            ],
+        ];
+
+        $this->client->sendMessage(
+            $chatId,
+            Text::_('COM_RADICALMART_TELEGRAM_ASK_EMAIL'),
+            ['reply_markup' => $keyboard]
+        );
+    }
+
+    /**
+     * Handle email collection states (awaiting_email, awaiting_email_code)
+     *
+     * @return bool True if state was handled, false to continue normal flow
+     */
+    protected function handleEmailStates(int $chatId, string $text, string $state, array $payload): bool
+    {
+        if ($state === 'awaiting_email') {
+            return $this->handleAwaitingEmail($chatId, $text);
+        }
+
+        if ($state === 'awaiting_email_code') {
+            return $this->handleAwaitingEmailCode($chatId, $text, $payload);
+        }
+
+        return false;
+    }
+
+    /**
+     * Handle awaiting_email state - validate and send verification code
+     */
+    protected function handleAwaitingEmail(int $chatId, string $email): bool
+    {
+        $email = trim($email);
+
+        // Skip commands
+        if (str_starts_with($email, '/')) {
+            $this->store->setState($chatId, 'idle');
+            return false;
+        }
+
+        // Validate email format
+        if (!EmailVerificationHelper::validateFormat($email)) {
+            $this->client->sendMessage($chatId, Text::_('COM_RADICALMART_TELEGRAM_INVALID_EMAIL'));
+            return true;
+        }
+
+        // Check uniqueness
+        $uniqueResult = EmailVerificationHelper::checkUniqueness($email, $chatId);
+        if (!$uniqueResult['unique']) {
+            $this->client->sendMessage($chatId, Text::_($uniqueResult['error']));
+            return true;
+        }
+
+        // Check rate limiting
+        if (!EmailVerificationHelper::canRequestCode($chatId)) {
+            $this->client->sendMessage($chatId, Text::_('COM_RADICALMART_TELEGRAM_EMAIL_RATE_LIMIT'));
+            return true;
+        }
+
+        // Generate and save code
+        $code = EmailVerificationHelper::generateCode();
+
+        try {
+            EmailVerificationHelper::saveCode($chatId, $email, $code);
+        } catch (\Exception $e) {
+            LogHelper::error('Failed to save email code: ' . $e->getMessage(), 'com_radicalmart.telegram');
+            $this->client->sendMessage($chatId, Text::_('COM_RADICALMART_TELEGRAM_ERROR'));
+            return true;
+        }
+
+        // Send verification email
+        if (!EmailVerificationHelper::sendVerificationEmail($email, $code, $chatId)) {
+            $this->client->sendMessage($chatId, Text::_('COM_RADICALMART_TELEGRAM_ERR_EMAIL_SEND'));
+            return true;
+        }
+
+        // Update state
+        $this->store->setState($chatId, 'awaiting_email_code', ['email' => $email]);
+
+        $keyboard = [
+            'inline_keyboard' => [
+                [['text' => Text::_('COM_RADICALMART_TELEGRAM_EMAIL_RESEND'), 'callback_data' => 'email_resend']],
+                [['text' => Text::_('COM_RADICALMART_TELEGRAM_CANCEL'), 'callback_data' => 'email_cancel']],
+            ],
+        ];
+
+        $this->client->sendMessage(
+            $chatId,
+            Text::sprintf('COM_RADICALMART_TELEGRAM_EMAIL_CODE_SENT', $email),
+            ['reply_markup' => $keyboard]
+        );
+
+        return true;
+    }
+
+    /**
+     * Handle awaiting_email_code state - verify OTP code
+     */
+    protected function handleAwaitingEmailCode(int $chatId, string $code, array $payload): bool
+    {
+        $code = trim($code);
+
+        // Skip commands
+        if (str_starts_with($code, '/')) {
+            $this->store->setState($chatId, 'idle');
+            return false;
+        }
+
+        // Only accept 6-digit codes
+        if (!preg_match('/^\d{6}$/', $code)) {
+            $this->client->sendMessage($chatId, Text::_('COM_RADICALMART_TELEGRAM_EMAIL_ENTER_CODE'));
+            return true;
+        }
+
+        $result = EmailVerificationHelper::verifyCode($chatId, $code);
+
+        if ($result['success']) {
+            $this->store->setState($chatId, 'idle');
+            $this->client->sendMessage($chatId, Text::_('COM_RADICALMART_TELEGRAM_EMAIL_VERIFIED'));
+
+            // Show main menu or continue flow
+            $this->sendMainMenu($chatId);
+            return true;
+        }
+
+        // Handle errors
+        $errorKey = $result['error'] ?? 'COM_RADICALMART_TELEGRAM_ERROR';
+
+        if ($errorKey === 'COM_RADICALMART_TELEGRAM_EMAIL_CODE_INVALID') {
+            $remaining = $result['remaining'] ?? 0;
+            $this->client->sendMessage($chatId, Text::sprintf($errorKey, $remaining));
+        } elseif ($errorKey === 'COM_RADICALMART_TELEGRAM_EMAIL_TOO_MANY_ATTEMPTS') {
+            // Blocked - reset state
+            $this->store->setState($chatId, 'idle');
+            $this->client->sendMessage($chatId, Text::_($errorKey));
+        } else {
+            $this->client->sendMessage($chatId, Text::_($errorKey));
+        }
+
+        return true;
+    }
+
+    /**
+     * Send main menu after email verification
+     */
+    protected function sendMainMenu(int $chatId): void
+    {
+        $params = Factory::getApplication()->getParams('com_radicalmart_telegram');
+        $storeTitle = (string) ($params->get('store_title', 'магазин Cacao.Land'));
+        $webAppUrl = rtrim(Uri::root(), '/') . '/index.php?option=com_radicalmart_telegram&view=app&chat=' . $chatId;
+
+        $keyboard = [
+            'inline_keyboard' => [[
+                ['text' => Text::sprintf('COM_RADICALMART_TELEGRAM_OPEN_STORE', $storeTitle), 'web_app' => ['url' => $webAppUrl]],
+            ]],
+        ];
+
+        $this->client->sendMessage(
+            $chatId,
+            Text::sprintf('COM_RADICALMART_TELEGRAM_WELCOME_BACK', $storeTitle),
+            ['reply_markup' => $keyboard]
+        );
     }
 }

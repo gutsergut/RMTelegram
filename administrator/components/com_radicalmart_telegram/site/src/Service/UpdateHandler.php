@@ -432,15 +432,29 @@ class UpdateHandler
                     ConsentHelper::saveConsent($chatId, $type, true);
                     $st = ConsentHelper::getConsents($chatId);
                     if (!empty($st['personal_data']) && !empty($st['terms'])) {
-                        // Если это переключение маркетинга после обязательных — просто подтвердим и уберём клавиатуру
+                        // Если это переключение маркетинга после обязательных — обновляем сообщение с галочкой и подтверждаем
                         if ($type === 'marketing') {
+                            // Обновляем текущее сообщение маркетинга с подтверждением
+                            $confirmText = Text::_('COM_RADICALMART_TELEGRAM_MARKETING_ENABLED')
+                                . "\n\n" . Text::_('COM_RADICALMART_TELEGRAM_MARKETING_CONSENT_GIVEN');
                             if ($messageId) {
-                                $this->client->editMessageText($chatId, $messageId, Text::_('COM_RADICALMART_TELEGRAM_MARKETING_ENABLED'));
+                                $this->client->editMessageText($chatId, $messageId, $confirmText);
                             } else {
-                                $this->client->sendMessage($chatId, Text::_('COM_RADICALMART_TELEGRAM_MARKETING_ENABLED'));
+                                $this->client->sendMessage($chatId, $confirmText);
                             }
                             return;
                         }
+                        
+                        // Обязательные согласия приняты — сначала обновим исходное сообщение с галочками
+                        if ($messageId) {
+                            $updatedText = $this->composeConsentMessage($st);
+                            $this->client->editMessageText($chatId, $messageId, $updatedText, [
+                                'parse_mode' => 'HTML',
+                                'reply_markup' => $this->buildConsentKeyboard($st)
+                            ]);
+                        }
+                        
+                        // Теперь отправляем сообщение о том, что все согласия получены
                         $this->client->sendMessage($chatId, Text::_('COM_RADICALMART_TELEGRAM_CONSENT_ALL_ACCEPTED'));
                         $params = Factory::getApplication()->getParams('com_radicalmart_telegram');
                         $storeTitle = (string) ($params->get('store_title', 'магазин Cacao.Land'));
@@ -770,14 +784,15 @@ class UpdateHandler
      */
     protected function sendMarketingPrompt(int $chatId): void
     {
-        $text = Text::_('COM_RADICALMART_TELEGRAM_MARKETING_PROMPT');
+        $text = Text::_('COM_RADICALMART_TELEGRAM_MARKETING_PROMPT')
+            . "\n\n" . '<i>' . Text::_('COM_RADICALMART_TELEGRAM_MARKETING_CONSENT_GIVEN') . '</i>';
         $keyboard = [
             'inline_keyboard' => [[
                 [ 'text' => Text::_('COM_RADICALMART_TELEGRAM_MARKETING_ENABLE'), 'callback_data' => 'consent_toggle:marketing' ],
                 [ 'text' => Text::_('COM_RADICALMART_TELEGRAM_MARKETING_SKIP'), 'callback_data' => 'marketing_skip' ],
             ]],
         ];
-        $this->client->sendMessage($chatId, $text, [ 'reply_markup' => $keyboard ]);
+        $this->client->sendMessage($chatId, $text, [ 'parse_mode' => 'HTML', 'reply_markup' => $keyboard ]);
     }
 
     /**

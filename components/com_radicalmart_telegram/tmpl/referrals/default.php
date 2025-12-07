@@ -49,11 +49,13 @@ $T = function($key) use ($fallbacks) {
     return $text;
 };
 
-$root = rtrim(Uri::root(), '/');
-$app = Factory::getApplication();
+$root = rtrim(Uri::root(), '/');$app = Factory::getApplication();
 $chat = $app->input->getInt('chat', 0);
 $chatId = $this->tgUser['chat_id'] ?? $chat;
 $baseQuery = $chatId > 0 ? '&chat=' . $chatId : '';
+
+// Get fullscreen padding from component params
+$fullscreenPadding = isset($this->params) ? (int) $this->params->get('fullscreen_top_padding', 35) : 35;
 ?>
 <!DOCTYPE html>
 <html lang="ru">
@@ -119,8 +121,25 @@ $baseQuery = $chatId > 0 ? '&chat=' . $chatId : '';
             document.documentElement.style.setProperty('--tg-theme-secondary-bg-color', '#f5f5f5');
         })();
     </script>
+    <style>
+        #app-top-nav { min-height: 44px; }
+        #app-top-nav .uk-navbar-center { flex-grow: 1; display: flex; justify-content: center; }
+        #app-top-nav .uk-navbar-item { min-height: 44px; padding-top: 4px; padding-bottom: 4px; }
+        #app-top-nav .uk-logo img { height: 32px; display: block; }
+        :root { --tg-fullscreen-padding: <?php echo $fullscreenPadding; ?>px; }
+        body.tg-fullscreen #app-top-nav { margin-top: var(--tg-fullscreen-padding, 35px); }
+    </style>
 </head>
 <body>
+
+<nav id="app-top-nav" class="uk-navbar-container" uk-navbar>
+    <div class="uk-navbar-center">
+        <a class="uk-navbar-item uk-logo" href="<?php echo $root; ?>/index.php?option=com_radicalmart_telegram&view=app<?php echo $baseQuery; ?>" title="cacao.land">
+            <img src="/images/logo/cacao_logo.svg" alt="cacao.land">
+        </a>
+    </div>
+</nav>
+
 <div id="referrals-app" class="uk-container uk-container-small uk-padding-small">
     <div class="uk-flex uk-flex-middle uk-margin-small-bottom">
         <a href="<?php echo $root; ?>/index.php?option=com_radicalmart_telegram&view=profile<?php echo $baseQuery; ?>" class="uk-margin-small-right" uk-icon="icon: arrow-left"></a>
@@ -589,6 +608,11 @@ document.addEventListener('DOMContentLoaded', function() {
         if (window.Telegram && Telegram.WebApp) {
             Telegram.WebApp.ready();
             Telegram.WebApp.expand();
+
+            // Fullscreen mode support (navbar already has margin-top)
+            if (Telegram.WebApp.isFullscreen) {
+                document.body.classList.add('tg-fullscreen');
+            }
 
             // BackButton - navigate to profile
             try {

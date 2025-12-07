@@ -9,19 +9,24 @@
                      <option value="1">JYES</option>
                      <option value="0">JNO</option>
               </field>
+              <field name="ym_enabled" type="radio" default="1" label="COM_RADICALMART_TELEGRAM_YM_ENABLED_LABEL" description="COM_RADICALMART_TELEGRAM_YM_ENABLED_DESC">
+                     <option value="1">JYES</option>
+                     <option value="0">JNO</option>
+              </field>
+              <field name="ym_counter_id" type="text" label="COM_RADICALMART_TELEGRAM_YM_COUNTER_ID_LABEL" description="COM_RADICALMART_TELEGRAM_YM_COUNTER_ID_DESC" class="input-small" filter="string" />
+              <field name="email_ask_after_phone" type="radio" default="1" label="COM_RADICALMART_TELEGRAM_EMAIL_ASK_AFTER_PHONE_LABEL" description="COM_RADICALMART_TELEGRAM_EMAIL_ASK_AFTER_PHONE_DESC">
+                     <option value="1">JYES</option>
+                     <option value="0">JNO</option>
+              </field>
+              <field name="acymailing_enabled" type="radio" default="0" label="COM_RADICALMART_TELEGRAM_ACYMAILING_ENABLED_LABEL" description="COM_RADICALMART_TELEGRAM_ACYMAILING_ENABLED_DESC">
+                     <option value="1">JYES</option>
+                     <option value="0">JNO</option>
+              </field>
+              <field name="acymailing_list_id" type="number" default="0" label="COM_RADICALMART_TELEGRAM_ACYMAILING_LIST_ID_LABEL" description="COM_RADICALMART_TELEGRAM_ACYMAILING_LIST_ID_DESC" class="input-small" />
+              <field name="fullscreen_top_padding" type="number" default="60" min="0" max="200" label="COM_RADICALMART_TELEGRAM_FULLSCREEN_PADDING_LABEL" description="COM_RADICALMART_TELEGRAM_FULLSCREEN_PADDING_DESC" class="input-small" />
        </fieldset>
 
        <fieldset name="catalog" label="COM_RADICALMART_TELEGRAM_FIELDSET_CATALOG">
-              <field
-                     name="catalog_categories_filter"
-                     type="sql"
-                     multiple="true"
-                     label="COM_RADICALMART_TELEGRAM_CATALOG_CATEGORIES_FILTER_LABEL"
-                     description="COM_RADICALMART_TELEGRAM_CATALOG_CATEGORIES_FILTER_DESC"
-                     query="SELECT id AS value, title AS text FROM #__radicalmart_categories WHERE state = 1 ORDER BY lft"
-                     key_field="value"
-                     value_field="text"
-              />
               <field name="catalog_mode" type="list" default="metas" label="COM_RADICALMART_TELEGRAM_CATALOG_MODE_LABEL" description="COM_RADICALMART_TELEGRAM_CATALOG_MODE_DESC">
                      <option value="metas">Мета‑товары (только metas)</option>
                      <option value="products">Обычные товары</option>
@@ -35,6 +40,10 @@
                       <option value="1">JYES</option>
                       <option value="0">JNO</option>
                </field>
+              <!-- Категории для кнопок фильтра каталога (только список, не карта) -->
+              <field name="catalog_categories_filter" type="Categories" multiple="true" label="COM_RADICALMART_TELEGRAM_CATALOG_CATEGORIES_FILTER_LABEL" description="COM_RADICALMART_TELEGRAM_CATALOG_CATEGORIES_FILTER_DESC" addfieldprefix="Joomla\Component\RadicalMartTelegram\Administrator\Field">
+                     <option value="">-- Авто: все опубликованные --</option>
+              </field>
        </fieldset>
 
        <!-- Вкладка: Вид карточек -->
@@ -58,6 +67,15 @@
                      <option value="0">JNO</option>
               </field>
               <field name="card_variant_weight_field" type="RadicalMartField" label="COM_RADICALMART_TELEGRAM_CARDVIEW_WEIGHT_FIELD_LABEL" description="COM_RADICALMART_TELEGRAM_CARDVIEW_WEIGHT_FIELD_DESC" addfieldprefix="Joomla\Component\RadicalMartTelegram\Administrator\Field" />
+
+              <field type="spacer" name="spacer_map_view" label="&lt;strong&gt;Карта товаров&lt;/strong&gt;" description="Настройки отображения мета-товаров на карте в каталоге WebApp."/>
+
+              <field name="map_view_enabled" type="radio" default="1" label="Показывать переключатель карты" description="Показывать кнопки переключения между списком и картой в каталоге WebApp">
+                     <option value="1">JYES</option>
+                     <option value="0">JNO</option>
+              </field>
+              <field name="map_coordinates_field" type="RadicalMartField" label="Поле с координатами" description="Выберите поле товара, содержащее координаты (lat,lon или JSON с lat/lng)" addfieldprefix="Joomla\Component\RadicalMartTelegram\Administrator\Field" />
+              <field name="map_country_field" type="RadicalMartField" label="Поле страны/флага" description="Выберите поле товара, содержащее название страны и эмодзи флага" addfieldprefix="Joomla\Component\RadicalMartTelegram\Administrator\Field" />
        </fieldset>
 
        <fieldset name="payments" label="COM_RADICALMART_TELEGRAM_FIELDSET_PAYMENTS">
