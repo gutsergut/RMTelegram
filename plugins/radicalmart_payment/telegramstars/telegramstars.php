@@ -84,9 +84,46 @@ class PlgRadicalMart_PaymentTelegramstars extends CMSPlugin
         return true;
     }
 
+    /**
+     * Check if current request is from Telegram WebApp
+     */
+    private function isTelegramContext(): bool
+    {
+        $app = Factory::getApplication();
+        $input = $app->getInput();
+        
+        // Check if we're in com_radicalmart_telegram component
+        $option = $input->getCmd('option', '');
+        if ($option === 'com_radicalmart_telegram') {
+            return true;
+        }
+        
+        // Check for Telegram WebApp headers/params
+        $initData = $input->getString('initData', '') ?: $input->server->getString('HTTP_X_TELEGRAM_INIT_DATA', '');
+        if (!empty($initData)) {
+            return true;
+        }
+        
+        // Check tmpl=tgwebapp or tmpl=webapp
+        $tmpl = $input->getCmd('tmpl', '');
+        if (in_array($tmpl, ['tgwebapp', 'webapp'], true)) {
+            return true;
+        }
+        
+        return false;
+    }
+
     public function onRadicalMartGetPaymentMethods(string $context, object $method, array $formData, array $products, array $currency)
     {
-        // Default visible; categories restriction is enforced later on pay
+        // Check bot_only setting - hide on website if enabled
+        $botOnly = (int) $this->params->get('bot_only', 1);
+        if ($botOnly && !$this->isTelegramContext()) {
+            // Hide this payment method on website
+            $method->disabled = true;
+            return;
+        }
+        
+        // Default visible
         $method->disabled = false;
         $method->order = (object) [
             'id' => $method->id,
