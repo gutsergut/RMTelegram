@@ -22,20 +22,6 @@ class PlgRadicalMart_PaymentTelegramstars extends CMSPlugin
     protected $db;
 
     /**
-     * Constructor - register layout paths
-     */
-    public function __construct(&$subject, $config = [])
-    {
-        parent::__construct($subject, $config);
-
-        // Register plugin layouts path
-        $layoutPath = __DIR__ . '/layouts';
-        if (is_dir($layoutPath)) {
-            \Joomla\CMS\Layout\FileLayout::addIncludePath($layoutPath);
-        }
-    }
-
-    /**
      * Parse IDs from parameter (supports both CSV string and array)
      */
     private function parseIds($value): array

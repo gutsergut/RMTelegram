@@ -26,20 +26,6 @@ class PlgRadicalMart_PaymentTelegramcards extends CMSPlugin
     private array $methodParamsCache = [];
 
     /**
-     * Constructor - register layout paths
-     */
-    public function __construct(&$subject, $config = [])
-    {
-        parent::__construct($subject, $config);
-
-        // Register plugin layouts path
-        $layoutPath = __DIR__ . '/layouts';
-        if (is_dir($layoutPath)) {
-            \Joomla\CMS\Layout\FileLayout::addIncludePath($layoutPath);
-        }
-    }
-
-    /**
      * Check if current request is from Telegram WebApp
      */
     private function isTelegramContext(): bool
