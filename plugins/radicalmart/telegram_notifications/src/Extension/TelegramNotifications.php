@@ -44,20 +44,22 @@ class TelegramNotifications extends CMSPlugin implements SubscriberInterface
     {
         return [
             'onRadicalMartAfterChangeOrderStatus' => 'onAfterChangeOrderStatus',
-            'onRadicalMartAfterCreateOrder'       => 'onAfterCreateOrder',
         ];
     }
 
     /**
-     * Handle new order creation - send notification with payment button
+     * Handle order status change - send notification about points accrual and status updates
      *
-     * @param   string  $context  The context
-     * @param   object  $order    The order object
+     * @param   string  $context    The context
+     * @param   object  $order      The order object
+     * @param   int     $oldStatus  Old status ID
+     * @param   int     $newStatus  New status ID
+     * @param   bool    $isNew      Is new order
      *
      * @return  void
      * @since   0.1.0
      */
-    public function onAfterCreateOrder(string $context, object $order): void
+    public function onAfterChangeOrderStatus(string $context, object $order, int $oldStatus, int $newStatus, bool $isNew): void
     {
         // Get bot token from component params
         $botToken = $this->getBotToken();
@@ -80,6 +82,38 @@ class TelegramNotifications extends CMSPlugin implements SubscriberInterface
             return;
         }
 
+        // For new orders - send creation notification
+        if ($isNew)
+        {
+            $this->sendNewOrderNotification($order, $botToken, $chatId);
+            return;
+        }
+
+        // Send status change notification
+        $this->sendStatusChangeNotification($order, $oldStatus, $newStatus, $botToken, $chatId);
+
+        // Send notification about customer points accrual (4.1)
+        if (class_exists(PointsHelper::class))
+        {
+            $this->sendCustomerPointsNotification($order, $botToken);
+
+            // Send notification about referral points accrual (4.2)
+            $this->sendReferralPointsNotification($order, $botToken);
+        }
+    }
+
+    /**
+     * Send notification about new order creation
+     *
+     * @param   object  $order     Order object
+     * @param   string  $botToken  Bot token
+     * @param   int     $chatId    Chat ID
+     *
+     * @return  void
+     * @since   0.1.0
+     */
+    protected function sendNewOrderNotification(object $order, string $botToken, int $chatId): void
+    {
         // Check if payment is Telegram-based (cards or stars)
         $paymentPlugin = $order->payment->plugin ?? '';
         $isTelegramPayment = stripos($paymentPlugin, 'telegram') !== false;
@@ -113,60 +147,6 @@ class TelegramNotifications extends CMSPlugin implements SubscriberInterface
 
         // Send notification with inline keyboard
         $this->sendTelegramMessageWithKeyboard($botToken, $chatId, $message, $keyboard);
-    }
-
-    /**
-     * Handle order status change - send notification about points accrual and status updates
-     *
-     * @param   string  $context    The context
-     * @param   object  $order      The order object
-     * @param   int     $oldStatus  Old status ID
-     * @param   int     $newStatus  New status ID
-     * @param   bool    $isNew      Is new order
-     *
-     * @return  void
-     * @since   0.1.0
-     */
-    public function onAfterChangeOrderStatus(string $context, object $order, int $oldStatus, int $newStatus, bool $isNew): void
-    {
-        // Get bot token from component params
-        $botToken = $this->getBotToken();
-        if (!$botToken)
-        {
-            return;
-        }
-
-        // Skip if this is a new order (handled by onAfterCreateOrder)
-        if ($isNew)
-        {
-            return;
-        }
-
-        // Get customer user ID
-        $userId = $order->created_by ?? 0;
-        if (!$userId)
-        {
-            return;
-        }
-
-        // Get customer's Telegram chat_id
-        $chatId = $this->getCustomerChatId($userId);
-        if (!$chatId)
-        {
-            return;
-        }
-
-        // Send status change notification
-        $this->sendStatusChangeNotification($order, $oldStatus, $newStatus, $botToken, $chatId);
-
-        // Send notification about customer points accrual (4.1)
-        if (class_exists(PointsHelper::class))
-        {
-            $this->sendCustomerPointsNotification($order, $botToken);
-
-            // Send notification about referral points accrual (4.2)
-            $this->sendReferralPointsNotification($order, $botToken);
-        }
     }
 
     /**
