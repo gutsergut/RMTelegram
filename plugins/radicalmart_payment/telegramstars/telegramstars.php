@@ -7,6 +7,7 @@
 defined('_JEXEC') or die;
 
 use Joomla\CMS\Factory;
+use Joomla\CMS\Filesystem\Path;
 use Joomla\CMS\Log\Log;
 use Joomla\CMS\Plugin\CMSPlugin;
 use Joomla\Registry\Registry;
@@ -19,6 +20,24 @@ class PlgRadicalMart_PaymentTelegramstars extends CMSPlugin
 {
     protected $autoloadLanguage = true;
     protected $db;
+
+    /**
+     * Constructor - register layout paths
+     */
+    public function __construct(&$subject, $config = [])
+    {
+        parent::__construct($subject, $config);
+
+        // Register plugin layouts path
+        $layoutPath = __DIR__ . '/layouts';
+        if (is_dir($layoutPath)) {
+            \Joomla\CMS\Layout\LayoutHelper::$defaultBasePath = $layoutPath;
+            // Add to layout paths
+            if (!in_array($layoutPath, \Joomla\CMS\Layout\FileLayout::getDefaultIncludePaths())) {
+                \Joomla\CMS\Layout\FileLayout::addIncludePath($layoutPath);
+            }
+        }
+    }
 
     /**
      * Parse IDs from parameter (supports both CSV string and array)
@@ -324,12 +343,14 @@ class PlgRadicalMart_PaymentTelegramstars extends CMSPlugin
 
             $usdRub = (float) $data['Valute']['USD']['Value'];
 
-            // 1 Star ≈ $0.02 USD (Telegram's approximate rate)
-            // Bot owner receives ~70% after Telegram's commission
-            $starUsd = 0.02;
+            // 1 Star ≈ $0.02 USD (Telegram's approximate rate, configurable)
+            $starUsd = (float) $this->params->get('star_usd_rate', 0.02);
+            if ($starUsd <= 0) {
+                $starUsd = 0.02;
+            }
             $rubPerStar = round($starUsd * $usdRub, 2);
 
-            Log::add('TelegramStars: fetched rate USD/RUB=' . $usdRub . ', rubPerStar=' . $rubPerStar, Log::INFO, 'plg_radicalmart_payment_telegramstars');
+            Log::add('TelegramStars: fetched rate USD/RUB=' . $usdRub . ', starUsd=' . $starUsd . ', rubPerStar=' . $rubPerStar, Log::INFO, 'plg_radicalmart_payment_telegramstars');
 
             return $rubPerStar;
 
