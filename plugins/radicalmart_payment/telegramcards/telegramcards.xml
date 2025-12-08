@@ -6,6 +6,7 @@
     <description>Telegram Payments (cards) via YooKassa/Robokassa — sends invoice to chat</description>
     <files>
         <filename plugin="telegramcards">telegramcards.php</filename>
+        <folder>layouts</folder>
     </files>
     <languages folder="language">
         <language tag="ru-RU">ru-RU/plg_radicalmart_payment_telegramcards.ini</language>
@@ -13,6 +14,10 @@
     <config>
         <fields name="params">
             <fieldset name="basic">
+                <field name="bot_only" type="radio" default="1" label="Только в боте" description="Показывать этот метод только в Telegram WebApp (скрыть на сайте)">
+                    <option value="1">Да</option>
+                    <option value="0">Нет</option>
+                </field>
                 <field name="env" type="list" default="test" label="Environment" description="Payments environment">
                     <option value="test">Test</option>
                     <option value="prod">Production</option>
