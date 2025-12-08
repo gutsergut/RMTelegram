@@ -10,6 +10,7 @@ namespace Joomla\Component\RadicalMartTelegram\Site\Helper;
 
 use Joomla\CMS\Factory;
 use Joomla\Database\DatabaseInterface;
+use Joomla\Component\RadicalMartTelegram\Site\Helper\LogHelper;
 
 class TelegramUserHelper
 {
@@ -158,6 +159,92 @@ class TelegramUserHelper
             }
         } catch (\Exception $e) {}
         return 0;
+    }
+
+    /**
+     * Parse start_param from initData (for ?startapp=ref_CODE links)
+     * Returns the referral code if start_param starts with "ref_", otherwise null
+     */
+    public static function parseStartParamFromInit(string $initData): ?string
+    {
+        if (empty($initData)) return null;
+        try {
+            parse_str($initData, $params);
+            if (!empty($params['start_param'])) {
+                $startParam = (string)$params['start_param'];
+                // Check if it's a referral code (starts with ref_)
+                if (strpos($startParam, 'ref_') === 0) {
+                    return substr($startParam, 4); // Remove "ref_" prefix
+                }
+                return $startParam;
+            }
+        } catch (\Exception $e) {}
+        return null;
+    }
+
+    /**
+     * Process referral code from WebApp start_param
+     * Called from API controller on first request
+     */
+    public static function processStartParamReferral(int $chatId, string $initData): void
+    {
+        if ($chatId <= 0 || empty($initData)) return;
+
+        $startParam = self::parseStartParamFromInit($initData);
+        if (empty($startParam)) return;
+
+        // Check if this is a referral code
+        if (strpos($startParam, 'ref_') !== 0 && !preg_match('/^[a-z0-9]{6,12}$/i', $startParam)) {
+            return; // Not a referral code format
+        }
+
+        // Remove ref_ prefix if present
+        $referralCode = (strpos($startParam, 'ref_') === 0) ? substr($startParam, 4) : $startParam;
+
+        try {
+            $db = Factory::getContainer()->get(DatabaseInterface::class);
+
+            // Check if user already has a referral code
+            $query = $db->getQuery(true)
+                ->select(['id', 'referral_code', 'user_id'])
+                ->from($db->quoteName('#__radicalmart_telegram_users'))
+                ->where($db->quoteName('chat_id') . ' = ' . $db->quote($chatId));
+            $user = $db->setQuery($query)->loadObject();
+
+            if ($user && !empty($user->referral_code)) {
+                // Already has referral code, skip
+                return;
+            }
+
+            // Validate referral code exists in RadicalMart Bonuses
+            if (class_exists(\Joomla\Component\RadicalMartBonuses\Administrator\Helper\CodesHelper::class)) {
+                $codeData = \Joomla\Component\RadicalMartBonuses\Administrator\Helper\CodesHelper::find($referralCode, 'code');
+                if (!$codeData || empty($codeData->referral)) {
+                    return; // Not a valid referral code
+                }
+            }
+
+            if ($user) {
+                // Update existing user
+                $upd = $db->getQuery(true)
+                    ->update($db->quoteName('#__radicalmart_telegram_users'))
+                    ->set($db->quoteName('referral_code') . ' = ' . $db->quote($referralCode))
+                    ->where($db->quoteName('id') . ' = ' . (int)$user->id);
+                $db->setQuery($upd)->execute();
+            } else {
+                // Create new user with referral code
+                $row = (object)[
+                    'chat_id' => $chatId,
+                    'referral_code' => $referralCode,
+                    'created' => (new \Joomla\CMS\Date\Date())->toSql(),
+                ];
+                $db->insertObject('#__radicalmart_telegram_users', $row);
+            }
+
+            LogHelper::debug('Saved referral code from WebApp start_param: ' . $referralCode . ' for chat ' . $chatId, 'com_radicalmart.telegram');
+        } catch (\Exception $e) {
+            // Silently ignore errors
+        }
     }
 
     public static function getDebugInfo(): array { return self::$debugInfo; }

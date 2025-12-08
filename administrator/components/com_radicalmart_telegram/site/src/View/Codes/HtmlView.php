@@ -16,6 +16,7 @@ use Joomla\Component\RadicalMartTelegram\Site\Helper\TelegramUserHelper;
 use Joomla\Component\RadicalMart\Administrator\Helper\ParamsHelper;
 use Joomla\Component\RadicalMart\Administrator\Helper\PriceHelper;
 use Joomla\Registry\Registry;
+use Joomla\CMS\Uri\Uri;
 
 class HtmlView extends BaseHtmlView
 {
@@ -28,6 +29,8 @@ class HtmlView extends BaseHtmlView
     public $start = 0;
     public $limit = 10;
     public $hasMore = false;
+    public $referralCodes = [];
+    public $botUsername = '';
 
     public function display($tpl = null)
     {
@@ -79,6 +82,10 @@ class HtmlView extends BaseHtmlView
 
             $db = Factory::getContainer()->get('DatabaseDriver');
 
+            // Load referral codes first (they don't require customerId)
+            $this->botUsername = $this->params->get('bot_username', '');
+            $this->loadReferralCodes($db);
+
             $query = $db->getQuery(true)
                 ->select('id')
                 ->from($db->quoteName('#__radicalmart_customers'))
@@ -87,7 +94,7 @@ class HtmlView extends BaseHtmlView
             $this->customerId = (int) $db->loadResult();
 
             if ($this->customerId <= 0) {
-                return;
+                return; // No customer = no promo codes, but referral codes already loaded
             }
 
             $query = $db->getQuery(true)
@@ -111,11 +118,70 @@ class HtmlView extends BaseHtmlView
         }
     }
 
+    protected function loadReferralCodes($db): void
+    {
+        $rmParams = ParamsHelper::getComponentParams();
+        $linkEnabled = ((int) $rmParams->get('bonuses_codes_cookies_enabled', 1) === 1);
+        $linkPrefix = $rmParams->get('bonuses_codes_cookies_selector', 'rbc');
+        $linkBase = Uri::root() . '?' . $linkPrefix . '=';
+
+        // Telegram deep link format: t.me/bot?start=ref_CODE (opens chat with bot)
+        $tgLinkBase = !empty($this->botUsername) ? 'https://t.me/' . $this->botUsername . '?start=ref_' : '';
+        // Telegram WebApp link format: t.me/bot?startapp=ref_CODE (opens WebApp fullscreen)
+        $tgWebAppLinkBase = !empty($this->botUsername) ? 'https://t.me/' . $this->botUsername . '?startapp=ref_' : '';
+
+        $query = $db->getQuery(true)
+            ->select('*')
+            ->from($db->quoteName('#__radicalmart_bonuses_codes'))
+            ->where($db->quoteName('referral') . ' = 1')
+            ->where($db->quoteName('created_by') . ' = ' . (int) $this->userId)
+            ->order('id DESC');
+
+        $items = $db->setQuery($query)->loadObjectList();
+
+        foreach ($items as $item) {
+            $item->currency = PriceHelper::getCurrency($item->currency);
+            $item->link = $linkEnabled ? $linkBase . $item->code : false;
+            $item->telegram_link = !empty($tgLinkBase) ? $tgLinkBase . $item->code : false;
+            // WebApp link opens bot in fullscreen WebApp mode
+            $item->telegram_webapp_link = !empty($tgWebAppLinkBase) ? $tgWebAppLinkBase . $item->code : false;
+
+            $item->discount = PriceHelper::cleanAdjustmentValue($item->discount);
+            $item->discount_string = (strpos($item->discount, '%') !== false)
+                ? $item->discount
+                : PriceHelper::toString($item->discount, $item->currency['code']);
+
+            if (!is_array($item->customers)) {
+                $customers = !empty($item->customers) ? explode(',', $item->customers) : [];
+                $item->customers = array_filter($customers, function($v) { return !empty($v); });
+            }
+
+            $item->expires = (!empty($item->expires) && $item->expires !== '0000-00-00 00:00:00')
+                ? $item->expires : false;
+
+            $item->enabled = true;
+            if ($item->customers_limit > 0 && count($item->customers) >= $item->customers_limit) {
+                $item->enabled = false;
+            }
+            if ($item->expires) {
+                $current = new \Joomla\CMS\Date\Date();
+                $expires = new \Joomla\CMS\Date\Date($item->expires);
+                if ($current->toUnix() >= $expires->toUnix()) {
+                    $item->enabled = false;
+                }
+            }
+
+            $item->used_count = count($item->customers);
+        }
+
+        $this->referralCodes = $items;
+    }
+
     protected function prepareItems(array $items): array
     {
         $linkEnabled = true;
         $linkPrefix = 'rbc';
-        
+
         try {
             $rmParams = ParamsHelper::getComponentParams();
             $linkEnabled = ((int) $rmParams->get('bonuses_codes_cookies_enabled', 1) === 1);

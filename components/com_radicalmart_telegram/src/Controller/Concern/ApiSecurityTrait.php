@@ -57,6 +57,18 @@ trait ApiSecurityTrait
                 }
             }
 
+            // Process start_param for referral codes (from ?startapp=ref_CODE links)
+            if ($this->tgUserId > 0 && !empty($pairs['start_param'])) {
+                try {
+                    \Joomla\Component\RadicalMartTelegram\Site\Helper\TelegramUserHelper::processStartParamReferral(
+                        $this->tgUserId,
+                        $raw
+                    );
+                } catch (\Throwable $e) {
+                    LogHelper::debug('start_param referral processing error: ' . $e->getMessage());
+                }
+            }
+
             if ($strict) {
                 $chat = $this->getChatId();
                 if ($chat > 0 && $this->tgUserId > 0) {

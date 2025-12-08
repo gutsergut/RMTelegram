@@ -125,8 +125,10 @@ class HtmlView extends BaseHtmlView
         $linkPrefix = $rmParams->get('bonuses_codes_cookies_selector', 'rbc');
         $linkBase = Uri::root() . '?' . $linkPrefix . '=';
 
-        // Telegram deep link format: t.me/bot?start=ref_CODE
+        // Telegram deep link format: t.me/bot?start=ref_CODE (opens chat with bot)
         $tgLinkBase = !empty($this->botUsername) ? 'https://t.me/' . $this->botUsername . '?start=ref_' : '';
+        // Telegram WebApp link format: t.me/bot?startapp=ref_CODE (opens WebApp fullscreen)
+        $tgWebAppLinkBase = !empty($this->botUsername) ? 'https://t.me/' . $this->botUsername . '?startapp=ref_' : '';
 
         $query = $db->getQuery(true)
             ->select('*')
@@ -141,6 +143,8 @@ class HtmlView extends BaseHtmlView
             $item->currency = PriceHelper::getCurrency($item->currency);
             $item->link = $linkEnabled ? $linkBase . $item->code : false;
             $item->telegram_link = !empty($tgLinkBase) ? $tgLinkBase . $item->code : false;
+            // WebApp link opens bot in fullscreen WebApp mode
+            $item->telegram_webapp_link = !empty($tgWebAppLinkBase) ? $tgWebAppLinkBase . $item->code : false;
 
             $item->discount = PriceHelper::cleanAdjustmentValue($item->discount);
             $item->discount_string = (strpos($item->discount, '%') !== false)
