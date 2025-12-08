@@ -197,15 +197,27 @@ class UpdateHandler
             }
         }
 
-        // successful payment
+        // successful payment (supports both RUB and XTR/Telegram Stars)
         if (!empty($message['successful_payment'])) {
             $sp = $message['successful_payment'];
-            $payload = (string) ($sp['invoice_payload'] ?? '');
-            $total   = (int) ($sp['total_amount'] ?? 0);
+            $payload  = (string) ($sp['invoice_payload'] ?? '');
+            $total    = (int) ($sp['total_amount'] ?? 0);
+            $currency = (string) ($sp['currency'] ?? 'RUB');
+
+            // Send confirmation message to user
             if ($chatId) {
-                $rub = number_format($total / 100, 2, ',', ' ');
-                $this->client->sendMessage($chatId, 'Оплата получена: ' . $rub . ' ₽.');
+                if ($currency === 'XTR') {
+                    // Telegram Stars: amount is in whole stars (no division)
+                    $msg = '⭐ Оплата получена: ' . $total . ' ' . ($total === 1 ? 'Star' : 'Stars') . '. Спасибо!';
+                } else {
+                    // Regular currency: amount in minor units (cents/kopecks)
+                    $formatted = number_format($total / 100, 2, ',', ' ');
+                    $symbol = ($currency === 'RUB') ? '₽' : $currency;
+                    $msg = '✅ Оплата получена: ' . $formatted . ' ' . $symbol . '.';
+                }
+                $this->client->sendMessage($chatId, $msg);
             }
+
             // Change order status by payload order:<number>
             if (strpos($payload, 'order:') === 0) {
                 $number = substr($payload, strlen('order:'));
@@ -216,17 +228,24 @@ class UpdateHandler
                         $pm = new \Joomla\Component\RadicalMart\Site\Model\PaymentModel();
                         $order = $pm->getOrder($number, 'number');
                         if ($order && !empty($order->id)) {
-                            // Log provider payment charge id if present
+                            // Log provider payment charge id and telegram payment id if present
                             $chargeId = isset($sp['provider_payment_charge_id']) ? (string) $sp['provider_payment_charge_id'] : '';
+                            $telegramPaymentId = isset($sp['telegram_payment_charge_id']) ? (string) $sp['telegram_payment_charge_id'] : '';
                             try {
                                 $admLog = new \Joomla\Component\RadicalMart\Administrator\Model\OrderModel();
                                 $admLog->addLog((int) $order->id, 'telegram_payment', [
                                     'message' => 'Telegram successful_payment',
+                                    'currency' => $currency,
+                                    'amount' => $total,
                                     'provider_payment_charge_id' => $chargeId,
+                                    'telegram_payment_charge_id' => $telegramPaymentId,
                                 ]);
                             } catch (\Throwable $e) { /* ignore */ }
                             $adm = new \Joomla\Component\RadicalMart\Administrator\Model\OrderModel();
-                            $adm->updateStatus((int) $order->id, $paidStatus, false, null, 'Telegram: successful_payment');
+                            $statusNote = ($currency === 'XTR')
+                                ? 'Telegram Stars: ' . $total . ' XTR'
+                                : 'Telegram: successful_payment';
+                            $adm->updateStatus((int) $order->id, $paidStatus, false, null, $statusNote);
                         }
                     }
                 } catch (\Throwable $e) {
@@ -481,6 +500,17 @@ class UpdateHandler
                 $this->client->editMessageText($chatId, $messageId, Text::_('COM_RADICALMART_TELEGRAM_EMAIL_CANCELLED'));
             }
             $this->sendMainMenu($chatId);
+            return;
+        }
+
+        if ($data === 'email_change') {
+            // Переводим в режим ожидания нового email
+            $this->store->setStatePayload($chatId, 'awaiting_email', []);
+            if ($messageId) {
+                $this->client->editMessageText($chatId, $messageId, Text::_('COM_RADICALMART_TELEGRAM_EMAIL_ENTER_NEW'));
+            } else {
+                $this->client->sendMessage($chatId, Text::_('COM_RADICALMART_TELEGRAM_EMAIL_ENTER_NEW'));
+            }
             return;
         }
 
@@ -1074,7 +1104,7 @@ class UpdateHandler
 
         // Only accept 6-digit codes
         if (!preg_match('/^\d{6}$/', $code)) {
-            $this->client->sendMessage($chatId, Text::_('COM_RADICALMART_TELEGRAM_EMAIL_ENTER_CODE'));
+            $this->sendEmailCodePromptWithButtons($chatId, Text::_('COM_RADICALMART_TELEGRAM_EMAIL_ENTER_CODE'));
             return true;
         }
 
@@ -1082,28 +1112,103 @@ class UpdateHandler
 
         if ($result['success']) {
             $this->store->setState($chatId, 'idle');
-            $this->client->sendMessage($chatId, Text::_('COM_RADICALMART_TELEGRAM_EMAIL_VERIFIED'));
 
-            // Show main menu or continue flow
+            // Получаем email для отображения
+            $email = $payload['email'] ?? '';
+            if (empty($email)) {
+                // Попробуем получить из БД
+                try {
+                    $db = Factory::getContainer()->get('DatabaseDriver');
+                    $query = $db->getQuery(true)
+                        ->select('email')
+                        ->from($db->quoteName('#__radicalmart_telegram_users'))
+                        ->where($db->quoteName('chat_id') . ' = :chat')
+                        ->bind(':chat', $chatId);
+                    $email = (string) $db->setQuery($query, 0, 1)->loadResult();
+                } catch (\Throwable $e) {
+                    $email = '';
+                }
+            }
+
+            // Показываем сообщение об успехе
+            $successMsg = Text::_('COM_RADICALMART_TELEGRAM_EMAIL_VERIFIED');
+            if (!empty($email)) {
+                $successMsg .= "\n\n📧 " . $email;
+            }
+            $this->client->sendMessage($chatId, $successMsg);
+
+            // Show main menu
             $this->sendMainMenu($chatId);
             return true;
         }
 
-        // Handle errors
+        // Handle errors with action buttons
         $errorKey = $result['error'] ?? 'COM_RADICALMART_TELEGRAM_ERROR';
+        $email = $payload['email'] ?? '';
 
         if ($errorKey === 'COM_RADICALMART_TELEGRAM_EMAIL_CODE_INVALID') {
             $remaining = $result['remaining'] ?? 0;
-            $this->client->sendMessage($chatId, Text::sprintf($errorKey, $remaining));
+            $errorMsg = Text::sprintf($errorKey, $remaining);
+            $this->sendEmailCodeErrorWithButtons($chatId, $errorMsg, $email);
         } elseif ($errorKey === 'COM_RADICALMART_TELEGRAM_EMAIL_TOO_MANY_ATTEMPTS') {
             // Blocked - reset state
             $this->store->setState($chatId, 'idle');
-            $this->client->sendMessage($chatId, Text::_($errorKey));
+            $keyboard = [
+                'inline_keyboard' => [
+                    [['text' => '✏️ ' . Text::_('COM_RADICALMART_TELEGRAM_EMAIL_CHANGE'), 'callback_data' => 'email_change']],
+                    [['text' => '⏭️ ' . Text::_('COM_RADICALMART_TELEGRAM_SKIP'), 'callback_data' => 'email_skip']],
+                ],
+            ];
+            $this->client->sendMessage($chatId, Text::_($errorKey), ['reply_markup' => $keyboard]);
+        } elseif ($errorKey === 'COM_RADICALMART_TELEGRAM_EMAIL_CODE_EXPIRED') {
+            // Code expired - offer to resend
+            $keyboard = [
+                'inline_keyboard' => [
+                    [['text' => '🔄 ' . Text::_('COM_RADICALMART_TELEGRAM_EMAIL_RESEND'), 'callback_data' => 'email_resend']],
+                    [['text' => '✏️ ' . Text::_('COM_RADICALMART_TELEGRAM_EMAIL_CHANGE'), 'callback_data' => 'email_change']],
+                ],
+            ];
+            $this->client->sendMessage($chatId, Text::_($errorKey), ['reply_markup' => $keyboard]);
         } else {
-            $this->client->sendMessage($chatId, Text::_($errorKey));
+            $this->sendEmailCodeErrorWithButtons($chatId, Text::_($errorKey), $email);
         }
 
         return true;
+    }
+
+    /**
+     * Send email code prompt with action buttons
+     */
+    protected function sendEmailCodePromptWithButtons(int $chatId, string $message): void
+    {
+        $keyboard = [
+            'inline_keyboard' => [
+                [['text' => '🔄 ' . Text::_('COM_RADICALMART_TELEGRAM_EMAIL_RESEND'), 'callback_data' => 'email_resend']],
+                [['text' => '✏️ ' . Text::_('COM_RADICALMART_TELEGRAM_EMAIL_CHANGE'), 'callback_data' => 'email_change']],
+                [['text' => '⏭️ ' . Text::_('COM_RADICALMART_TELEGRAM_SKIP'), 'callback_data' => 'email_skip']],
+            ],
+        ];
+        $this->client->sendMessage($chatId, $message, ['reply_markup' => $keyboard]);
+    }
+
+    /**
+     * Send email code error with retry buttons
+     */
+    protected function sendEmailCodeErrorWithButtons(int $chatId, string $errorMessage, string $email = ''): void
+    {
+        $message = $errorMessage;
+        if (!empty($email)) {
+            $message .= "\n\n📧 " . $email;
+        }
+
+        $keyboard = [
+            'inline_keyboard' => [
+                [['text' => '🔄 ' . Text::_('COM_RADICALMART_TELEGRAM_EMAIL_RESEND'), 'callback_data' => 'email_resend']],
+                [['text' => '✏️ ' . Text::_('COM_RADICALMART_TELEGRAM_EMAIL_CHANGE'), 'callback_data' => 'email_change']],
+                [['text' => '❌ ' . Text::_('COM_RADICALMART_TELEGRAM_CANCEL'), 'callback_data' => 'email_cancel']],
+            ],
+        ];
+        $this->client->sendMessage($chatId, $message, ['reply_markup' => $keyboard]);
     }
 
     /**
