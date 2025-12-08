@@ -31,11 +31,7 @@ class PlgRadicalMart_PaymentTelegramstars extends CMSPlugin
         // Register plugin layouts path
         $layoutPath = __DIR__ . '/layouts';
         if (is_dir($layoutPath)) {
-            \Joomla\CMS\Layout\LayoutHelper::$defaultBasePath = $layoutPath;
-            // Add to layout paths
-            if (!in_array($layoutPath, \Joomla\CMS\Layout\FileLayout::getDefaultIncludePaths())) {
-                \Joomla\CMS\Layout\FileLayout::addIncludePath($layoutPath);
-            }
+            \Joomla\CMS\Layout\FileLayout::addIncludePath($layoutPath);
         }
     }
 

@@ -35,9 +35,7 @@ class PlgRadicalMart_PaymentTelegramcards extends CMSPlugin
         // Register plugin layouts path
         $layoutPath = __DIR__ . '/layouts';
         if (is_dir($layoutPath)) {
-            if (!in_array($layoutPath, \Joomla\CMS\Layout\FileLayout::getDefaultIncludePaths())) {
-                \Joomla\CMS\Layout\FileLayout::addIncludePath($layoutPath);
-            }
+            \Joomla\CMS\Layout\FileLayout::addIncludePath($layoutPath);
         }
     }
 
