@@ -695,13 +695,23 @@ foreach ($pvzIcons as $k => $v) {
 
         function getUserLocation() {
             return new Promise((resolve, reject) => {
+                // Check cached location first (valid for 30 minutes)
+                const cached = getCachedUserLocation();
+                if (cached) {
+                    console.log('[Map] Using cached location:', cached);
+                    resolve(cached);
+                    return;
+                }
+
                 // Try Telegram WebApp location first (if available)
                 if (window.Telegram?.WebApp?.LocationManager) {
                     try {
                         Telegram.WebApp.LocationManager.getLocation((location) => {
                             if (location && location.latitude && location.longitude) {
+                                const coords = [location.latitude, location.longitude];
                                 console.log('[Map] Got location from Telegram:', location);
-                                resolve([location.latitude, location.longitude]);
+                                setCachedUserLocation(coords);
+                                resolve(coords);
                                 return;
                             }
                             // Fall through to browser geolocation
@@ -718,6 +728,32 @@ foreach ($pvzIcons as $k => $v) {
             });
         }
 
+        // Cache user location in sessionStorage
+        const USER_LOCATION_CACHE_KEY = 'rmt_user_location';
+        const USER_LOCATION_CACHE_TTL = 30 * 60 * 1000; // 30 minutes
+
+        function getCachedUserLocation() {
+            try {
+                const raw = sessionStorage.getItem(USER_LOCATION_CACHE_KEY);
+                if (!raw) return null;
+                const data = JSON.parse(raw);
+                if (data._ts && Date.now() - data._ts > USER_LOCATION_CACHE_TTL) {
+                    sessionStorage.removeItem(USER_LOCATION_CACHE_KEY);
+                    return null;
+                }
+                return data.coords;
+            } catch(e) { return null; }
+        }
+
+        function setCachedUserLocation(coords) {
+            try {
+                sessionStorage.setItem(USER_LOCATION_CACHE_KEY, JSON.stringify({
+                    coords: coords,
+                    _ts: Date.now()
+                }));
+            } catch(e) {}
+        }
+
         function getBrowserLocation() {
             return new Promise((resolve, reject) => {
                 if (!navigator.geolocation) {
@@ -725,6 +761,7 @@ foreach ($pvzIcons as $k => $v) {
                     ymaps.geolocation.get({ provider: 'yandex' }).then(result => {
                         const coords = result.geoObjects.get(0).geometry.getCoordinates();
                         console.log('[Map] Got location from Yandex IP:', coords);
+                        setCachedUserLocation(coords);
                         resolve(coords);
                     }).catch(reject);
                     return;
@@ -732,8 +769,10 @@ foreach ($pvzIcons as $k => $v) {
 
                 navigator.geolocation.getCurrentPosition(
                     (pos) => {
+                        const coords = [pos.coords.latitude, pos.coords.longitude];
                         console.log('[Map] Got location from browser:', pos.coords);
-                        resolve([pos.coords.latitude, pos.coords.longitude]);
+                        setCachedUserLocation(coords);
+                        resolve(coords);
                     },
                     (err) => {
                         console.log('[Map] Browser geolocation error:', err.message);
@@ -741,6 +780,7 @@ foreach ($pvzIcons as $k => $v) {
                         ymaps.geolocation.get({ provider: 'yandex' }).then(result => {
                             const coords = result.geoObjects.get(0).geometry.getCoordinates();
                             console.log('[Map] Got location from Yandex IP:', coords);
+                            setCachedUserLocation(coords);
                             resolve(coords);
                         }).catch(reject);
                     },
