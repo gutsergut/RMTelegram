@@ -181,11 +181,14 @@ foreach ($pvzIcons as $k => $v) {
             display: flex;
             flex-direction: column;
             align-items: center;
+            cursor: pointer;
+            pointer-events: auto;
         }
         .pvz-marker-icon {
             width: 32px;
             max-width: 32px;
             height: 32px;
+            pointer-events: auto;
         }
         .pvz-marker-price {
             position: absolute;
@@ -201,6 +204,7 @@ foreach ($pvzIcons as $k => $v) {
             white-space: nowrap;
             box-shadow: 0 1px 3px rgba(0,0,0,0.3);
             line-height: 1.2;
+            pointer-events: auto;
         }
     </style>
     <script>
@@ -440,11 +444,12 @@ foreach ($pvzIcons as $k => $v) {
 
             if (minPrice !== null && mapObjectManager?._pvzPriceLayout) {
                 // Use custom layout with price label
+                // iconShape covers 32x32 icon + price label below (extra 20px for label height)
                 return {
                     iconLayout: mapObjectManager._pvzPriceLayout,
                     iconShape: {
                         type: 'Rectangle',
-                        coordinates: [[-20, -48], [20, 0]]
+                        coordinates: [[-24, -36], [24, 18]]
                     }
                 };
             } else {
