@@ -3,8 +3,9 @@
  * @package     PlgRadicalMart_PaymentTelegramcards
  * Telegram Cards payment page layout
  *
- * This layout closes the Telegram WebApp to show the payment invoice,
- * or provides a link to the bot for non-WebApp context.
+ * After checkout, this layout:
+ * - In WebApp: redirects to order page with auto-refresh for status updates
+ * - In browser: shows link to bot
  */
 
 \defined('_JEXEC') or die;
@@ -12,6 +13,7 @@
 use Joomla\CMS\Factory;
 use Joomla\CMS\Language\Text;
 use Joomla\CMS\Component\ComponentHelper;
+use Joomla\CMS\Uri\Uri;
 
 extract($displayData);
 
@@ -24,6 +26,8 @@ extract($displayData);
  * @var  object $order        The order data.
  * @var  array  $payment      The payment plugin data.
  */
+
+$root = rtrim(Uri::root(), '/');
 
 // Get bot username for link
 $params = ComponentHelper::getParams('com_radicalmart_telegram');
@@ -52,6 +56,11 @@ if (!empty($botToken)) {
 }
 
 $botLink = $botUsername ? 'https://t.me/' . $botUsername : '';
+
+// Order page URL for redirect
+$orderId = isset($order) && !empty($order->id) ? (int) $order->id : 0;
+$orderNumber = isset($order) && !empty($order->number) ? (string) $order->number : '';
+$orderPageUrl = $root . '/index.php?option=com_radicalmart_telegram&view=order&id=' . $orderId;
 ?>
 <style>
     .cards-payment-container {
@@ -107,7 +116,7 @@ $botLink = $botUsername ? 'https://t.me/' . $botUsername : '';
     <div class="cards-message"><?php echo htmlspecialchars($page_message ?: 'Счёт на оплату отправлен в Telegram'); ?></div>
 
     <div id="cards-webapp-notice" style="display: none;">
-        <div class="cards-hint">Закрываем приложение для оплаты...</div>
+        <div class="cards-hint">Переходим к заказу...</div>
         <div class="cards-closing">
             <span uk-spinner="ratio: 0.8"></span>
         </div>
@@ -123,21 +132,35 @@ $botLink = $botUsername ? 'https://t.me/' . $botUsername : '';
     </div>
 </div>
 
+<script src="https://telegram.org/js/telegram-web-app.js"></script>
 <script>
 (function() {
     const tg = window.Telegram?.WebApp;
     const webappNotice = document.getElementById('cards-webapp-notice');
     const browserNotice = document.getElementById('cards-browser-notice');
+    const orderId = <?php echo $orderId; ?>;
+    const orderPageUrl = '<?php echo $orderPageUrl; ?>';
 
     if (tg && tg.initData) {
-        // We're inside Telegram WebApp - close it to show invoice
+        // We're inside Telegram WebApp
         webappNotice.style.display = 'block';
         browserNotice.style.display = 'none';
 
-        // Close WebApp after a brief delay to show message
+        tg.ready();
+
+        // Get chat_id from initData and add to URL
+        const chatId = tg.initDataUnsafe?.user?.id || 0;
+        let redirectUrl = orderPageUrl;
+        if (chatId > 0) {
+            redirectUrl += '&chat=' + chatId;
+        }
+        // Mark as awaiting payment for auto-refresh
+        redirectUrl += '&awaiting_payment=1';
+
+        // Redirect to order page after brief delay
         setTimeout(function() {
-            tg.close();
-        }, 1500);
+            window.location.href = redirectUrl;
+        }, 1000);
     } else {
         // Regular browser - show link to bot
         webappNotice.style.display = 'none';

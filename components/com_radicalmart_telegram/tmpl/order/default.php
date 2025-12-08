@@ -17,11 +17,16 @@ use Joomla\Component\RadicalMartTelegram\Site\Helper\TelegramUserHelper;
 $root = rtrim(Uri::root(), '/');
 $app = Factory::getApplication();
 $chat = $app->input->getInt('chat', 0);
+$awaitingPayment = $app->input->getInt('awaiting_payment', 0);
 
 $tgUser = $this->tgUser;
 $chatId = $tgUser['chat_id'] ?? $chat;
 $baseQuery = $chatId > 0 ? '&chat=' . $chatId : '';
 $order = $this->order;
+
+// Get status ID for polling
+$currentStatusId = $order && $order->status ? (int) $order->status->id : 0;
+$orderId = $order ? (int) $order->id : 0;
 ?>
 <!DOCTYPE html>
 <html lang="ru">
@@ -157,7 +162,7 @@ $order = $this->order;
             </div>
         </div>
 
-        <!-- Shipping -->
+        <!-- Shipping / Delivery -->
         <?php if ($order->shipping && $order->shipping->get('title')): ?>
         <div class="uk-card uk-card-default uk-card-small uk-margin-bottom">
             <div class="uk-card-header">
@@ -165,14 +170,47 @@ $order = $this->order;
             </div>
             <div class="uk-card-body">
                 <div class="uk-text-bold"><?php echo $order->shipping->get('title'); ?></div>
-                <?php if ($address = $order->shipping->get('address')): ?>
-                <div class="uk-text-muted uk-margin-small-top"><?php echo is_array($address) ? implode(', ', array_filter($address)) : $address; ?></div>
+
+                <?php
+                // Get PVZ data - try different field names
+                $pvzName = $order->shipping->get('pvz_name') ?: $order->shipping->get('point_name') ?: '';
+                $pvzAddress = $order->shipping->get('pvz_address') ?: $order->shipping->get('point_address') ?: '';
+                $pvzCode = $order->shipping->get('pvz_code') ?: $order->shipping->get('point_code') ?: '';
+
+                // Try to get from nested 'order' data
+                $orderData = $order->shipping->get('order');
+                if (is_object($orderData) || is_array($orderData)) {
+                    $orderData = (array) $orderData;
+                    if (empty($pvzName) && !empty($orderData['point_name'])) $pvzName = $orderData['point_name'];
+                    if (empty($pvzAddress) && !empty($orderData['point_address'])) $pvzAddress = $orderData['point_address'];
+                    if (empty($pvzAddress) && !empty($orderData['address'])) $pvzAddress = is_array($orderData['address']) ? implode(', ', array_filter($orderData['address'])) : $orderData['address'];
+                }
+
+                // Regular address (for courier delivery)
+                $address = $order->shipping->get('address');
+                if (is_array($address)) {
+                    $address = implode(', ', array_filter($address));
+                }
+                ?>
+
+                <?php if ($pvzName): ?>
+                <div class="uk-margin-small-top">
+                    <span class="uk-text-muted"><?php echo Text::_('COM_RADICALMART_TELEGRAM_PVZ'); ?>:</span>
+                    <strong><?php echo htmlspecialchars($pvzName); ?></strong>
+                </div>
                 <?php endif; ?>
-                <?php if ($pvz = $order->shipping->get('pvz_name')): ?>
-                <div class="uk-text-muted"><?php echo $pvz; ?></div>
+
+                <?php if ($pvzAddress): ?>
+                <div class="uk-text-muted uk-text-small"><?php echo htmlspecialchars($pvzAddress); ?></div>
+                <?php elseif ($address): ?>
+                <div class="uk-text-muted uk-margin-small-top"><?php echo htmlspecialchars($address); ?></div>
                 <?php endif; ?>
+
                 <?php if ($cost = $order->shipping->get('final_string')): ?>
-                <div class="uk-margin-small-top"><?php echo Text::_('COM_RADICALMART_SHIPPING_COST'); ?>: <strong><?php echo $cost; ?></strong></div>
+                <div class="uk-margin-small-top">
+                    <span class="uk-text-muted"><?php echo Text::_('COM_RADICALMART_SHIPPING_COST'); ?>:</span>
+                    <strong><?php echo $cost; ?></strong>
+                </div>
                 <?php endif; ?>
             </div>
         </div>
@@ -210,9 +248,57 @@ $order = $this->order;
         </div>
         <?php endif; ?>
 
-        <!-- Total -->
-        <div class="uk-card uk-card-primary uk-card-small">
+        <!-- Discounts & Promocodes -->
+        <?php
+        $hasDiscount = !empty($order->total['discount']) && (float) $order->total['discount'] > 0;
+        $promocode = $order->contacts ? $order->contacts->get('promocode', '') : '';
+        $usedPoints = $order->contacts ? (int) $order->contacts->get('used_points', 0) : 0;
+
+        // Try to get discount from order total
+        $discountString = $order->total['discount_string'] ?? '';
+        if (empty($discountString) && $hasDiscount) {
+            $discountString = '-' . \Joomla\Component\RadicalMart\Administrator\Helper\PriceHelper::toString($order->total['discount'], $order->currency ?? 'RUB');
+        }
+        ?>
+        <?php if ($hasDiscount || $promocode || $usedPoints > 0): ?>
+        <div class="uk-card uk-card-default uk-card-small uk-margin-bottom">
+            <div class="uk-card-header">
+                <h3 class="uk-card-title uk-margin-remove"><?php echo Text::_('COM_RADICALMART_TELEGRAM_DISCOUNTS'); ?></h3>
+            </div>
             <div class="uk-card-body">
+                <?php if ($promocode): ?>
+                <div class="uk-margin-small-bottom">
+                    <span class="uk-text-muted"><?php echo Text::_('COM_RADICALMART_PROMOCODE'); ?>:</span>
+                    <span class="uk-label uk-label-success"><?php echo htmlspecialchars($promocode); ?></span>
+                </div>
+                <?php endif; ?>
+
+                <?php if ($usedPoints > 0): ?>
+                <div class="uk-margin-small-bottom">
+                    <span class="uk-text-muted"><?php echo Text::_('COM_RADICALMART_TELEGRAM_USED_POINTS'); ?>:</span>
+                    <strong><?php echo number_format($usedPoints, 0, '', ' '); ?></strong>
+                </div>
+                <?php endif; ?>
+
+                <?php if ($hasDiscount && $discountString): ?>
+                <div>
+                    <span class="uk-text-muted"><?php echo Text::_('COM_RADICALMART_TELEGRAM_TOTAL_DISCOUNT'); ?>:</span>
+                    <strong class="uk-text-success"><?php echo $discountString; ?></strong>
+                </div>
+                <?php endif; ?>
+            </div>
+        </div>
+        <?php endif; ?>
+
+        <!-- Total -->
+        <div class="uk-card uk-card-primary uk-card-small" id="order-total-card">
+            <div class="uk-card-body">
+                <?php if (!empty($order->total['base']) && !empty($order->total['final']) && (float)$order->total['base'] > (float)$order->total['final']): ?>
+                <div class="uk-grid-small uk-margin-small-bottom" uk-grid>
+                    <div class="uk-width-expand uk-text-muted"><?php echo Text::_('COM_RADICALMART_TELEGRAM_SUBTOTAL'); ?></div>
+                    <div class="uk-width-auto uk-text-muted"><s><?php echo $order->total['base_string'] ?? ''; ?></s></div>
+                </div>
+                <?php endif; ?>
                 <div class="uk-grid-small" uk-grid>
                     <div class="uk-width-expand uk-text-large"><?php echo Text::_('COM_RADICALMART_TOTAL'); ?></div>
                     <div class="uk-width-auto uk-text-large uk-text-bold"><?php echo $order->total['final_string'] ?? ''; ?></div>
@@ -355,6 +441,50 @@ $order = $this->order;
         RMT_OBSERVE_ICONS();
     });
     </script>
+
+    <?php if ($awaitingPayment && $orderId > 0): ?>
+    <!-- Auto-refresh for payment status -->
+    <script>
+    (function() {
+        const orderId = <?php echo $orderId; ?>;
+        const currentStatusId = <?php echo $currentStatusId; ?>;
+        const checkInterval = 5000; // 5 seconds
+        const maxChecks = 60; // 5 minutes max
+        let checkCount = 0;
+
+        function checkOrderStatus() {
+            if (checkCount >= maxChecks) {
+                console.log('[RMT] Max status checks reached, stopping polling');
+                return;
+            }
+            checkCount++;
+
+            fetch('<?php echo $root; ?>/index.php?option=com_radicalmart_telegram&task=api.orderStatus&format=json&id=' + orderId + '<?php echo $baseQuery; ?>')
+                .then(r => r.json())
+                .then(data => {
+                    if (data.success && data.data && data.data.status_id !== currentStatusId) {
+                        // Status changed! Reload page
+                        console.log('[RMT] Order status changed, reloading...');
+                        if (window.Telegram?.WebApp) {
+                            window.Telegram.WebApp.HapticFeedback.notificationOccurred('success');
+                        }
+                        window.location.reload();
+                    } else {
+                        // Continue polling
+                        setTimeout(checkOrderStatus, checkInterval);
+                    }
+                })
+                .catch(e => {
+                    console.log('[RMT] Status check error:', e);
+                    setTimeout(checkOrderStatus, checkInterval);
+                });
+        }
+
+        // Start polling after initial delay
+        setTimeout(checkOrderStatus, 2000);
+    })();
+    </script>
+    <?php endif; ?>
 
 </body>
 </html>

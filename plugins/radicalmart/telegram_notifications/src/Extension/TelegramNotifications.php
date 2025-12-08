@@ -44,11 +44,79 @@ class TelegramNotifications extends CMSPlugin implements SubscriberInterface
     {
         return [
             'onRadicalMartAfterChangeOrderStatus' => 'onAfterChangeOrderStatus',
+            'onRadicalMartAfterCreateOrder'       => 'onAfterCreateOrder',
         ];
     }
 
     /**
-     * Handle order status change - send notification about points accrual
+     * Handle new order creation - send notification with payment button
+     *
+     * @param   string  $context  The context
+     * @param   object  $order    The order object
+     *
+     * @return  void
+     * @since   0.1.0
+     */
+    public function onAfterCreateOrder(string $context, object $order): void
+    {
+        // Get bot token from component params
+        $botToken = $this->getBotToken();
+        if (!$botToken)
+        {
+            return;
+        }
+
+        // Get customer user ID
+        $userId = $order->created_by ?? 0;
+        if (!$userId)
+        {
+            return;
+        }
+
+        // Get customer's Telegram chat_id
+        $chatId = $this->getCustomerChatId($userId);
+        if (!$chatId)
+        {
+            return;
+        }
+
+        // Check if payment is Telegram-based (cards or stars)
+        $paymentPlugin = $order->payment->plugin ?? '';
+        $isTelegramPayment = stripos($paymentPlugin, 'telegram') !== false;
+
+        // Format message
+        $orderNumber = $order->number ?? $order->id;
+        $total = $order->total['final_string'] ?? '';
+
+        $message = "✅ <b>Заказ №{$orderNumber} создан</b>\n\n";
+        $message .= "Сумма: <b>{$total}</b>\n";
+
+        if ($isTelegramPayment)
+        {
+            $message .= "\nСчёт на оплату отправлен ниже.";
+        }
+        else
+        {
+            $message .= "\nОплатите заказ для его обработки.";
+        }
+
+        // Create inline keyboard with WebApp button
+        $webAppUrl = $this->getWebAppUrl() . '/index.php?option=com_radicalmart_telegram&view=order&id=' . (int) $order->id;
+
+        $keyboard = [
+            'inline_keyboard' => [
+                [
+                    ['text' => '📦 Открыть заказ', 'web_app' => ['url' => $webAppUrl]]
+                ]
+            ]
+        ];
+
+        // Send notification with inline keyboard
+        $this->sendTelegramMessageWithKeyboard($botToken, $chatId, $message, $keyboard);
+    }
+
+    /**
+     * Handle order status change - send notification about points accrual and status updates
      *
      * @param   string  $context    The context
      * @param   object  $order      The order object
@@ -61,12 +129,6 @@ class TelegramNotifications extends CMSPlugin implements SubscriberInterface
      */
     public function onAfterChangeOrderStatus(string $context, object $order, int $oldStatus, int $newStatus, bool $isNew): void
     {
-        // Skip if RadicalMart Bonuses not installed
-        if (!class_exists(PointsHelper::class))
-        {
-            return;
-        }
-
         // Get bot token from component params
         $botToken = $this->getBotToken();
         if (!$botToken)
@@ -74,11 +136,142 @@ class TelegramNotifications extends CMSPlugin implements SubscriberInterface
             return;
         }
 
-        // Send notification about customer points accrual (4.1)
-        $this->sendCustomerPointsNotification($order, $botToken);
+        // Skip if this is a new order (handled by onAfterCreateOrder)
+        if ($isNew)
+        {
+            return;
+        }
 
-        // Send notification about referral points accrual (4.2)
-        $this->sendReferralPointsNotification($order, $botToken);
+        // Get customer user ID
+        $userId = $order->created_by ?? 0;
+        if (!$userId)
+        {
+            return;
+        }
+
+        // Get customer's Telegram chat_id
+        $chatId = $this->getCustomerChatId($userId);
+        if (!$chatId)
+        {
+            return;
+        }
+
+        // Send status change notification
+        $this->sendStatusChangeNotification($order, $oldStatus, $newStatus, $botToken, $chatId);
+
+        // Send notification about customer points accrual (4.1)
+        if (class_exists(PointsHelper::class))
+        {
+            $this->sendCustomerPointsNotification($order, $botToken);
+
+            // Send notification about referral points accrual (4.2)
+            $this->sendReferralPointsNotification($order, $botToken);
+        }
+    }
+
+    /**
+     * Send notification about order status change
+     *
+     * @param   object  $order      Order object
+     * @param   int     $oldStatus  Old status ID
+     * @param   int     $newStatus  New status ID
+     * @param   string  $botToken   Bot token
+     * @param   int     $chatId     Chat ID
+     *
+     * @return  void
+     * @since   0.1.0
+     */
+    protected function sendStatusChangeNotification(object $order, int $oldStatus, int $newStatus, string $botToken, int $chatId): void
+    {
+        $orderNumber = $order->number ?? $order->id;
+
+        // Get status title
+        $statusTitle = $order->status->title ?? '';
+        if (!$statusTitle)
+        {
+            $statusTitle = $this->getStatusTitle($newStatus);
+        }
+
+        // Determine emoji and message based on status
+        $emoji = '📦';
+        $isPaid = false;
+
+        // Common status IDs: 1=New, 2=Paid, 3=Processing, 4=Shipped, 5=Delivered, 6=Cancelled
+        // But better to check by title patterns
+        $statusTitleLower = mb_strtolower($statusTitle);
+        if (strpos($statusTitleLower, 'оплач') !== false || strpos($statusTitleLower, 'paid') !== false)
+        {
+            $emoji = '💳';
+            $isPaid = true;
+        }
+        elseif (strpos($statusTitleLower, 'отправл') !== false || strpos($statusTitleLower, 'ship') !== false)
+        {
+            $emoji = '🚚';
+        }
+        elseif (strpos($statusTitleLower, 'доставл') !== false || strpos($statusTitleLower, 'deliver') !== false)
+        {
+            $emoji = '✅';
+        }
+        elseif (strpos($statusTitleLower, 'отмен') !== false || strpos($statusTitleLower, 'cancel') !== false)
+        {
+            $emoji = '❌';
+        }
+        elseif (strpos($statusTitleLower, 'обработ') !== false || strpos($statusTitleLower, 'process') !== false)
+        {
+            $emoji = '⚙️';
+        }
+
+        $message = "{$emoji} <b>Статус заказа №{$orderNumber} изменён</b>\n\n";
+        $message .= "Новый статус: <b>{$statusTitle}</b>";
+
+        if ($isPaid)
+        {
+            $message .= "\n\n🎉 Спасибо за оплату! Мы начали обработку вашего заказа.";
+        }
+
+        // Create inline keyboard with WebApp button
+        $webAppUrl = $this->getWebAppUrl() . '/index.php?option=com_radicalmart_telegram&view=order&id=' . (int) $order->id;
+
+        $keyboard = [
+            'inline_keyboard' => [
+                [
+                    ['text' => '📦 Открыть заказ', 'web_app' => ['url' => $webAppUrl]]
+                ]
+            ]
+        ];
+
+        // Send notification with inline keyboard
+        $this->sendTelegramMessageWithKeyboard($botToken, $chatId, $message, $keyboard);
+    }
+
+    /**
+     * Get status title by ID
+     *
+     * @param   int  $statusId  Status ID
+     *
+     * @return  string
+     * @since   0.1.0
+     */
+    protected function getStatusTitle(int $statusId): string
+    {
+        try
+        {
+            $db = Factory::getContainer()->get('DatabaseDriver');
+
+            $query = $db->getQuery(true)
+                ->select('title')
+                ->from($db->quoteName('#__radicalmart_statuses'))
+                ->where($db->quoteName('id') . ' = ' . $statusId);
+
+            $db->setQuery($query);
+            $title = $db->loadResult();
+
+            return $title ? \Joomla\CMS\Language\Text::_($title) : '';
+        }
+        catch (\Exception $e)
+        {
+            return '';
+        }
     }
 
     /**
@@ -360,6 +553,68 @@ class TelegramNotifications extends CMSPlugin implements SubscriberInterface
 
             return false;
         }
+    }
+
+    /**
+     * Send message via Telegram Bot API with inline keyboard
+     *
+     * @param   string  $token     Bot token
+     * @param   int     $chatId    Chat ID
+     * @param   string  $text      Message text
+     * @param   array   $keyboard  Inline keyboard array
+     *
+     * @return  bool
+     * @since   0.1.0
+     */
+    protected function sendTelegramMessageWithKeyboard(string $token, int $chatId, string $text, array $keyboard): bool
+    {
+        try
+        {
+            $http = new Http();
+            $http->setOption('transport.curl', [CURLOPT_SSL_VERIFYHOST => 0, CURLOPT_SSL_VERIFYPEER => 0]);
+
+            $params = [
+                'chat_id'      => $chatId,
+                'parse_mode'   => 'HTML',
+                'text'         => $text,
+                'reply_markup' => json_encode($keyboard, JSON_UNESCAPED_UNICODE)
+            ];
+
+            $response = $http->post(
+                'https://api.telegram.org/bot' . $token . '/sendMessage',
+                $params,
+                ['Content-Type' => 'application/x-www-form-urlencoded']
+            );
+
+            $result = json_decode($response->body);
+
+            if (!empty($result->ok))
+            {
+                return true;
+            }
+
+            // Log error
+            $this->logError('Telegram API error: ' . ($result->description ?? 'Unknown error'));
+
+            return false;
+        }
+        catch (\Exception $e)
+        {
+            $this->logError('Telegram send error: ' . $e->getMessage());
+
+            return false;
+        }
+    }
+
+    /**
+     * Get WebApp base URL
+     *
+     * @return  string
+     * @since   0.1.0
+     */
+    protected function getWebAppUrl(): string
+    {
+        return rtrim(\Joomla\CMS\Uri\Uri::root(), '/');
     }
 
     /**

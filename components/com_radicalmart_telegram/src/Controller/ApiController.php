@@ -1101,6 +1101,85 @@ class ApiController extends BaseController
     }
 
     /**
+     * Change user password with current password validation
+     * Endpoint: task=api.changePassword
+     */
+    public function changePassword(): void
+    {
+        $app = Factory::getApplication();
+        $this->guardInitData();
+        $this->guardRateLimitDb('mut', 10); // Stricter rate limit for password changes
+        $chat = $this->getChatId();
+        if ($chat <= 0) {
+            echo new JsonResponse(null, Text::_('COM_RADICALMART_TELEGRAM_ERR_INVALID_CHAT'), true);
+            $app->close();
+        }
+
+        try {
+            // Read JSON body
+            $rawInput = file_get_contents('php://input');
+            $jsonData = json_decode($rawInput, true) ?: [];
+
+            $currentPassword = $jsonData['current_password'] ?? '';
+            $newPassword = $jsonData['new_password'] ?? '';
+
+            // Validation
+            if (empty($currentPassword)) {
+                throw new \RuntimeException(Text::_('COM_RADICALMART_TELEGRAM_PASSWORD_CURRENT_REQUIRED'), 400);
+            }
+            if (empty($newPassword)) {
+                throw new \RuntimeException(Text::_('COM_RADICALMART_TELEGRAM_PASSWORD_NEW_REQUIRED'), 400);
+            }
+            if (strlen($newPassword) < 8) {
+                throw new \RuntimeException(Text::_('COM_RADICALMART_TELEGRAM_PASSWORD_TOO_SHORT'), 400);
+            }
+
+            $db = Factory::getContainer()->get('DatabaseDriver');
+
+            // Get user_id from telegram_users
+            $query = $db->getQuery(true)
+                ->select('user_id')
+                ->from($db->quoteName('#__radicalmart_telegram_users'))
+                ->where($db->quoteName('chat_id') . ' = :chat')
+                ->bind(':chat', $chat);
+            $userId = (int) $db->setQuery($query, 0, 1)->loadResult();
+
+            if ($userId <= 0) {
+                throw new \RuntimeException(Text::_('COM_RADICALMART_TELEGRAM_PASSWORD_NO_ACCOUNT'), 400);
+            }
+
+            // Get Joomla user
+            $user = Factory::getUser($userId);
+            if (!$user || $user->guest) {
+                throw new \RuntimeException(Text::_('COM_RADICALMART_TELEGRAM_PASSWORD_NO_ACCOUNT'), 400);
+            }
+
+            // Verify current password
+            $match = \Joomla\CMS\User\UserHelper::verifyPassword($currentPassword, $user->password, $userId);
+            if (!$match) {
+                LogHelper::warning('[changePassword] Invalid current password for user=' . $userId . ', chat=' . $chat);
+                throw new \RuntimeException(Text::_('COM_RADICALMART_TELEGRAM_PASSWORD_CURRENT_INVALID'), 400);
+            }
+
+            // Change password
+            $user->password = \Joomla\CMS\User\UserHelper::hashPassword($newPassword);
+
+            if (!$user->save()) {
+                LogHelper::error('[changePassword] Failed to save password for user=' . $userId . ': ' . implode(', ', $user->getErrors()));
+                throw new \RuntimeException(Text::_('COM_RADICALMART_TELEGRAM_PASSWORD_CHANGE_ERROR'), 500);
+            }
+
+            LogHelper::info('[changePassword] Password changed for user=' . $userId . ', chat=' . $chat);
+
+            echo new JsonResponse(['success' => true]);
+            $app->close();
+        } catch (\Throwable $e) {
+            echo new JsonResponse(null, $e->getMessage(), true);
+            $app->close();
+        }
+    }
+
+    /**
      * Update marketing consent via WebApp
      * Endpoint: task=api.updateconsent
      */
@@ -2541,6 +2620,60 @@ class ApiController extends BaseController
             echo new JsonResponse([
                 'cart_count' => $cartCount,
                 'bonus_balance' => $bonusBalance
+            ]);
+        } catch (\Throwable $e) {
+            echo new JsonResponse(null, $e->getMessage(), true);
+        }
+
+        $app->close();
+    }
+
+    /**
+     * Get order status for polling (awaiting payment)
+     */
+    public function orderStatus(): void
+    {
+        $app = Factory::getApplication();
+
+        try {
+            $orderId = $app->input->getInt('id', 0);
+            $chat = $app->input->getInt('chat', 0);
+
+            if ($orderId <= 0) {
+                throw new \RuntimeException('Order ID required');
+            }
+
+            // Get user from chat
+            $db = Factory::getContainer()->get('DatabaseDriver');
+            $query = $db->getQuery(true)
+                ->select('user_id')
+                ->from($db->quoteName('#__radicalmart_telegram_users'))
+                ->where($db->quoteName('chat_id') . ' = ' . (int) $chat);
+            $userId = (int) $db->setQuery($query)->loadResult();
+
+            if ($userId <= 0) {
+                throw new \RuntimeException('User not found');
+            }
+
+            // Get order status
+            $query = $db->getQuery(true)
+                ->select(['o.id', 'o.status', 's.title as status_title'])
+                ->from($db->quoteName('#__radicalmart_orders', 'o'))
+                ->leftJoin($db->quoteName('#__radicalmart_statuses', 's') . ' ON s.id = o.status')
+                ->where($db->quoteName('o.id') . ' = ' . (int) $orderId)
+                ->where($db->quoteName('o.created_by') . ' = ' . (int) $userId);
+
+            $db->setQuery($query);
+            $order = $db->loadObject();
+
+            if (!$order) {
+                throw new \RuntimeException('Order not found');
+            }
+
+            echo new JsonResponse([
+                'order_id' => (int) $order->id,
+                'status_id' => (int) $order->status,
+                'status_title' => Text::_($order->status_title ?: ''),
             ]);
         } catch (\Throwable $e) {
             echo new JsonResponse(null, $e->getMessage(), true);
