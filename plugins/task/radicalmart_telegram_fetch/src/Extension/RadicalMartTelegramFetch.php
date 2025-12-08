@@ -33,13 +33,16 @@ final class RadicalMartTelegramFetch extends CMSPlugin implements SubscriberInte
         'plg_task_radicalmart_telegram_fetch_apiship' => [
             'langConstPrefix' => 'PLG_TASK_RADICALMART_TELEGRAM_FETCH',
         ],
+        'radicalmart_telegram.stars_rate' => [
+            'langConstPrefix' => 'PLG_TASK_RADICALMART_TELEGRAM_STARS_RATE',
+        ],
     ];
 
     public static function getSubscribedEvents(): array
     {
         return [
             'onTaskOptionsList' => 'advertiseRoutines',
-            'onExecuteTask'     => 'runFetch',
+            'onExecuteTask'     => 'runTask',
         ];
     }
 
@@ -57,9 +60,13 @@ final class RadicalMartTelegramFetch extends CMSPlugin implements SubscriberInte
         $this->traitAdvertiseRoutines($event);
     }
 
-    public function runFetch(ExecuteTaskEvent $event): void
+    /**
+     * Dispatcher for task execution - routes to specific handler based on routine ID
+     */
+    public function runTask(ExecuteTaskEvent $event): void
     {
         $routineId = $event->getRoutineId();
+
         // Early trace of event firing regardless of routine match
         Log::addLogger(
             ['text_file' => 'com_radicalmart.telegram.php'],
@@ -67,10 +74,112 @@ final class RadicalMartTelegramFetch extends CMSPlugin implements SubscriberInte
             ['com_radicalmart.telegram']
         );
         Log::add('onExecuteTask received: routineId=' . $routineId, Log::INFO, 'com_radicalmart.telegram');
+
         if (!\array_key_exists($routineId, self::TASKS_MAP)) {
             Log::add('RoutineId not in TASKS_MAP, skipping', Log::WARNING, 'com_radicalmart.telegram');
             return;
         }
+
+        // Route to specific handler
+        switch ($routineId) {
+            case 'radicalmart_telegram.stars_rate':
+                $this->runStarsRateUpdate($event);
+                break;
+            case 'radicalmart_telegram.fetch':
+            case 'plg_task_radicalmart_telegram_fetch_apiship':
+            default:
+                $this->runFetch($event);
+                break;
+        }
+    }
+
+    /**
+     * Update Telegram Stars exchange rate from CBR API
+     */
+    protected function runStarsRateUpdate(ExecuteTaskEvent $event): void
+    {
+        $this->startRoutine($event);
+        $this->loadLanguage();
+
+        $startTs = microtime(true);
+        Log::add('Stars rate update start', Log::INFO, 'com_radicalmart.telegram');
+
+        try {
+            // Load the telegramstars payment plugin
+            $plugin = PluginHelper::getPlugin('radicalmart_payment', 'telegramstars');
+            if (!$plugin) {
+                $msg = 'Telegram Stars payment plugin not found or disabled';
+                Log::add($msg, Log::ERROR, 'com_radicalmart.telegram');
+                $this->logTask($msg, 'error');
+                $this->endRoutine($event, Status::KNOCKOUT);
+                return;
+            }
+
+            // Load plugin class
+            $pluginPath = JPATH_PLUGINS . '/radicalmart_payment/telegramstars/telegramstars.php';
+            if (!is_file($pluginPath)) {
+                $msg = 'Telegram Stars plugin file not found: ' . $pluginPath;
+                Log::add($msg, Log::ERROR, 'com_radicalmart.telegram');
+                $this->logTask($msg, 'error');
+                $this->endRoutine($event, Status::KNOCKOUT);
+                return;
+            }
+
+            require_once $pluginPath;
+
+            // Create plugin instance with its params
+            $pluginParams = new Registry($plugin->params ?? '');
+            $dispatcher = Factory::getApplication()->getDispatcher();
+            $starsPlugin = new \PlgRadicalMart_PaymentTelegramstars($dispatcher, [
+                'params' => $pluginParams,
+                'name'   => 'telegramstars',
+                'type'   => 'radicalmart_payment',
+            ]);
+
+            // Fetch and update rate
+            $rate = $starsPlugin->fetchCurrentRate();
+            if ($rate === null) {
+                $msg = 'Failed to fetch Stars rate from CBR API';
+                Log::add($msg, Log::ERROR, 'com_radicalmart.telegram');
+                $this->logTask($msg, 'error');
+                $this->endRoutine($event, Status::KNOCKOUT);
+                return;
+            }
+
+            // Update plugin params in database
+            $updated = $starsPlugin->updateRate();
+            if (!$updated) {
+                $msg = 'Failed to save Stars rate to plugin params';
+                Log::add($msg, Log::ERROR, 'com_radicalmart.telegram');
+                $this->logTask($msg, 'error');
+                $this->endRoutine($event, Status::KNOCKOUT);
+                return;
+            }
+
+            $duration = round((microtime(true) - $startTs), 3);
+            $msg = sprintf(
+                'Stars rate updated: %.4f RUB/Star, duration=%ss',
+                $rate,
+                $duration
+            );
+            Log::add($msg, Log::INFO, 'com_radicalmart.telegram');
+            $this->logTask($msg);
+            $this->endRoutine($event, Status::OK);
+
+        } catch (\Throwable $e) {
+            $msg = 'Stars rate update exception: ' . $e->getMessage();
+            Log::add($msg, Log::ERROR, 'com_radicalmart.telegram');
+            $this->logTask($msg, 'error');
+            $this->endRoutine($event, Status::KNOCKOUT);
+        }
+    }
+
+    /**
+     * Fetch ApiShip points for all configured providers
+     */
+    protected function runFetch(ExecuteTaskEvent $event): void
+    {
+        $routineId = $event->getRoutineId();
 
         $this->startRoutine($event);
         $this->loadLanguage(); // Defensive
