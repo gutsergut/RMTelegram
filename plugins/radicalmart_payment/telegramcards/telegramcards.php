@@ -105,14 +105,21 @@ class PlgRadicalMart_PaymentTelegramcards extends CMSPlugin
     public function onRadicalMartPay(object $order, array $links, Registry $params): array
     {
         $result = ['pay_instant' => false, 'link' => \Joomla\CMS\Uri\Uri::root(), 'page_title' => Text::_('PLG_RADICALMART_PAYMENT_TELEGRAMCARDS_TITLE'), 'page_message' => Text::_('PLG_RADICALMART_PAYMENT_TELEGRAMCARDS_MSG_SENT')];
+
+        Log::add('TelegramCards onRadicalMartPay: order=' . ($order->number ?? $order->id) . ', payment_plugin=' . ($order->payment->plugin ?? 'none'), Log::INFO, 'plg_radicalmart_payment_telegramcards');
+
         if (empty($order->payment) || empty($order->payment->plugin) || $order->payment->plugin !== $this->_name) {
+            Log::add('TelegramCards: not our plugin, skipping', Log::DEBUG, 'plg_radicalmart_payment_telegramcards');
             return $result;
         }
 
         $chatId = $this->findChatId((int) ($order->created_by ?? 0));
         $token  = $this->resolveProviderToken();
+
+        Log::add('TelegramCards: chatId=' . $chatId . ', hasToken=' . ($token !== '' ? 'yes' : 'no') . ', created_by=' . ($order->created_by ?? 0), Log::INFO, 'plg_radicalmart_payment_telegramcards');
+
         if ($chatId <= 0 || $token === '') {
-            Log::add('TelegramCards: missing chat/token', Log::WARNING, 'plg_radicalmart_payment_telegramcards');
+            Log::add('TelegramCards: missing chat/token, chatId=' . $chatId, Log::WARNING, 'plg_radicalmart_payment_telegramcards');
             return $result;
         }
 
@@ -158,14 +165,20 @@ class PlgRadicalMart_PaymentTelegramcards extends CMSPlugin
         } else {
             $token = (string) ($env === 'prod' ? $this->params->get('rk_token_prod', '') : $this->params->get('rk_token_test', ''));
         }
-        if ($token !== '') return $token;
+        if ($token !== '') {
+            Log::add('TelegramCards: token from plugin params, env=' . $env . ', provider=' . $provider, Log::DEBUG, 'plg_radicalmart_payment_telegramcards');
+            return $token;
+        }
 
         // fallback to component config
-        $cmp = Factory::getApplication()->getParams('com_radicalmart_telegram');
+        $cmp = \Joomla\CMS\Component\ComponentHelper::getParams('com_radicalmart_telegram');
         if ($provider === 'yookassa') {
-            return (string) ($env === 'prod' ? $cmp->get('yookassa_provider_token_prod', '') : $cmp->get('yookassa_provider_token_test', ''));
+            $token = (string) ($env === 'prod' ? $cmp->get('yookassa_provider_token_prod', '') : $cmp->get('yookassa_provider_token_test', ''));
+        } else {
+            $token = (string) ($env === 'prod' ? $cmp->get('robokassa_provider_token_prod', '') : $cmp->get('robokassa_provider_token_test', ''));
         }
-        return (string) ($env === 'prod' ? $cmp->get('robokassa_provider_token_prod', '') : $cmp->get('robokassa_provider_token_test', ''));
+        Log::add('TelegramCards: token from component params, env=' . $env . ', provider=' . $provider . ', hasToken=' . ($token !== '' ? 'yes' : 'no'), Log::DEBUG, 'plg_radicalmart_payment_telegramcards');
+        return $token;
     }
 
     protected function findChatId(int $userId): int
@@ -184,11 +197,14 @@ class PlgRadicalMart_PaymentTelegramcards extends CMSPlugin
 
     protected function sendInvoice(int $chatId, string $title, string $description, string $payload, string $providerToken, string $currency, int $amountMinor): void
     {
-        $token = (string) Factory::getApplication()->getParams('com_radicalmart_telegram')->get('bot_token', '');
-        if ($token === '') throw new \RuntimeException('Bot token is empty');
+        $botToken = (string) \Joomla\CMS\Component\ComponentHelper::getParams('com_radicalmart_telegram')->get('bot_token', '');
+        if ($botToken === '') throw new \RuntimeException('Bot token is empty');
+
+        Log::add('TelegramCards sendInvoice: chatId=' . $chatId . ', amount=' . $amountMinor . ', currency=' . $currency . ', payload=' . $payload, Log::INFO, 'plg_radicalmart_payment_telegramcards');
+
         $http = new Http();
         $http->setOption('transport.curl', [CURLOPT_SSL_VERIFYHOST => 0, CURLOPT_SSL_VERIFYPEER => 0]);
-        $url = 'https://api.telegram.org/bot' . $token . '/sendInvoice';
+        $url = 'https://api.telegram.org/bot' . $botToken . '/sendInvoice';
         $prices = json_encode([[ 'label' => $title, 'amount' => $amountMinor ]], JSON_UNESCAPED_UNICODE);
         $params = [
             'chat_id' => $chatId,
@@ -199,7 +215,15 @@ class PlgRadicalMart_PaymentTelegramcards extends CMSPlugin
             'currency' => $currency,
             'prices' => $prices,
         ];
-        $http->post($url, $params, ['Content-Type' => 'application/x-www-form-urlencoded']);
+        $response = $http->post($url, $params, ['Content-Type' => 'application/x-www-form-urlencoded']);
+
+        $responseBody = (string) ($response->body ?? '');
+        $responseCode = (int) ($response->code ?? 0);
+        Log::add('TelegramCards sendInvoice response: code=' . $responseCode . ', body=' . $responseBody, Log::INFO, 'plg_radicalmart_payment_telegramcards');
+
+        if ($responseCode < 200 || $responseCode >= 300) {
+            throw new \RuntimeException('Telegram API error: ' . $responseBody);
+        }
     }
 
     /**
