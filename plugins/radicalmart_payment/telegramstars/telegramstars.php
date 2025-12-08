@@ -20,13 +20,25 @@ class PlgRadicalMart_PaymentTelegramstars extends CMSPlugin
     protected $autoloadLanguage = true;
     protected $db;
 
-    private function parseCsvIds(string $csv): array
+    /**
+     * Parse IDs from parameter (supports both CSV string and array)
+     */
+    private function parseIds($value): array
     {
-        if ($csv === '') return [];
+        if (empty($value)) return [];
+
+        // If already array (from multiple select field)
+        if (is_array($value)) {
+            return array_map('intval', array_filter($value, 'is_numeric'));
+        }
+
+        // Legacy CSV format
         $out = [];
-        foreach (explode(',', $csv) as $p) {
+        foreach (explode(',', (string) $value) as $p) {
             $p = trim($p);
-            if ($p !== '' && ctype_digit($p)) { $out[] = (int) $p; }
+            if ($p !== '' && is_numeric($p)) {
+                $out[] = (int) $p;
+            }
         }
         return array_values(array_unique($out));
     }
@@ -50,20 +62,30 @@ class PlgRadicalMart_PaymentTelegramstars extends CMSPlugin
 
     private function isAllowedByCategories(object $order): bool
     {
-        $allowedCsv = (string) $this->params->get('allowed_categories', '');
-        $allowed = $this->parseCsvIds($allowedCsv);
-        $excluded = $this->parseCsvIds((string) $this->params->get('excluded_categories', ''));
-        if (empty($allowed)) return true; // no restriction
+        $allowed = $this->parseIds($this->params->get('allowed_categories', []));
+        $excluded = $this->parseIds($this->params->get('excluded_categories', []));
+        if (empty($allowed) && empty($excluded)) return true; // no restriction
         if (empty($order->products) || !is_array($order->products)) return true; // cannot determine -> allow
         foreach ($order->products as $prod) {
             $ids = $this->productCategoryIds($prod);
             if (!empty($ids)) {
-                // If any of product categories in allowed list, accept; otherwise reject
-                $ok = false;
-                foreach ($ids as $cid) { if (in_array($cid, $allowed, true)) { $ok = true; break; } }
+                // If allowed list is set, check if any product category is in allowed list
+                if (!empty($allowed)) {
+                    $ok = false;
+                    foreach ($ids as $cid) {
+                        if (in_array($cid, $allowed, true)) {
+                            $ok = true;
+                            break;
+                        }
+                    }
+                    if (!$ok) return false;
+                }
                 // Check excludes override
-                foreach ($ids as $cid) { if (in_array($cid, $excluded, true)) { $ok = false; break; } }
-                if (!$ok) return false;
+                foreach ($ids as $cid) {
+                    if (in_array($cid, $excluded, true)) {
+                        return false;
+                    }
+                }
             }
         }
         return true;
@@ -71,8 +93,8 @@ class PlgRadicalMart_PaymentTelegramstars extends CMSPlugin
 
     private function isAllowedByProducts(object $order): bool
     {
-        $allowed = $this->parseCsvIds((string) $this->params->get('allowed_products', ''));
-        $excluded = $this->parseCsvIds((string) $this->params->get('excluded_products', ''));
+        $allowed = $this->parseIds($this->params->get('allowed_products', []));
+        $excluded = $this->parseIds($this->params->get('excluded_products', []));
         if (empty($allowed) && empty($excluded)) return true;
         if (empty($order->products) || !is_array($order->products)) return true;
         foreach ($order->products as $prod) {
@@ -91,25 +113,25 @@ class PlgRadicalMart_PaymentTelegramstars extends CMSPlugin
     {
         $app = Factory::getApplication();
         $input = $app->getInput();
-        
+
         // Check if we're in com_radicalmart_telegram component
         $option = $input->getCmd('option', '');
         if ($option === 'com_radicalmart_telegram') {
             return true;
         }
-        
+
         // Check for Telegram WebApp headers/params
         $initData = $input->getString('initData', '') ?: $input->server->getString('HTTP_X_TELEGRAM_INIT_DATA', '');
         if (!empty($initData)) {
             return true;
         }
-        
+
         // Check tmpl=tgwebapp or tmpl=webapp
         $tmpl = $input->getCmd('tmpl', '');
         if (in_array($tmpl, ['tgwebapp', 'webapp'], true)) {
             return true;
         }
-        
+
         return false;
     }
 
@@ -122,7 +144,7 @@ class PlgRadicalMart_PaymentTelegramstars extends CMSPlugin
             $method->disabled = true;
             return;
         }
-        
+
         // Default visible
         $method->disabled = false;
         $method->order = (object) [
@@ -268,5 +290,114 @@ class PlgRadicalMart_PaymentTelegramstars extends CMSPlugin
             'ok' => false,
             'message' => 'Refund для Telegram Stars не поддерживается',
         ];
+    }
+
+    /**
+     * Get current Star rate from Telegram or external source
+     *
+     * Telegram Stars pricing (as of 2024):
+     * - 1 Star ≈ $0.02 USD (Telegram takes 30% commission)
+     * - User pays ~$0.013 per Star for purchases
+     * - Bot owner receives ~70% of Star value
+     *
+     * For RUB conversion, we use CBR rate USD/RUB
+     *
+     * @return float|null Rate in RUB per Star, or null if failed
+     */
+    public function fetchCurrentRate(): ?float
+    {
+        try {
+            // Get USD/RUB rate from CBR
+            $http = new \Joomla\CMS\Http\Http();
+            $response = $http->get('https://www.cbr-xml-daily.ru/daily_json.js');
+
+            if ($response->code !== 200) {
+                Log::add('TelegramStars: CBR API error, code=' . $response->code, Log::WARNING, 'plg_radicalmart_payment_telegramstars');
+                return null;
+            }
+
+            $data = json_decode($response->body, true);
+            if (empty($data['Valute']['USD']['Value'])) {
+                Log::add('TelegramStars: CBR response missing USD rate', Log::WARNING, 'plg_radicalmart_payment_telegramstars');
+                return null;
+            }
+
+            $usdRub = (float) $data['Valute']['USD']['Value'];
+
+            // 1 Star ≈ $0.02 USD (Telegram's approximate rate)
+            // Bot owner receives ~70% after Telegram's commission
+            $starUsd = 0.02;
+            $rubPerStar = round($starUsd * $usdRub, 2);
+
+            Log::add('TelegramStars: fetched rate USD/RUB=' . $usdRub . ', rubPerStar=' . $rubPerStar, Log::INFO, 'plg_radicalmart_payment_telegramstars');
+
+            return $rubPerStar;
+
+        } catch (\Throwable $e) {
+            Log::add('TelegramStars: fetchCurrentRate error: ' . $e->getMessage(), Log::ERROR, 'plg_radicalmart_payment_telegramstars');
+            return null;
+        }
+    }
+
+    /**
+     * Update rate in plugin params (called from task or manually)
+     */
+    public function updateRate(): bool
+    {
+        $rate = $this->fetchCurrentRate();
+        if ($rate === null) {
+            return false;
+        }
+
+        try {
+            $db = $this->db;
+
+            // Get current plugin params
+            $query = $db->getQuery(true)
+                ->select('params')
+                ->from($db->quoteName('#__extensions'))
+                ->where($db->quoteName('element') . ' = ' . $db->quote('telegramstars'))
+                ->where($db->quoteName('folder') . ' = ' . $db->quote('radicalmart_payment'));
+
+            $paramsJson = $db->setQuery($query)->loadResult();
+            $params = new Registry($paramsJson ?: '{}');
+
+            // Update rate and timestamp
+            $params->set('rub_per_star', $rate);
+            $params->set('rate_last_updated', (new \DateTime())->format('Y-m-d H:i:s'));
+
+            // Save back
+            $update = $db->getQuery(true)
+                ->update($db->quoteName('#__extensions'))
+                ->set($db->quoteName('params') . ' = ' . $db->quote($params->toString()))
+                ->where($db->quoteName('element') . ' = ' . $db->quote('telegramstars'))
+                ->where($db->quoteName('folder') . ' = ' . $db->quote('radicalmart_payment'));
+
+            $db->setQuery($update)->execute();
+
+            // Update local params
+            $this->params->set('rub_per_star', $rate);
+            $this->params->set('rate_last_updated', $params->get('rate_last_updated'));
+
+            Log::add('TelegramStars: rate updated to ' . $rate . ' RUB/Star', Log::INFO, 'plg_radicalmart_payment_telegramstars');
+
+            return true;
+
+        } catch (\Throwable $e) {
+            Log::add('TelegramStars: updateRate save error: ' . $e->getMessage(), Log::ERROR, 'plg_radicalmart_payment_telegramstars');
+            return false;
+        }
+    }
+
+    /**
+     * Hook for scheduled task to update rate
+     */
+    public function onTaskTelegramStarsUpdateRate(): bool
+    {
+        if (!(int) $this->params->get('auto_update_rate', 0)) {
+            return true; // Auto-update disabled
+        }
+
+        return $this->updateRate();
     }
 }

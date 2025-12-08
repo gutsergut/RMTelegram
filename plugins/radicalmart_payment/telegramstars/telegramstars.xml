@@ -18,11 +18,38 @@
                     <option value="1">JYES</option>
                 </field>
                 <field name="conversion_percent" type="number" default="5" step="0.1" label="PLG_RADICALMART_PAYMENT_TELEGRAMSTARS_CONV_LABEL" description="PLG_RADICALMART_PAYMENT_TELEGRAMSTARS_CONV_DESC"/>
-                <field name="rub_per_star" type="number" default="10" step="0.1" label="PLG_RADICALMART_PAYMENT_TELEGRAMSTARS_RUB_PER_STAR_LABEL" description="PLG_RADICALMART_PAYMENT_TELEGRAMSTARS_RUB_PER_STAR_DESC"/>
-                <field name="allowed_categories" type="text" label="PLG_RADICALMART_PAYMENT_TELEGRAMSTARS_ALLOWED_CATS_LABEL" description="PLG_RADICALMART_PAYMENT_TELEGRAMSTARS_ALLOWED_CATS_DESC"/>
-                <field name="allowed_products" type="text" label="PLG_RADICALMART_PAYMENT_TELEGRAMSTARS_ALLOWED_PROD_LABEL" description="PLG_RADICALMART_PAYMENT_TELEGRAMSTARS_ALLOWED_PROD_DESC"/>
-                <field name="excluded_categories" type="text" label="PLG_RADICALMART_PAYMENT_TELEGRAMSTARS_EXCLUDED_CATS_LABEL" description="PLG_RADICALMART_PAYMENT_TELEGRAMSTARS_EXCLUDED_CATS_DESC"/>
-                <field name="excluded_products" type="text" label="PLG_RADICALMART_PAYMENT_TELEGRAMSTARS_EXCLUDED_PROD_LABEL" description="PLG_RADICALMART_PAYMENT_TELEGRAMSTARS_EXCLUDED_PROD_DESC"/>
+                <field name="rub_per_star" type="number" default="2" step="0.01" label="PLG_RADICALMART_PAYMENT_TELEGRAMSTARS_RUB_PER_STAR_LABEL" description="PLG_RADICALMART_PAYMENT_TELEGRAMSTARS_RUB_PER_STAR_DESC"/>
+                <field name="auto_update_rate" type="radio" default="0" label="PLG_RADICALMART_PAYMENT_TELEGRAMSTARS_AUTO_RATE_LABEL" description="PLG_RADICALMART_PAYMENT_TELEGRAMSTARS_AUTO_RATE_DESC">
+                    <option value="0">JNO</option>
+                    <option value="1">JYES</option>
+                </field>
+                <field name="rate_last_updated" type="text" readonly="true" label="PLG_RADICALMART_PAYMENT_TELEGRAMSTARS_RATE_UPDATED_LABEL" description="PLG_RADICALMART_PAYMENT_TELEGRAMSTARS_RATE_UPDATED_DESC"/>
+            </fieldset>
+            <fieldset name="restrictions" label="PLG_RADICALMART_PAYMENT_TELEGRAMSTARS_FIELDSET_RESTRICTIONS">
+                <field name="allowed_categories"
+                       type="categories"
+                       multiple="true"
+                       label="PLG_RADICALMART_PAYMENT_TELEGRAMSTARS_ALLOWED_CATS_LABEL"
+                       description="PLG_RADICALMART_PAYMENT_TELEGRAMSTARS_ALLOWED_CATS_DESC"
+                       addfieldprefix="Joomla\Component\RadicalMart\Administrator\Field"/>
+                <field name="excluded_categories"
+                       type="categories"
+                       multiple="true"
+                       label="PLG_RADICALMART_PAYMENT_TELEGRAMSTARS_EXCLUDED_CATS_LABEL"
+                       description="PLG_RADICALMART_PAYMENT_TELEGRAMSTARS_EXCLUDED_CATS_DESC"
+                       addfieldprefix="Joomla\Component\RadicalMart\Administrator\Field"/>
+                <field name="allowed_products"
+                       type="modal_product"
+                       multiple="true"
+                       label="PLG_RADICALMART_PAYMENT_TELEGRAMSTARS_ALLOWED_PROD_LABEL"
+                       description="PLG_RADICALMART_PAYMENT_TELEGRAMSTARS_ALLOWED_PROD_DESC"
+                       addfieldprefix="Joomla\Component\RadicalMart\Administrator\Field"/>
+                <field name="excluded_products"
+                       type="modal_product"
+                       multiple="true"
+                       label="PLG_RADICALMART_PAYMENT_TELEGRAMSTARS_EXCLUDED_PROD_LABEL"
+                       description="PLG_RADICALMART_PAYMENT_TELEGRAMSTARS_EXCLUDED_PROD_DESC"
+                       addfieldprefix="Joomla\Component\RadicalMart\Administrator\Field"/>
             </fieldset>
         </fields>
     </config>
