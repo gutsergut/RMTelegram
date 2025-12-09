@@ -101,3 +101,24 @@ CREATE TABLE IF NOT EXISTS `#__radicalmart_telegram_ratelimits` (
   UNIQUE KEY `uniq_scope_key_window` (`scope`, `rkey`, `window_start`),
   KEY `idx_window` (`window_start`)
 ) ENGINE = InnoDB DEFAULT CHARSET = utf8mb4;
+
+-- Abandoned cart reminders tracking
+CREATE TABLE IF NOT EXISTS `#__radicalmart_telegram_cart_reminders` (
+  `id` INT UNSIGNED NOT NULL AUTO_INCREMENT,
+  `chat_id` BIGINT NOT NULL COMMENT 'Telegram chat_id',
+  `cart_hash` VARCHAR(64) NOT NULL COMMENT 'Hash of cart contents for change detection',
+  `cart_total` DECIMAL(12, 2) NOT NULL DEFAULT 0 COMMENT 'Cart total for reference',
+  `cart_items_count` INT NOT NULL DEFAULT 0 COMMENT 'Number of items in cart',
+  `last_activity` DATETIME NOT NULL COMMENT 'Last cart activity timestamp',
+  `reminder_count` INT NOT NULL DEFAULT 0 COMMENT 'Number of reminders sent',
+  `last_reminder_at` DATETIME NULL COMMENT 'When last reminder was sent',
+  `next_reminder_at` DATETIME NULL COMMENT 'Scheduled time for next reminder',
+  `completed` TINYINT (1) NOT NULL DEFAULT 0 COMMENT '1=converted to order, 2=dismissed, 3=expired',
+  `completed_at` DATETIME NULL,
+  `order_id` INT NULL COMMENT 'Order ID if converted',
+  `created` DATETIME NOT NULL,
+  PRIMARY KEY (`id`),
+  UNIQUE KEY `uniq_chat` (`chat_id`),
+  KEY `idx_next_reminder` (`next_reminder_at`, `completed`),
+  KEY `idx_last_activity` (`last_activity`)
+) ENGINE = InnoDB DEFAULT CHARSET = utf8mb4;

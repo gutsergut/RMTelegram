@@ -36,146 +36,141 @@ class WebhookCommand extends AbstractCommand
         if (empty($botToken)) {
             $output->writeln('<error>Bot token not configured in component settings.</error>');
             return 1;
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-}    }        }            return 1;            $output->writeln('<error>Failed to get webhook info: ' . $e->getMessage() . '</error>');        } catch (\Exception $e) {            return 0;            }                }                    $output->writeln('  Allowed updates: ' . implode(', ', $info['allowed_updates']));                if (!empty($info['allowed_updates'])) {                                }                    $output->writeln('  Max connections: ' . $info['max_connections']);                if (!empty($info['max_connections'])) {                                }                    $output->writeln('  IP address: ' . $info['ip_address']);                if (!empty($info['ip_address'])) {                                }                    $output->writeln('  <error>Error message: ' . ($info['last_error_message'] ?? 'N/A') . '</error>');                    $output->writeln('  <error>Last error: ' . date('Y-m-d H:i:s', $info['last_error_date']) . '</error>');                if (!empty($info['last_error_date'])) {                                $output->writeln('  Pending updates: ' . ($info['pending_update_count'] ?? 0));                $output->writeln('  Has custom certificate: ' . ($info['has_custom_certificate'] ? 'Yes' : 'No'));            if (!empty($info['url'])) {                        $output->writeln('  URL: ' . ($info['url'] ?: '<comment>(not set)</comment>'));            $output->writeln('<info>Webhook Info:</info>');                        $info = $data['result'];            }                throw new \Exception($data['description'] ?? 'Unknown API error');            if (!$data || !isset($data['ok']) || !$data['ok']) {            $data = json_decode($response, true);            }                throw new \Exception('Connection error');            if ($response === false) {            $response = @file_get_contents($apiUrl);            $apiUrl = 'https://api.telegram.org/bot' . $botToken . '/getWebhookInfo';        try {    {    protected function getWebhookInfo(OutputInterface $output, string $botToken): int    }        }            return 1;            $output->writeln('<error>Failed to delete webhook: ' . $e->getMessage() . '</error>');        } catch (\Exception $e) {            return 0;            $output->writeln('<info>✓ Webhook deleted successfully!</info>');            }                throw new \Exception($data['description'] ?? 'Unknown API error');            if (!$data || !isset($data['ok']) || !$data['ok']) {            $data = json_decode($response, true);            }                throw new \Exception('Connection error');            if ($response === false) {            $response = @file_get_contents($apiUrl);            $apiUrl = 'https://api.telegram.org/bot' . $botToken . '/deleteWebhook';        try {        $output->writeln('<info>Deleting webhook...</info>');    {    protected function deleteWebhook(OutputInterface $output, string $botToken): int    }        }            return 1;            $output->writeln('<error>Failed to set webhook: ' . $e->getMessage() . '</error>');        } catch (\Exception $e) {            return 0;            $output->writeln('<info>✓ Webhook set successfully!</info>');            }                throw new \Exception($data['description'] ?? 'Unknown API error');            if (!$data || !isset($data['ok']) || !$data['ok']) {            $data = json_decode($response, true);            }                throw new \Exception('Connection error: ' . $error);            if ($response === false) {            curl_close($ch);            $error = curl_error($ch);            $response = curl_exec($ch);            curl_setopt($ch, CURLOPT_TIMEOUT, 30);            curl_setopt($ch, CURLOPT_RETURNTRANSFER, true);            curl_setopt($ch, CURLOPT_POSTFIELDS, http_build_query($postData));            curl_setopt($ch, CURLOPT_POST, true);            $ch = curl_init($apiUrl);                        $postData = ['url' => $webhookUrl];            $apiUrl = 'https://api.telegram.org/bot' . $botToken . '/setWebhook';        try {        $output->writeln('<info>Setting webhook to: ' . $webhookUrl . '</info>');        }            $webhookUrl = Uri::root() . 'index.php?option=com_radicalmart_telegram&task=webhook.receive&secret=' . urlencode($webhookSecret);            }                return 1;                $output->writeln('<error>Webhook secret not configured. Set it in component settings or use --url option.</error>');            if (empty($webhookSecret)) {            $webhookSecret = $params->get('webhook_secret', '');        } else {            $webhookUrl = $customUrl;        if ($customUrl) {                $customUrl = $input->getOption('url');    {    protected function setWebhook(InputInterface $input, OutputInterface $output, string $botToken, $params): int    }        }                return 1;                $output->writeln('<error>Unknown action: ' . $action . '. Use: set, delete, or info</error>');            default:                return $this->getWebhookInfo($output, $botToken);            case 'status':            case 'info':                return $this->deleteWebhook($output, $botToken);            case 'remove':            case 'delete':                return $this->setWebhook($input, $output, $botToken, $params);            case 'set':        switch ($action) {        }
+        }
+
+        switch ($action) {
+            case 'set':
+                return $this->setWebhook($input, $output, $botToken, $params);
+            case 'delete':
+            case 'remove':
+                return $this->deleteWebhook($output, $botToken);
+            case 'info':
+            case 'status':
+                return $this->getWebhookInfo($output, $botToken);
+            default:
+                $output->writeln('<error>Unknown action: ' . $action . '. Use: set, delete, or info</error>');
+                return 1;
+        }
+    }
+
+    protected function setWebhook(InputInterface $input, OutputInterface $output, string $botToken, $params): int
+    {
+        $customUrl = $input->getOption('url');
+
+        if ($customUrl) {
+            $webhookUrl = $customUrl;
+        } else {
+            $webhookSecret = $params->get('webhook_secret', '');
+            if (empty($webhookSecret)) {
+                $output->writeln('<error>Webhook secret not configured. Set it in component settings or use --url option.</error>');
+                return 1;
+            }
+            $webhookUrl = Uri::root() . 'index.php?option=com_radicalmart_telegram&task=webhook.receive&secret=' . urlencode($webhookSecret);
+        }
+
+        $output->writeln('<info>Setting webhook to: ' . $webhookUrl . '</info>');
+
+        try {
+            $apiUrl = 'https://api.telegram.org/bot' . $botToken . '/setWebhook';
+            $postData = ['url' => $webhookUrl];
+
+            $ch = curl_init($apiUrl);
+            curl_setopt($ch, CURLOPT_POST, true);
+            curl_setopt($ch, CURLOPT_POSTFIELDS, http_build_query($postData));
+            curl_setopt($ch, CURLOPT_RETURNTRANSFER, true);
+            curl_setopt($ch, CURLOPT_TIMEOUT, 30);
+            $response = curl_exec($ch);
+            $error = curl_error($ch);
+            curl_close($ch);
+
+            if ($response === false) {
+                throw new \Exception('Connection error: ' . $error);
+            }
+
+            $data = json_decode($response, true);
+            if (!$data || !isset($data['ok']) || !$data['ok']) {
+                throw new \Exception($data['description'] ?? 'Unknown API error');
+            }
+
+            $output->writeln('<info>✓ Webhook set successfully!</info>');
+            return 0;
+        } catch (\Exception $e) {
+            $output->writeln('<error>Failed to set webhook: ' . $e->getMessage() . '</error>');
+            return 1;
+        }
+    }
+
+    protected function deleteWebhook(OutputInterface $output, string $botToken): int
+    {
+        $output->writeln('<info>Deleting webhook...</info>');
+
+        try {
+            $apiUrl = 'https://api.telegram.org/bot' . $botToken . '/deleteWebhook';
+            $response = @file_get_contents($apiUrl);
+
+            if ($response === false) {
+                throw new \Exception('Connection error');
+            }
+
+            $data = json_decode($response, true);
+            if (!$data || !isset($data['ok']) || !$data['ok']) {
+                throw new \Exception($data['description'] ?? 'Unknown API error');
+            }
+
+            $output->writeln('<info>✓ Webhook deleted successfully!</info>');
+            return 0;
+        } catch (\Exception $e) {
+            $output->writeln('<error>Failed to delete webhook: ' . $e->getMessage() . '</error>');
+            return 1;
+        }
+    }
+
+    protected function getWebhookInfo(OutputInterface $output, string $botToken): int
+    {
+        try {
+            $apiUrl = 'https://api.telegram.org/bot' . $botToken . '/getWebhookInfo';
+            $response = @file_get_contents($apiUrl);
+
+            if ($response === false) {
+                throw new \Exception('Connection error');
+            }
+
+            $data = json_decode($response, true);
+            if (!$data || !isset($data['ok']) || !$data['ok']) {
+                throw new \Exception($data['description'] ?? 'Unknown API error');
+            }
+
+            $info = $data['result'];
+
+            $output->writeln('<info>Webhook Info:</info>');
+            $output->writeln('  URL: ' . ($info['url'] ?: '<comment>(not set)</comment>'));
+
+            if (!empty($info['url'])) {
+                $output->writeln('  Has custom certificate: ' . ($info['has_custom_certificate'] ? 'Yes' : 'No'));
+                $output->writeln('  Pending updates: ' . ($info['pending_update_count'] ?? 0));
+
+                if (!empty($info['last_error_date'])) {
+                    $output->writeln('  <error>Last error: ' . date('Y-m-d H:i:s', $info['last_error_date']) . '</error>');
+                    $output->writeln('  <error>Error message: ' . ($info['last_error_message'] ?? 'N/A') . '</error>');
+                }
+
+                if (!empty($info['ip_address'])) {
+                    $output->writeln('  IP address: ' . $info['ip_address']);
+                }
+
+                if (!empty($info['max_connections'])) {
+                    $output->writeln('  Max connections: ' . $info['max_connections']);
+                }
+
+                if (!empty($info['allowed_updates'])) {
+                    $output->writeln('  Allowed updates: ' . implode(', ', $info['allowed_updates']));
+                }
+            }
+
+            return 0;
+        } catch (\Exception $e) {
+            $output->writeln('<error>Failed to get webhook info: ' . $e->getMessage() . '</error>');
+            return 1;
+        }
+    }
+}

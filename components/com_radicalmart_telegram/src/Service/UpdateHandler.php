@@ -461,6 +461,47 @@ class UpdateHandler
             return;
         }
 
+        // Abandoned cart reminder: stop reminders
+        if ($data === 'cart_reminder_stop') {
+            try {
+                $db = Factory::getContainer()->get('DatabaseDriver');
+                $now = (new \Joomla\CMS\Date\Date())->toSql();
+
+                // Mark cart reminder as dismissed
+                $query = $db->getQuery(true)
+                    ->update($db->quoteName('#__radicalmart_telegram_cart_reminders'))
+                    ->set([
+                        $db->quoteName('completed') . ' = 2',
+                        $db->quoteName('completed_at') . ' = ' . $db->quote($now),
+                    ])
+                    ->where($db->quoteName('chat_id') . ' = ' . (int) $chatId);
+                $db->setQuery($query)->execute();
+
+                // Optionally disable future cart reminders for this user
+                $query = $db->getQuery(true)
+                    ->update($db->quoteName('#__radicalmart_telegram_users'))
+                    ->set($db->quoteName('consent_cart_reminders') . ' = 0')
+                    ->where($db->quoteName('chat_id') . ' = ' . (int) $chatId);
+                $db->setQuery($query)->execute();
+
+                // Update the message
+                if ($messageId) {
+                    $this->client->editMessageText(
+                        $chatId,
+                        $messageId,
+                        Text::_('COM_RADICALMART_TELEGRAM_CART_REMINDER_STOPPED')
+                    );
+                } else {
+                    $this->client->sendMessage($chatId, Text::_('COM_RADICALMART_TELEGRAM_CART_REMINDER_STOPPED'));
+                }
+
+                LogHelper::debug("Cart reminder stopped for chat {$chatId}");
+            } catch (\Throwable $e) {
+                LogHelper::error('Failed to stop cart reminders: ' . $e->getMessage());
+            }
+            return;
+        }
+
         // Email collection callbacks
         if ($data === 'email_skip') {
             $this->store->setState($chatId, 'idle');

@@ -34,6 +34,7 @@ use Joomla\Component\RadicalMartTelegram\Site\Service\OrderService;
 use Joomla\Component\RadicalMartTelegram\Site\Service\ProfileService;
 use Joomla\Component\RadicalMartTelegram\Site\Service\PvzService;
 use Joomla\Component\RadicalMartTelegram\Site\Helper\EmailVerificationHelper;
+use Joomla\Component\RadicalMartTelegram\Administrator\Service\AbandonedCartService;
 
 class ApiController extends BaseController
 {
@@ -403,6 +404,10 @@ class ApiController extends BaseController
         }
 
         $cart = $res['cart'] ?? null;
+
+        // Track cart activity for abandoned cart reminders
+        $this->trackAbandonedCart($chat, $cart);
+
         echo new JsonResponse(['cart' => $cart]);
         $app->close();
     }
@@ -451,6 +456,60 @@ class ApiController extends BaseController
             'promo' => $promoInfo
         ]);
         $app->close();
+    }
+
+    /**
+     * Track cart activity for abandoned cart reminders
+     *
+     * @param int         $chatId
+     * @param object|null $cart
+     *
+     * @return void
+     */
+    protected function trackAbandonedCart(int $chatId, $cart): void
+    {
+        if (!$cart || $chatId <= 0) {
+            return;
+        }
+
+        try {
+            $abandonedService = new AbandonedCartService();
+
+            if (!$abandonedService->isEnabled()) {
+                return;
+            }
+
+            // Prepare cart data for tracking
+            $items = [];
+            $itemsCount = 0;
+            $total = 0;
+
+            if (isset($cart->products) && is_array($cart->products)) {
+                foreach ($cart->products as $product) {
+                    $items[] = [
+                        'id' => $product->id ?? $product->product_id ?? 0,
+                        'quantity' => $product->quantity ?? $product->qty ?? 1,
+                    ];
+                    $itemsCount++;
+                }
+            }
+
+            if (isset($cart->total)) {
+                $total = is_numeric($cart->total) ? (float) $cart->total : 0;
+            }
+
+            $cartData = [
+                'items' => $items,
+                'items_count' => $itemsCount,
+                'total' => $total,
+            ];
+
+            $abandonedService->trackCartActivity($chatId, $cartData);
+
+        } catch (\Throwable $e) {
+            // Silently ignore tracking errors - don't break cart operations
+            LogHelper::log('AbandonedCart tracking error: ' . $e->getMessage());
+        }
     }
 
     /**

@@ -193,4 +193,23 @@
                      <option value="0">JNO</option>
               </field>
        </fieldset>
+
+       <fieldset name="abandoned_cart" label="COM_RADICALMART_TELEGRAM_FIELDSET_ABANDONED_CART">
+              <field name="abandoned_cart_enabled" type="radio" default="0" label="COM_RADICALMART_TELEGRAM_ABANDONED_CART_ENABLED_LABEL" description="COM_RADICALMART_TELEGRAM_ABANDONED_CART_ENABLED_DESC">
+                     <option value="1">JYES</option>
+                     <option value="0">JNO</option>
+              </field>
+              <field name="abandoned_cart_require_consent" type="radio" default="1" label="COM_RADICALMART_TELEGRAM_ABANDONED_CART_REQUIRE_CONSENT_LABEL" description="COM_RADICALMART_TELEGRAM_ABANDONED_CART_REQUIRE_CONSENT_DESC">
+                     <option value="1">JYES</option>
+                     <option value="0">JNO</option>
+              </field>
+              <field name="abandoned_cart_first_delay" type="number" default="60" min="5" max="1440" label="COM_RADICALMART_TELEGRAM_ABANDONED_CART_FIRST_DELAY_LABEL" description="COM_RADICALMART_TELEGRAM_ABANDONED_CART_FIRST_DELAY_DESC" class="input-small" />
+              <field name="abandoned_cart_second_delay" type="number" default="1440" min="60" max="10080" label="COM_RADICALMART_TELEGRAM_ABANDONED_CART_SECOND_DELAY_LABEL" description="COM_RADICALMART_TELEGRAM_ABANDONED_CART_SECOND_DELAY_DESC" class="input-small" />
+              <field name="abandoned_cart_third_delay" type="number" default="4320" min="1440" max="20160" label="COM_RADICALMART_TELEGRAM_ABANDONED_CART_THIRD_DELAY_LABEL" description="COM_RADICALMART_TELEGRAM_ABANDONED_CART_THIRD_DELAY_DESC" class="input-small" />
+              <field name="abandoned_cart_max_reminders" type="number" default="3" min="1" max="5" label="COM_RADICALMART_TELEGRAM_ABANDONED_CART_MAX_REMINDERS_LABEL" description="COM_RADICALMART_TELEGRAM_ABANDONED_CART_MAX_REMINDERS_DESC" class="input-small" />
+              <field name="abandoned_cart_quiet_hours_start" type="number" default="22" min="0" max="23" label="COM_RADICALMART_TELEGRAM_ABANDONED_CART_QUIET_START_LABEL" description="COM_RADICALMART_TELEGRAM_ABANDONED_CART_QUIET_START_DESC" class="input-mini" />
+              <field name="abandoned_cart_quiet_hours_end" type="number" default="9" min="0" max="23" label="COM_RADICALMART_TELEGRAM_ABANDONED_CART_QUIET_END_LABEL" description="COM_RADICALMART_TELEGRAM_ABANDONED_CART_QUIET_END_DESC" class="input-mini" />
+              <field name="abandoned_cart_min_total" type="number" default="500" min="0" step="100" label="COM_RADICALMART_TELEGRAM_ABANDONED_CART_MIN_TOTAL_LABEL" description="COM_RADICALMART_TELEGRAM_ABANDONED_CART_MIN_TOTAL_DESC" class="input-small" />
+              <field name="abandoned_cart_expire_days" type="number" default="7" min="1" max="30" label="COM_RADICALMART_TELEGRAM_ABANDONED_CART_EXPIRE_DAYS_LABEL" description="COM_RADICALMART_TELEGRAM_ABANDONED_CART_EXPIRE_DAYS_DESC" class="input-small" />
+       </fieldset>
 </config>
