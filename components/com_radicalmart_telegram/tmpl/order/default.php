@@ -234,7 +234,7 @@ $orderId = $order ? (int) $order->id : 0;
 
                 <?php if ($shippingCost): ?>
                 <div class="uk-margin-small-top">
-                    <span class="uk-text-muted"><?php echo Text::_('COM_RADICALMART_SHIPPING_COST'); ?>:</span>
+                    <span class="uk-text-muted"><?php echo Text::_('COM_RADICALMART_TELEGRAM_SHIPPING_COST'); ?>:</span>
                     <strong><?php echo $shippingCost; ?></strong>
                 </div>
                 <?php endif; ?>
