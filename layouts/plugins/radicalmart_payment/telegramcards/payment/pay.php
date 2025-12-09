@@ -116,9 +116,10 @@ $orderPageUrl = $root . '/index.php?option=com_radicalmart_telegram&view=order&i
     <div class="cards-message"><?php echo htmlspecialchars($page_message ?: 'Счёт на оплату отправлен в Telegram'); ?></div>
 
     <div id="cards-webapp-notice" style="display: none;">
-        <div class="cards-hint">Переходим к заказу...</div>
+        <div class="cards-hint">Ожидаем оплату...</div>
         <div class="cards-closing">
             <span uk-spinner="ratio: 0.8"></span>
+            <div id="poll-status" style="margin-top: 10px; font-size: 12px; color: #999;"></div>
         </div>
     </div>
 
@@ -138,8 +139,10 @@ $orderPageUrl = $root . '/index.php?option=com_radicalmart_telegram&view=order&i
     const tg = window.Telegram?.WebApp;
     const webappNotice = document.getElementById('cards-webapp-notice');
     const browserNotice = document.getElementById('cards-browser-notice');
+    const pollStatus = document.getElementById('poll-status');
     const orderId = <?php echo $orderId; ?>;
     const orderPageUrl = '<?php echo $orderPageUrl; ?>';
+    const initialStatusId = <?php echo isset($order) && !empty($order->status) ? (int) $order->status : 0; ?>;
 
     if (tg && tg.initData) {
         // We're inside Telegram WebApp
@@ -148,19 +151,58 @@ $orderPageUrl = $root . '/index.php?option=com_radicalmart_telegram&view=order&i
 
         tg.ready();
 
-        // Get chat_id from initData and add to URL
+        // Get chat_id from initData
         const chatId = tg.initDataUnsafe?.user?.id || 0;
+
+        // Build order page URL with chat
         let redirectUrl = orderPageUrl;
         if (chatId > 0) {
             redirectUrl += '&chat=' + chatId;
         }
-        // Mark as awaiting payment for auto-refresh
-        redirectUrl += '&awaiting_payment=1';
 
-        // Redirect to order page after brief delay
-        setTimeout(function() {
-            window.location.href = redirectUrl;
-        }, 1000);
+        // Poll order status every 3 seconds
+        // If status changes (payment completed), redirect to order page
+        let pollCount = 0;
+        const maxPolls = 120; // 6 minutes max
+        const pollInterval = 3000; // 3 seconds
+
+        function checkStatus() {
+            pollCount++;
+            if (pollCount > maxPolls) {
+                if (pollStatus) pollStatus.textContent = 'Время ожидания истекло';
+                return;
+            }
+
+            const statusUrl = '<?php echo $root; ?>/index.php?option=com_radicalmart_telegram&task=api.orderStatus&format=json&id=' + orderId + '&chat=' + chatId;
+
+            fetch(statusUrl)
+                .then(r => r.json())
+                .then(data => {
+                    if (data.success && data.data) {
+                        const currentStatusId = parseInt(data.data.status_id) || 0;
+
+                        // If status changed from initial - payment completed!
+                        if (currentStatusId > 0 && currentStatusId !== initialStatusId) {
+                            if (pollStatus) pollStatus.textContent = 'Оплата получена! Переходим...';
+                            setTimeout(() => {
+                                window.location.href = redirectUrl;
+                            }, 500);
+                            return;
+                        }
+                    }
+                    // Continue polling
+                    setTimeout(checkStatus, pollInterval);
+                })
+                .catch(err => {
+                    console.log('Poll error:', err);
+                    // Continue polling even on error
+                    setTimeout(checkStatus, pollInterval);
+                });
+        }
+
+        // Start polling after small delay (let invoice be sent first)
+        setTimeout(checkStatus, 2000);
+
     } else {
         // Regular browser - show link to bot
         webappNotice.style.display = 'none';

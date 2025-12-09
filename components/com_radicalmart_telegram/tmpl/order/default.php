@@ -172,24 +172,50 @@ $orderId = $order ? (int) $order->id : 0;
                 <div class="uk-text-bold"><?php echo $order->shipping->get('title'); ?></div>
 
                 <?php
-                // Get PVZ data - try different field names
-                $pvzName = $order->shipping->get('pvz_name') ?: $order->shipping->get('point_name') ?: '';
-                $pvzAddress = $order->shipping->get('pvz_address') ?: $order->shipping->get('point_address') ?: '';
-                $pvzCode = $order->shipping->get('pvz_code') ?: $order->shipping->get('point_code') ?: '';
+                // Get PVZ data from ApiShip structure: data.point.title, data.point.address
+                $shippingData = $order->shipping->get('data');
+                $pvzName = '';
+                $pvzAddress = '';
 
-                // Try to get from nested 'order' data
-                $orderData = $order->shipping->get('order');
-                if (is_object($orderData) || is_array($orderData)) {
-                    $orderData = (array) $orderData;
-                    if (empty($pvzName) && !empty($orderData['point_name'])) $pvzName = $orderData['point_name'];
-                    if (empty($pvzAddress) && !empty($orderData['point_address'])) $pvzAddress = $orderData['point_address'];
-                    if (empty($pvzAddress) && !empty($orderData['address'])) $pvzAddress = is_array($orderData['address']) ? implode(', ', array_filter($orderData['address'])) : $orderData['address'];
+                if ($shippingData) {
+                    if (is_object($shippingData)) $shippingData = (array) $shippingData;
+
+                    // ApiShip stores point info in data.point
+                    $point = $shippingData['point'] ?? null;
+                    if ($point) {
+                        if (is_object($point)) $point = (array) $point;
+                        $pvzName = $point['title'] ?? $point['name'] ?? '';
+                        $pvzAddress = $point['address'] ?? '';
+                    }
+                }
+
+                // Fallback to old field names
+                if (empty($pvzName)) {
+                    $pvzName = $order->shipping->get('pvz_name') ?: $order->shipping->get('point_name') ?: '';
+                }
+                if (empty($pvzAddress)) {
+                    $pvzAddress = $order->shipping->get('pvz_address') ?: $order->shipping->get('point_address') ?: '';
                 }
 
                 // Regular address (for courier delivery)
                 $address = $order->shipping->get('address');
                 if (is_array($address)) {
                     $address = implode(', ', array_filter($address));
+                }
+
+                // Get shipping cost from price.display or price.final
+                $priceData = $order->shipping->get('price');
+                $shippingCost = '';
+                if ($priceData) {
+                    if (is_object($priceData)) $priceData = (array) $priceData;
+                    $shippingCost = $priceData['display'] ?? '';
+                    if (empty($shippingCost) && !empty($priceData['final'])) {
+                        $shippingCost = number_format((float)$priceData['final'], 0, '', ' ') . ' ₽';
+                    }
+                }
+                // Fallback
+                if (empty($shippingCost)) {
+                    $shippingCost = $order->shipping->get('final_string') ?: '';
                 }
                 ?>
 
@@ -206,10 +232,10 @@ $orderId = $order ? (int) $order->id : 0;
                 <div class="uk-text-muted uk-margin-small-top"><?php echo htmlspecialchars($address); ?></div>
                 <?php endif; ?>
 
-                <?php if ($cost = $order->shipping->get('final_string')): ?>
+                <?php if ($shippingCost): ?>
                 <div class="uk-margin-small-top">
                     <span class="uk-text-muted"><?php echo Text::_('COM_RADICALMART_SHIPPING_COST'); ?>:</span>
-                    <strong><?php echo $cost; ?></strong>
+                    <strong><?php echo $shippingCost; ?></strong>
                 </div>
                 <?php endif; ?>
             </div>
