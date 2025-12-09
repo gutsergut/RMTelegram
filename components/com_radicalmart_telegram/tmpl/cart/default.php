@@ -51,16 +51,16 @@ $chatId = $tgUser['chat_id'] ?? 0;
     })();
     </script>
     <style>
-        html, body { background-color: var(--tg-theme-bg-color, #ffffff); color: var(--tg-theme-text-color, #222); }
+        html, body { background-color: #ffffff !important; color: #222222 !important; }
         body { padding-bottom: 70px; padding-top: env(safe-area-inset-top, 0px); } /* Space for bottom nav */
         body.contentpane { padding: 0 !important; margin: 0 !important; }
         /* Fullscreen mode top padding for Telegram header buttons */
         :root { --tg-fullscreen-padding: <?php echo $fullscreenPadding; ?>px; }
         .tg-fullscreen-padding { padding-top: var(--tg-fullscreen-padding, 60px); }
 
-        /* Bottom fixed navigation */
-        #app-bottom-nav { position: fixed; left: 0; right: 0; bottom: 0; z-index: 10005; background: var(--tg-theme-bg-color, #fff); border-top: 1px solid rgba(0,0,0,0.1); }
-        #app-bottom-nav .uk-navbar-nav > li > a { padding: 4px 8px; line-height: 1.05; min-height: 50px; position: relative; }
+        /* Bottom fixed navigation - always light */
+        #app-bottom-nav { position: fixed; left: 0; right: 0; bottom: 0; z-index: 10005; background: #ffffff !important; border-top: 1px solid rgba(0,0,0,0.1); }
+        #app-bottom-nav .uk-navbar-nav > li > a { padding: 4px 8px; line-height: 1.05; min-height: 50px; position: relative; color: #222222 !important; }
         #app-bottom-nav .tg-safe-text { display: inline-flex; align-items: center; }
         #app-bottom-nav .bottom-tab { display: flex; flex-direction: column; align-items: center; justify-content: center; font-size: 10px; }
         #app-bottom-nav .bottom-tab .caption { display: block; margin-top: 1px; font-size: 10px; }
@@ -77,12 +77,6 @@ $chatId = $tgUser['chat_id'] ?? 0;
         .cart-total-block { background: rgba(0,0,0,0.03); padding: 15px; border-radius: 8px; margin-top: 20px; }
         .cart-total-row { display: flex; justify-content: space-between; margin-bottom: 5px; }
         .cart-total-final { font-size: 1.2em; font-weight: bold; margin-top: 10px; border-top: 1px solid rgba(0,0,0,0.1); padding-top: 10px; }
-
-        /* Dark mode adjustments */
-        .rmt-dark #app-bottom-nav { background: #1b1c1d; border-top-color: rgba(255,255,255,0.1); }
-        .rmt-dark .cart-qty-btn { border-color: #444; color: #fff; }
-        .rmt-dark .cart-total-block { background: rgba(255,255,255,0.05); }
-        .rmt-dark .cart-item-meta { color: #aaa; }
 
         #cart-badge { position: absolute; top: 2px; right: 6px; background: #f0506e; color: white; border-radius: 10px; padding: 2px 6px; font-size: 10px; font-weight: bold; min-width: 18px; text-align: center; }
     </style>

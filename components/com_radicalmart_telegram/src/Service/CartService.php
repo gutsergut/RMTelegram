@@ -69,6 +69,34 @@ class CartService
     }
 
     /**
+     * Привязывает модель корзины к корзине пользователя (по user_id)
+     * Это важно для правильной работы с корзиной в Telegram WebApp контексте,
+     * где cookies могут быть потеряны между сессиями
+     */
+    protected function bindUserCart(CartModel $model, int $userId): void
+    {
+        if ($userId <= 0) {
+            return;
+        }
+
+        $db = Factory::getContainer()->get('DatabaseDriver');
+        $query = $db->getQuery(true)
+            ->select(['id', 'code'])
+            ->from($db->quoteName('#__radicalmart_carts'))
+            ->where($db->quoteName('user_id') . ' = :userId')
+            ->order($db->quoteName('modified') . ' DESC')
+            ->setLimit(1);
+        $query->bind(':userId', $userId, \Joomla\Database\ParameterType::INTEGER);
+        $db->setQuery($query);
+        $userCart = $db->loadObject();
+
+        if ($userCart && $userCart->id > 0) {
+            LogHelper::debug('CartService::bindUserCart found cart id=' . $userCart->id . ' for user=' . $userId);
+            $model->setCookies((int) $userCart->id, (string) $userCart->code);
+        }
+    }
+
+    /**
      * Добавить товар в корзину
      * Корзина привязывается к user_id если пользователь связан
      */
@@ -81,6 +109,11 @@ class CartService
         LogHelper::debug('CartService::addProduct linkedUserId=' . ($linkedUserId ?? 'null'));
 
         $model = new CartModel();
+
+        // Если пользователь связан — привязываем его корзину
+        if ($linkedUserId) {
+            $this->bindUserCart($model, $linkedUserId);
+        }
 
         $res = $model->addProduct($productId, $quantity, []);
         if ($res === false) {
@@ -113,27 +146,11 @@ class CartService
 
         $model = new CartModel();
 
-        // Если пользователь связан — найти его последнюю корзину напрямую
+        // Если пользователь связан — привяжем его корзину
         // Это обходит проблему со старыми cookies в Telegram WebApp контексте
+        $model = new CartModel();
         if ($linkedUserId) {
-            $db = Factory::getContainer()->get('DatabaseDriver');
-            $query = $db->getQuery(true)
-                ->select(['id', 'code'])
-                ->from($db->quoteName('#__radicalmart_carts'))
-                ->where($db->quoteName('user_id') . ' = :userId')
-                ->order($db->quoteName('modified') . ' DESC')
-                ->setLimit(1);
-            $query->bind(':userId', $linkedUserId, \Joomla\Database\ParameterType::INTEGER);
-            $db->setQuery($query);
-            $userCart = $db->loadObject();
-
-            if ($userCart && $userCart->id > 0) {
-                LogHelper::debug('CartService::getCart found user cart id=' . $userCart->id . ' code=' . $userCart->code);
-                // Устанавливаем cookies на правильную корзину
-                $model->setCookies((int) $userCart->id, (string) $userCart->code);
-            } else {
-                LogHelper::debug('CartService::getCart no cart found for user ' . $linkedUserId);
-            }
+            $this->bindUserCart($model, $linkedUserId);
         }
 
         $cart = $model->getItem();
@@ -154,6 +171,12 @@ class CartService
         $linkedUserId = $this->loginTelegramUser($chatId);
 
         $model = new CartModel();
+
+        // Если пользователь связан — привязываем его корзину
+        if ($linkedUserId) {
+            $this->bindUserCart($model, $linkedUserId);
+        }
+
         $res = $model->setProductQuantity($productId, $quantity, []);
         if ($res === false) {
             return false;
@@ -178,10 +201,19 @@ class CartService
         $linkedUserId = $this->loginTelegramUser($chatId);
 
         $model = new CartModel();
+
+        // Если пользователь связан — привязываем его корзину
+        if ($linkedUserId) {
+            $this->bindUserCart($model, $linkedUserId);
+        }
+
         $res = $model->removeProduct($productId, []);
         if ($res === false) {
+            LogHelper::warning('CartService::remove FAILED for productId=' . $productId);
             return false;
         }
+
+        LogHelper::debug('CartService::remove SUCCESS');
 
         // Обновляем cookies
         if (!empty($res['cart']) && is_object($res['cart'])) {
