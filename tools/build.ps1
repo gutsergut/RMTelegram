@@ -1,4 +1,4 @@
-Param([string]$Version = '')
+Param([string]$Version = '0.1.92')
 $ErrorActionPreference = 'Stop'
 
 function Find-7Zip {
