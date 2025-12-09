@@ -140,6 +140,11 @@ class ConsentHelper
 				EmailVerificationHelper::syncPrivacyConsent($chatId, 0);
 			}
 
+			// Синхронизируем согласие на маркетинг с AcyMailing
+			if ($consentType === 'marketing') {
+				self::syncAcyMailingSubscription($chatId, $value);
+			}
+
 			return true;
 		} catch (\Exception $e) {
 			return false;
@@ -246,5 +251,97 @@ class ConsentHelper
 			'terms' => self::getDocumentUrl('terms'),
 			'marketing' => self::getDocumentUrl('marketing'),
 		];
+	}
+
+	/**
+	 * Sync marketing consent with AcyMailing subscription
+	 *
+	 * @param   int   $chatId  Telegram chat ID
+	 * @param   bool  $subscribe  True to subscribe, false to unsubscribe
+	 *
+	 * @return  bool
+	 *
+	 * @since   5.0.2
+	 */
+	protected static function syncAcyMailingSubscription(int $chatId, bool $subscribe): bool
+	{
+		try {
+			// Check if AcyMailing integration is enabled
+			if (!AcyMailingHelper::isEnabled()) {
+				return false;
+			}
+
+			// Get user email from telegram_users or linked Joomla user
+			$db = Factory::getContainer()->get('DatabaseDriver');
+			$query = $db->getQuery(true)
+				->select(['u.email AS tg_email', 'u.first_name', 'u.username', 'u.user_id', 'ju.email AS joomla_email', 'ju.name AS joomla_name'])
+				->from($db->quoteName('#__radicalmart_telegram_users', 'u'))
+				->join('LEFT', $db->quoteName('#__users', 'ju') . ' ON ju.id = u.user_id')
+				->where($db->quoteName('u.chat_id') . ' = :chat')
+				->bind(':chat', $chatId, ParameterType::INTEGER);
+
+			$user = $db->setQuery($query, 0, 1)->loadObject();
+
+			if (!$user) {
+				LogHelper::debug('AcyMailing sync: no user found for chat ' . $chatId);
+				return false;
+			}
+
+			// Prefer Joomla email, then telegram email
+			$email = !empty($user->joomla_email) ? $user->joomla_email : (!empty($user->tg_email) ? $user->tg_email : '');
+
+			if (empty($email)) {
+				LogHelper::debug('AcyMailing sync: no email for chat ' . $chatId);
+				return false;
+			}
+
+			// Get name
+			$name = !empty($user->joomla_name) ? $user->joomla_name : (!empty($user->first_name) ? $user->first_name : $user->username);
+
+			if ($subscribe) {
+				$result = AcyMailingHelper::subscribe($email, $name ?: '');
+				if ($result) {
+					// Update acymailing_subscribed flag in our table
+					self::updateAcyMailingFlag($chatId, true);
+				}
+				return $result;
+			} else {
+				$result = AcyMailingHelper::unsubscribe($email);
+				if ($result) {
+					self::updateAcyMailingFlag($chatId, false);
+				}
+				return $result;
+			}
+		} catch (\Exception $e) {
+			LogHelper::error('AcyMailing sync error: ' . $e->getMessage());
+			return false;
+		}
+	}
+
+	/**
+	 * Update acymailing_subscribed flag in telegram_users table
+	 *
+	 * @param   int   $chatId      Telegram chat ID
+	 * @param   bool  $subscribed  Subscription status
+	 *
+	 * @return  void
+	 *
+	 * @since   5.0.2
+	 */
+	protected static function updateAcyMailingFlag(int $chatId, bool $subscribed): void
+	{
+		try {
+			$db = Factory::getContainer()->get('DatabaseDriver');
+			$value = $subscribed ? 1 : 0;
+			$query = $db->getQuery(true)
+				->update($db->quoteName('#__radicalmart_telegram_users'))
+				->set($db->quoteName('acymailing_subscribed') . ' = ' . $value)
+				->where($db->quoteName('chat_id') . ' = :chat')
+				->bind(':chat', $chatId, ParameterType::INTEGER);
+
+			$db->setQuery($query)->execute();
+		} catch (\Exception $e) {
+			LogHelper::error('AcyMailing flag update error: ' . $e->getMessage());
+		}
 	}
 }

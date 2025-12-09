@@ -156,6 +156,11 @@ $apiBase = $root . '/index.php?option=com_radicalmart_telegram&task=api';
         #add-to-cart.added { background-color: #32d296 !important; border-color: #32d296 !important; }
         #add-to-cart:disabled { opacity: 0.5; cursor: not-allowed; }
 
+        /* Restock notification button */
+        #restock-btn { margin-top: 8px; }
+        #restock-btn.subscribed { background-color: #32d296 !important; border-color: #32d296 !important; }
+        #restock-btn.loading { background-color: #999 !important; border-color: #999 !important; }
+
         /* Section titles */
         .section-title { font-size: 18px; font-weight: 600; text-align: center; margin: 24px 0 16px 0; }
 
@@ -361,6 +366,13 @@ $apiBase = $root . '/index.php?option=com_radicalmart_telegram&task=api';
         <button type="button" class="uk-button uk-button-primary uk-width-1-1 uk-margin-top" id="add-to-cart" <?php echo !$inStock ? 'disabled' : ''; ?>>
             <?php echo $inStock ? 'В корзину' : 'Нет в наличии'; ?>
         </button>
+
+        <?php if (!$inStock): ?>
+        <!-- Restock Notification Button -->
+        <button type="button" class="uk-button uk-button-default uk-width-1-1" id="restock-btn">
+            🔔 Сообщить о поступлении
+        </button>
+        <?php endif; ?>
 
         <!-- Вкусовой профиль -->
         <?php if ($hasVkus && $tasteProfile['gorech'] > 0): ?>
@@ -618,6 +630,100 @@ $apiBase = $root . '/index.php?option=com_radicalmart_telegram&task=api';
                 }, 2000);
             });
         });
+
+        // Restock notification button
+        (function() {
+            const restockBtn = document.getElementById('restock-btn');
+            if (!restockBtn) return;
+
+            // Check current subscription status
+            async function checkRestockStatus() {
+                try {
+                    const url = new URL(location.origin + '/index.php');
+                    url.searchParams.set('option', 'com_radicalmart_telegram');
+                    url.searchParams.set('task', 'api.restockStatus');
+                    url.searchParams.set('product_id', PRODUCT_ID);
+                    <?php if ($chat): ?>
+                    url.searchParams.set('chat', '<?php echo $chat; ?>');
+                    <?php endif; ?>
+                    try {
+                        if (window.Telegram && Telegram.WebApp && Telegram.WebApp.initData) {
+                            url.searchParams.set('tg_init', Telegram.WebApp.initData);
+                        }
+                    } catch(e) {}
+
+                    const res = await fetch(url.toString(), { credentials: 'same-origin' });
+                    const json = await res.json();
+                    if (json.success && json.data?.subscribed) {
+                        restockBtn.classList.add('subscribed');
+                        restockBtn.textContent = '✓ Вы подписаны на уведомление';
+                        restockBtn.dataset.subscribed = '1';
+                    }
+                } catch(e) {
+                    console.error('Restock status check error:', e);
+                }
+            }
+            checkRestockStatus();
+
+            restockBtn.addEventListener('click', async function() {
+                const btn = this;
+                if (btn.classList.contains('loading')) return;
+
+                const isSubscribed = btn.dataset.subscribed === '1';
+                const task = isSubscribed ? 'api.restockUnsubscribe' : 'api.restockSubscribe';
+
+                btn.classList.add('loading');
+                btn.textContent = isSubscribed ? 'Отписываем...' : 'Подписываем...';
+
+                try {
+                    const url = new URL(location.origin + '/index.php');
+                    url.searchParams.set('option', 'com_radicalmart_telegram');
+                    url.searchParams.set('task', task);
+                    url.searchParams.set('product_id', PRODUCT_ID);
+                    url.searchParams.set('nonce', makeNonce());
+                    <?php if ($chat): ?>
+                    url.searchParams.set('chat', '<?php echo $chat; ?>');
+                    <?php endif; ?>
+                    try {
+                        if (window.Telegram && Telegram.WebApp && Telegram.WebApp.initData) {
+                            url.searchParams.set('tg_init', Telegram.WebApp.initData);
+                        }
+                    } catch(e) {}
+
+                    const res = await fetch(url.toString(), { credentials: 'same-origin' });
+                    const json = await res.json();
+
+                    btn.classList.remove('loading');
+
+                    if (json.success) {
+                        if (isSubscribed) {
+                            btn.classList.remove('subscribed');
+                            btn.textContent = '🔔 Сообщить о поступлении';
+                            btn.dataset.subscribed = '0';
+                        } else {
+                            btn.classList.add('subscribed');
+                            btn.textContent = '✓ Вы подписаны на уведомление';
+                            btn.dataset.subscribed = '1';
+                            if (window.Telegram?.WebApp?.HapticFeedback) {
+                                Telegram.WebApp.HapticFeedback.notificationOccurred('success');
+                            }
+                        }
+                    } else {
+                        btn.textContent = json.message || 'Ошибка';
+                        setTimeout(() => {
+                            btn.textContent = isSubscribed ? '✓ Вы подписаны на уведомление' : '🔔 Сообщить о поступлении';
+                        }, 2000);
+                    }
+                } catch(e) {
+                    console.error('Restock error:', e);
+                    btn.classList.remove('loading');
+                    btn.textContent = 'Ошибка';
+                    setTimeout(() => {
+                        btn.textContent = isSubscribed ? '✓ Вы подписаны на уведомление' : '🔔 Сообщить о поступлении';
+                    }, 2000);
+                }
+            });
+        })();
 
         // Refresh cart badge
         async function refreshCart() {
