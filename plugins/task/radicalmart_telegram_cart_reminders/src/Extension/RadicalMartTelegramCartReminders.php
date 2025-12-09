@@ -54,8 +54,34 @@ final class RadicalMartTelegramCartReminders extends CMSPlugin implements Subscr
     {
         return [
             'onTaskOptionsList' => 'advertiseRoutines',
-            'onExecuteTask'     => 'standardRoutineHandler',
+            'onExecuteTask'     => 'runTask',
         ];
+    }
+
+    /**
+     * Dispatcher for task execution
+     *
+     * @param ExecuteTaskEvent $event
+     *
+     * @return void
+     */
+    public function runTask(ExecuteTaskEvent $event): void
+    {
+        $routineId = $event->getRoutineId();
+
+        $this->initLogger();
+        $this->log('onExecuteTask received: routineId=' . $routineId);
+
+        if (!\array_key_exists($routineId, self::TASKS_MAP)) {
+            $this->log('RoutineId not in TASKS_MAP, skipping');
+            return;
+        }
+
+        $this->startRoutine($event);
+
+        $result = $this->sendCartReminders($event);
+
+        $this->endRoutine($event, $result);
     }
 
     /**
@@ -65,7 +91,7 @@ final class RadicalMartTelegramCartReminders extends CMSPlugin implements Subscr
      *
      * @return int Status code
      */
-    protected function radicalmart_telegramCart_reminders(ExecuteTaskEvent $event): int
+    private function sendCartReminders(ExecuteTaskEvent $event): int
     {
         $this->initLogger();
 
