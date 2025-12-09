@@ -111,6 +111,7 @@ $PluginsAllow = @{
     'plugins\task\radicalmart_telegram_fetch' = @('radicalmart_telegram_fetch.xml','services','src','language');
     'plugins\task\radicalmart_telegram_expiring' = @('radicalmart_telegram_expiring.xml','services','src','language');
     'plugins\task\radicalmart_telegram_cart_reminders' = @('radicalmart_telegram_cart_reminders.xml','services','src','language');
+    'plugins\task\radicalmart_telegram_restock' = @('radicalmart_telegram_restock.xml','services','src','language');
     'plugins\radicalmart_payment\telegramcards' = @('telegramcards.xml','telegramcards.php','language','layouts');
     'plugins\radicalmart_payment\telegramstars' = @('telegramstars.xml','telegramstars.php','language','layouts');
     'plugins\radicalmart\telegram_notifications' = @('telegram_notifications.xml','services','src','language');
@@ -153,6 +154,7 @@ Zip-Child -SrcDir (Join-Path $Stage 'plugins\system\radicalmart_telegram') -ZipN
 Zip-Child -SrcDir (Join-Path $Stage 'plugins\task\radicalmart_telegram_fetch') -ZipName 'plg_task_radicalmart_telegram_fetch.zip' -SevenZipExe $Seven -StageDir $PackagesDir
 Zip-Child -SrcDir (Join-Path $Stage 'plugins\task\radicalmart_telegram_expiring') -ZipName 'plg_task_radicalmart_telegram_expiring.zip' -SevenZipExe $Seven -StageDir $PackagesDir
 Zip-Child -SrcDir (Join-Path $Stage 'plugins\task\radicalmart_telegram_cart_reminders') -ZipName 'plg_task_radicalmart_telegram_cart_reminders.zip' -SevenZipExe $Seven -StageDir $PackagesDir
+Zip-Child -SrcDir (Join-Path $Stage 'plugins\task\radicalmart_telegram_restock') -ZipName 'plg_task_radicalmart_telegram_restock.zip' -SevenZipExe $Seven -StageDir $PackagesDir
 Zip-Child -SrcDir (Join-Path $Stage 'plugins\radicalmart_payment\telegramcards') -ZipName 'plg_radicalmart_payment_telegramcards.zip' -SevenZipExe $Seven -StageDir $PackagesDir
 Zip-Child -SrcDir (Join-Path $Stage 'plugins\radicalmart_payment\telegramstars') -ZipName 'plg_radicalmart_payment_telegramstars.zip' -SevenZipExe $Seven -StageDir $PackagesDir
 Zip-Child -SrcDir (Join-Path $Stage 'plugins\radicalmart\telegram_notifications') -ZipName 'plg_radicalmart_telegram_notifications.zip' -SevenZipExe $Seven -StageDir $PackagesDir

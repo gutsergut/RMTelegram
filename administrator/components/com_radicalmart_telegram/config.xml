@@ -212,4 +212,12 @@
               <field name="abandoned_cart_min_total" type="number" default="500" min="0" step="100" label="COM_RADICALMART_TELEGRAM_ABANDONED_CART_MIN_TOTAL_LABEL" description="COM_RADICALMART_TELEGRAM_ABANDONED_CART_MIN_TOTAL_DESC" class="input-small" />
               <field name="abandoned_cart_expire_days" type="number" default="7" min="1" max="30" label="COM_RADICALMART_TELEGRAM_ABANDONED_CART_EXPIRE_DAYS_LABEL" description="COM_RADICALMART_TELEGRAM_ABANDONED_CART_EXPIRE_DAYS_DESC" class="input-small" />
        </fieldset>
+
+       <fieldset name="restock" label="COM_RADICALMART_TELEGRAM_FIELDSET_RESTOCK">
+              <field name="restock_notifications_enabled" type="radio" default="1" label="COM_RADICALMART_TELEGRAM_RESTOCK_ENABLED_LABEL" description="COM_RADICALMART_TELEGRAM_RESTOCK_ENABLED_DESC">
+                     <option value="1">JYES</option>
+                     <option value="0">JNO</option>
+              </field>
+              <field name="restock_cleanup_days" type="number" default="30" min="7" max="90" label="COM_RADICALMART_TELEGRAM_RESTOCK_CLEANUP_DAYS_LABEL" description="COM_RADICALMART_TELEGRAM_RESTOCK_CLEANUP_DAYS_DESC" class="input-small" />
+       </fieldset>
 </config>

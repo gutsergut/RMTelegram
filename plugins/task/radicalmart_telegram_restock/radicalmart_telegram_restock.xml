@@ -1,0 +1,21 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<extension type="plugin" group="task" method="upgrade" version="5.0">
+    <name>plg_task_radicalmart_telegram_restock</name>
+    <author>Project Team</author>
+    <version>0.1.91</version>
+    <description>PLG_TASK_RADICALMART_TELEGRAM_RESTOCK_DESC</description>
+
+    <namespace path="src">Joomla\Plugin\Task\RadicalmartTelegramRestock</namespace>
+
+    <files>
+        <folder>services</folder>
+        <folder>src</folder>
+    </files>
+
+    <languages folder="language">
+        <language tag="en-GB">en-GB/plg_task_radicalmart_telegram_restock.ini</language>
+        <language tag="en-GB">en-GB/plg_task_radicalmart_telegram_restock.sys.ini</language>
+        <language tag="ru-RU">ru-RU/plg_task_radicalmart_telegram_restock.ini</language>
+        <language tag="ru-RU">ru-RU/plg_task_radicalmart_telegram_restock.sys.ini</language>
+    </languages>
+</extension>

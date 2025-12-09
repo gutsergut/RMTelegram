@@ -2907,6 +2907,133 @@ class ApiController extends BaseController
         $app->close();
     }
 
+    /**
+     * Subscribe to restock notification for a product
+     *
+     * POST /api.restockSubscribe&product_id=...
+     */
+    public function restockSubscribe(): void
+    {
+        $app = Factory::getApplication();
+
+        try {
+            $this->guardInitData();
+            $this->guardRateLimitDb('restock', 30);
+
+            $chatId = $this->getChatIdFromInitData();
+            $productId = $app->input->getInt('product_id', 0);
+            $variantId = $app->input->getInt('variant_id', 0) ?: null;
+
+            if (!$chatId || !$productId) {
+                throw new \RuntimeException('Missing required parameters');
+            }
+
+            $restockService = new \Joomla\Component\RadicalMartTelegram\Administrator\Service\RestockService();
+
+            // Check if product is already in stock
+            if ($restockService->isProductInStock($productId)) {
+                echo new JsonResponse([
+                    'subscribed' => false,
+                    'reason' => 'in_stock',
+                    'message' => 'Товар уже в наличии',
+                ]);
+                $app->close();
+                return;
+            }
+
+            $success = $restockService->subscribe($chatId, $productId, $variantId);
+
+            echo new JsonResponse([
+                'subscribed' => $success,
+                'product_id' => $productId,
+                'message' => $success ? 'Вы подписаны на уведомление о поступлении' : 'Ошибка подписки',
+            ]);
+
+        } catch (\Throwable $e) {
+            LogHelper::log('restockSubscribe error: ' . $e->getMessage(), 'error');
+            echo new JsonResponse(['error' => $e->getMessage()], 'error', true, 400);
+        }
+
+        $app->close();
+    }
+
+    /**
+     * Unsubscribe from restock notification
+     *
+     * POST /api.restockUnsubscribe&product_id=...
+     */
+    public function restockUnsubscribe(): void
+    {
+        $app = Factory::getApplication();
+
+        try {
+            $this->guardInitData();
+            $this->guardRateLimitDb('restock', 30);
+
+            $chatId = $this->getChatIdFromInitData();
+            $productId = $app->input->getInt('product_id', 0);
+            $variantId = $app->input->getInt('variant_id', 0) ?: null;
+
+            if (!$chatId || !$productId) {
+                throw new \RuntimeException('Missing required parameters');
+            }
+
+            $restockService = new \Joomla\Component\RadicalMartTelegram\Administrator\Service\RestockService();
+            $success = $restockService->unsubscribe($chatId, $productId, $variantId);
+
+            echo new JsonResponse([
+                'unsubscribed' => $success,
+                'product_id' => $productId,
+            ]);
+
+        } catch (\Throwable $e) {
+            LogHelper::log('restockUnsubscribe error: ' . $e->getMessage(), 'error');
+            echo new JsonResponse(['error' => $e->getMessage()], 'error', true, 400);
+        }
+
+        $app->close();
+    }
+
+    /**
+     * Check restock subscription status
+     *
+     * GET /api.restockStatus&product_id=...
+     */
+    public function restockStatus(): void
+    {
+        $app = Factory::getApplication();
+
+        try {
+            $this->guardInitData();
+            $this->guardRateLimitDb('restock', 60);
+
+            $chatId = $this->getChatIdFromInitData();
+            $productId = $app->input->getInt('product_id', 0);
+            $variantId = $app->input->getInt('variant_id', 0) ?: null;
+
+            if (!$chatId || !$productId) {
+                throw new \RuntimeException('Missing required parameters');
+            }
+
+            $restockService = new \Joomla\Component\RadicalMartTelegram\Administrator\Service\RestockService();
+
+            $isSubscribed = $restockService->isSubscribed($chatId, $productId, $variantId);
+            $inStock = $restockService->isProductInStock($productId);
+
+            echo new JsonResponse([
+                'subscribed' => $isSubscribed,
+                'in_stock' => $inStock,
+                'product_id' => $productId,
+            ]);
+
+        } catch (\Throwable $e) {
+            LogHelper::log('restockStatus error: ' . $e->getMessage(), 'error');
+            echo new JsonResponse(['error' => $e->getMessage()], 'error', true, 400);
+        }
+
+        $app->close();
+    }
+
 }
 
 
