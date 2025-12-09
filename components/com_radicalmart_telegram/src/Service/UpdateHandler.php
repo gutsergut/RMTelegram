@@ -437,6 +437,12 @@ class UpdateHandler
                 $this->store->setState($chatId, 'points');
                 $this->client->sendMessage($chatId, Text::sprintf('COM_RADICALMART_TELEGRAM_POINTS_HINT', $storeTitle), [ 'reply_markup' => $webAppButton ]);
                 return;
+
+            case '/settings':
+            case 'настройки':
+            case 'подписки':
+                $this->sendSettingsMenu($chatId);
+                return;
         }
 
         $this->client->sendMessage(
@@ -499,6 +505,12 @@ class UpdateHandler
             } catch (\Throwable $e) {
                 LogHelper::error('Failed to stop cart reminders: ' . $e->getMessage());
             }
+            return;
+        }
+
+        // Settings callbacks
+        if (strpos($data, 'settings_') === 0) {
+            $this->handleSettingsCallback($chatId, $messageId, $data);
             return;
         }
 
@@ -1272,5 +1284,190 @@ class UpdateHandler
             Text::sprintf('COM_RADICALMART_TELEGRAM_WELCOME_BACK', $storeTitle),
             ['reply_markup' => $keyboard]
         );
+    }
+
+    /**
+     * Send settings menu with current subscription statuses
+     *
+     * @param   int  $chatId  Chat ID
+     *
+     * @return  void
+     *
+     * @since   5.0.2
+     */
+    protected function sendSettingsMenu(int $chatId): void
+    {
+        $consents = ConsentHelper::getConsents($chatId);
+
+        // Build status text
+        $text = "⚙️ " . Text::_('COM_RADICALMART_TELEGRAM_SETTINGS_TITLE') . "\n\n";
+        $text .= Text::_('COM_RADICALMART_TELEGRAM_SETTINGS_CURRENT_STATUS') . ":\n\n";
+
+        // Personal data - always required, show info
+        $pdIcon = $consents['personal_data'] ? '✅' : '❌';
+        $text .= $pdIcon . ' ' . Text::_('COM_RADICALMART_TELEGRAM_CONSENT_PERSONAL_DATA') . "\n";
+
+        // Terms
+        $termsIcon = $consents['terms'] ? '✅' : '❌';
+        $text .= $termsIcon . ' ' . Text::_('COM_RADICALMART_TELEGRAM_CONSENT_TERMS') . "\n";
+
+        // Marketing - toggleable
+        $mkIcon = $consents['marketing'] ? '✅' : '❌';
+        $text .= $mkIcon . ' ' . Text::_('COM_RADICALMART_TELEGRAM_CONSENT_MARKETING') . "\n";
+
+        // Cart reminders status
+        $cartRemindersEnabled = $this->isCartRemindersEnabled($chatId);
+        $crIcon = $cartRemindersEnabled ? '✅' : '❌';
+        $text .= $crIcon . ' ' . Text::_('COM_RADICALMART_TELEGRAM_SETTINGS_CART_REMINDERS') . "\n";
+
+        $text .= "\n" . Text::_('COM_RADICALMART_TELEGRAM_SETTINGS_HINT');
+
+        // Build inline keyboard
+        $buttons = [];
+
+        // Marketing toggle
+        if ($consents['marketing']) {
+            $buttons[] = [['text' => '🔕 ' . Text::_('COM_RADICALMART_TELEGRAM_SETTINGS_DISABLE_MARKETING'), 'callback_data' => 'settings_marketing_off']];
+        } else {
+            $buttons[] = [['text' => '🔔 ' . Text::_('COM_RADICALMART_TELEGRAM_SETTINGS_ENABLE_MARKETING'), 'callback_data' => 'settings_marketing_on']];
+        }
+
+        // Cart reminders toggle
+        if ($cartRemindersEnabled) {
+            $buttons[] = [['text' => '🛒❌ ' . Text::_('COM_RADICALMART_TELEGRAM_SETTINGS_DISABLE_CART_REMINDERS'), 'callback_data' => 'settings_cart_reminders_off']];
+        } else {
+            $buttons[] = [['text' => '🛒✅ ' . Text::_('COM_RADICALMART_TELEGRAM_SETTINGS_ENABLE_CART_REMINDERS'), 'callback_data' => 'settings_cart_reminders_on']];
+        }
+
+        // Revoke all consent (with warning)
+        $buttons[] = [['text' => '⚠️ ' . Text::_('COM_RADICALMART_TELEGRAM_SETTINGS_REVOKE_ALL'), 'callback_data' => 'settings_revoke_confirm']];
+
+        $keyboard = ['inline_keyboard' => $buttons];
+
+        $this->client->sendMessage($chatId, $text, ['reply_markup' => $keyboard]);
+    }
+
+    /**
+     * Check if cart reminders are enabled for user
+     *
+     * @param   int  $chatId  Chat ID
+     *
+     * @return  bool
+     *
+     * @since   5.0.2
+     */
+    protected function isCartRemindersEnabled(int $chatId): bool
+    {
+        try {
+            $db = Factory::getContainer()->get('DatabaseDriver');
+            $query = $db->getQuery(true)
+                ->select('consent_cart_reminders')
+                ->from($db->quoteName('#__radicalmart_telegram_users'))
+                ->where($db->quoteName('chat_id') . ' = :chat')
+                ->bind(':chat', $chatId);
+
+            return (int) $db->setQuery($query, 0, 1)->loadResult() === 1;
+        } catch (\Throwable $e) {
+            return false;
+        }
+    }
+
+    /**
+     * Toggle cart reminders consent
+     *
+     * @param   int   $chatId  Chat ID
+     * @param   bool  $enable  Enable or disable
+     *
+     * @return  bool
+     *
+     * @since   5.0.2
+     */
+    protected function setCartRemindersConsent(int $chatId, bool $enable): bool
+    {
+        try {
+            $db = Factory::getContainer()->get('DatabaseDriver');
+            $value = $enable ? 1 : 0;
+            $query = $db->getQuery(true)
+                ->update($db->quoteName('#__radicalmart_telegram_users'))
+                ->set($db->quoteName('consent_cart_reminders') . ' = ' . $value)
+                ->where($db->quoteName('chat_id') . ' = :chat')
+                ->bind(':chat', $chatId);
+
+            $db->setQuery($query)->execute();
+            return true;
+        } catch (\Throwable $e) {
+            LogHelper::error('Failed to set cart reminders consent: ' . $e->getMessage());
+            return false;
+        }
+    }
+
+    /**
+     * Handle settings menu callbacks
+     *
+     * @param   int     $chatId     Chat ID
+     * @param   int     $messageId  Message ID to edit
+     * @param   string  $data       Callback data
+     *
+     * @return  void
+     *
+     * @since   5.0.2
+     */
+    protected function handleSettingsCallback(int $chatId, int $messageId, string $data): void
+    {
+        switch ($data) {
+            case 'settings_marketing_on':
+                ConsentHelper::saveConsent($chatId, 'marketing', true);
+                $this->client->sendMessage($chatId, '✅ ' . Text::_('COM_RADICALMART_TELEGRAM_SETTINGS_MARKETING_ENABLED'));
+                $this->sendSettingsMenu($chatId);
+                break;
+
+            case 'settings_marketing_off':
+                ConsentHelper::saveConsent($chatId, 'marketing', false);
+                $this->client->sendMessage($chatId, '🔕 ' . Text::_('COM_RADICALMART_TELEGRAM_SETTINGS_MARKETING_DISABLED'));
+                $this->sendSettingsMenu($chatId);
+                break;
+
+            case 'settings_cart_reminders_on':
+                $this->setCartRemindersConsent($chatId, true);
+                $this->client->sendMessage($chatId, '✅ ' . Text::_('COM_RADICALMART_TELEGRAM_SETTINGS_CART_REMINDERS_ENABLED'));
+                $this->sendSettingsMenu($chatId);
+                break;
+
+            case 'settings_cart_reminders_off':
+                $this->setCartRemindersConsent($chatId, false);
+                $this->client->sendMessage($chatId, '🔕 ' . Text::_('COM_RADICALMART_TELEGRAM_SETTINGS_CART_REMINDERS_DISABLED'));
+                $this->sendSettingsMenu($chatId);
+                break;
+
+            case 'settings_revoke_confirm':
+                // Show confirmation prompt
+                $text = "⚠️ " . Text::_('COM_RADICALMART_TELEGRAM_SETTINGS_REVOKE_WARNING') . "\n\n";
+                $text .= Text::_('COM_RADICALMART_TELEGRAM_SETTINGS_REVOKE_CONFIRM_TEXT');
+
+                $keyboard = [
+                    'inline_keyboard' => [
+                        [['text' => '❌ ' . Text::_('COM_RADICALMART_TELEGRAM_SETTINGS_REVOKE_YES'), 'callback_data' => 'settings_revoke_execute']],
+                        [['text' => '↩️ ' . Text::_('COM_RADICALMART_TELEGRAM_CANCEL'), 'callback_data' => 'settings_back']],
+                    ],
+                ];
+
+                $this->client->sendMessage($chatId, $text, ['reply_markup' => $keyboard]);
+                break;
+
+            case 'settings_revoke_execute':
+                // Revoke all consents
+                ConsentHelper::saveConsent($chatId, 'personal_data', false);
+                ConsentHelper::saveConsent($chatId, 'terms', false);
+                ConsentHelper::saveConsent($chatId, 'marketing', false);
+                $this->setCartRemindersConsent($chatId, false);
+
+                $this->client->sendMessage($chatId, '✅ ' . Text::_('COM_RADICALMART_TELEGRAM_SETTINGS_REVOKED_ALL'));
+                $this->client->sendMessage($chatId, Text::_('COM_RADICALMART_TELEGRAM_SETTINGS_REVOKED_RESTART_HINT'));
+                break;
+
+            case 'settings_back':
+                $this->sendSettingsMenu($chatId);
+                break;
+        }
     }
 }
