@@ -664,4 +664,154 @@ class ApiController extends BaseController
 
 		jexit();
 	}
+
+	/**
+	 * Отладка: показать все корзины пользователя
+	 *
+	 * @return void
+	 * @since 1.0.0
+	 */
+	public function debugCarts(): void
+	{
+		$app = Factory::getApplication();
+		header('Content-Type: application/json; charset=utf-8');
+
+		try {
+			$userId = $app->input->getInt('user_id', 0);
+			$chatId = $app->input->getInt('chat_id', 0);
+
+			// Если передан chat_id, найдём user_id
+			if ($chatId > 0 && $userId === 0) {
+				$db = Factory::getContainer()->get('DatabaseDriver');
+				$query = $db->getQuery(true)
+					->select('user_id')
+					->from($db->quoteName('#__radicalmart_telegram_users'))
+					->where($db->quoteName('chat_id') . ' = :chatId');
+				$query->bind(':chatId', $chatId, \Joomla\Database\ParameterType::INTEGER);
+				$db->setQuery($query);
+				$userId = (int) $db->loadResult();
+			}
+
+			if ($userId <= 0) {
+				echo json_encode([
+					'success' => false,
+					'error' => 'user_id or chat_id required'
+				], JSON_UNESCAPED_UNICODE);
+				jexit();
+				return;
+			}
+
+			$db = Factory::getContainer()->get('DatabaseDriver');
+			$query = $db->getQuery(true)
+				->select(['id', 'code', 'user_id', 'products', 'created', 'modified'])
+				->from($db->quoteName('#__radicalmart_carts'))
+				->where($db->quoteName('user_id') . ' = :userId')
+				->order($db->quoteName('modified') . ' DESC');
+			$query->bind(':userId', $userId, \Joomla\Database\ParameterType::INTEGER);
+			$db->setQuery($query);
+			$carts = $db->loadObjectList();
+
+			$result = [
+				'success' => true,
+				'user_id' => $userId,
+				'chat_id' => $chatId ?: null,
+				'carts_count' => count($carts),
+				'carts' => []
+			];
+
+			foreach ($carts as $cart) {
+				$products = json_decode($cart->products ?: '{}', true);
+				$result['carts'][] = [
+					'id' => (int) $cart->id,
+					'code' => $cart->code,
+					'created' => $cart->created,
+					'modified' => $cart->modified,
+					'products_count' => is_array($products) ? count($products) : 0,
+					'products' => $products
+				];
+			}
+
+			echo json_encode($result, JSON_PRETTY_PRINT | JSON_UNESCAPED_UNICODE);
+
+		} catch (\Throwable $e) {
+			echo json_encode([
+				'success' => false,
+				'error' => $e->getMessage()
+			], JSON_UNESCAPED_UNICODE);
+		}
+
+		jexit();
+	}
+
+	/**
+	 * Отладка: удалить все корзины пользователя кроме указанной
+	 *
+	 * @return void
+	 * @since 1.0.0
+	 */
+	public function cleanupCarts(): void
+	{
+		$app = Factory::getApplication();
+		header('Content-Type: application/json; charset=utf-8');
+
+		try {
+			$userId = $app->input->getInt('user_id', 0);
+			$keepCartId = $app->input->getInt('keep', 0);
+
+			if ($userId <= 0) {
+				echo json_encode([
+					'success' => false,
+					'error' => 'user_id required'
+				], JSON_UNESCAPED_UNICODE);
+				jexit();
+				return;
+			}
+
+			$db = Factory::getContainer()->get('DatabaseDriver');
+
+			// Сначала получим все корзины
+			$query = $db->getQuery(true)
+				->select(['id', 'products'])
+				->from($db->quoteName('#__radicalmart_carts'))
+				->where($db->quoteName('user_id') . ' = :userId')
+				->order($db->quoteName('modified') . ' DESC');
+			$query->bind(':userId', $userId, \Joomla\Database\ParameterType::INTEGER);
+			$db->setQuery($query);
+			$carts = $db->loadObjectList();
+
+			$deleted = [];
+			$kept = null;
+
+			foreach ($carts as $cart) {
+				if ($keepCartId > 0 && (int) $cart->id === $keepCartId) {
+					$kept = (int) $cart->id;
+					continue;
+				}
+				// Удаляем лишние корзины
+				$delQuery = $db->getQuery(true)
+					->delete($db->quoteName('#__radicalmart_carts'))
+					->where($db->quoteName('id') . ' = :cartId');
+				$delQuery->bind(':cartId', $cart->id, \Joomla\Database\ParameterType::INTEGER);
+				$db->setQuery($delQuery);
+				$db->execute();
+				$deleted[] = (int) $cart->id;
+			}
+
+			echo json_encode([
+				'success' => true,
+				'user_id' => $userId,
+				'kept' => $kept,
+				'deleted' => $deleted,
+				'deleted_count' => count($deleted)
+			], JSON_PRETTY_PRINT | JSON_UNESCAPED_UNICODE);
+
+		} catch (\Throwable $e) {
+			echo json_encode([
+				'success' => false,
+				'error' => $e->getMessage()
+			], JSON_UNESCAPED_UNICODE);
+		}
+
+		jexit();
+	}
 }

@@ -2682,6 +2682,172 @@ class ApiController extends BaseController
         $app->close();
     }
 
+    /**
+     * Отладка: показать все корзины пользователя
+     *
+     * @return void
+     * @since 1.0.0
+     */
+    public function debugCarts(): void
+    {
+        $app = Factory::getApplication();
+        header('Content-Type: application/json; charset=utf-8');
+
+        try {
+            $chatId = $this->getChatId();
+            $userId = 0;
+
+            // Найдём user_id по chat_id
+            if ($chatId > 0) {
+                $db = Factory::getContainer()->get('DatabaseDriver');
+                $query = $db->getQuery(true)
+                    ->select('user_id')
+                    ->from($db->quoteName('#__radicalmart_telegram_users'))
+                    ->where($db->quoteName('chat_id') . ' = :chatId');
+                $query->bind(':chatId', $chatId, \Joomla\Database\ParameterType::INTEGER);
+                $db->setQuery($query);
+                $userId = (int) $db->loadResult();
+            }
+
+            if ($userId <= 0) {
+                echo json_encode([
+                    'success' => false,
+                    'error' => 'User not linked'
+                ], JSON_UNESCAPED_UNICODE);
+                $app->close();
+                return;
+            }
+
+            $db = Factory::getContainer()->get('DatabaseDriver');
+            $query = $db->getQuery(true)
+                ->select(['id', 'code', 'user_id', 'products', 'created', 'modified'])
+                ->from($db->quoteName('#__radicalmart_carts'))
+                ->where($db->quoteName('user_id') . ' = :userId')
+                ->order($db->quoteName('modified') . ' DESC');
+            $query->bind(':userId', $userId, \Joomla\Database\ParameterType::INTEGER);
+            $db->setQuery($query);
+            $carts = $db->loadObjectList();
+
+            $result = [
+                'success' => true,
+                'user_id' => $userId,
+                'chat_id' => $chatId,
+                'carts_count' => count($carts),
+                'carts' => []
+            ];
+
+            foreach ($carts as $cart) {
+                $products = json_decode($cart->products ?: '{}', true);
+                $result['carts'][] = [
+                    'id' => (int) $cart->id,
+                    'code' => $cart->code,
+                    'created' => $cart->created,
+                    'modified' => $cart->modified,
+                    'products_count' => is_array($products) ? count($products) : 0,
+                    'products' => $products
+                ];
+            }
+
+            echo json_encode($result, JSON_PRETTY_PRINT | JSON_UNESCAPED_UNICODE);
+
+        } catch (\Throwable $e) {
+            echo json_encode([
+                'success' => false,
+                'error' => $e->getMessage()
+            ], JSON_UNESCAPED_UNICODE);
+        }
+
+        $app->close();
+    }
+
+    /**
+     * Отладка: удалить все корзины пользователя кроме самой новой
+     *
+     * @return void
+     * @since 1.0.0
+     */
+    public function cleanupCarts(): void
+    {
+        $app = Factory::getApplication();
+        header('Content-Type: application/json; charset=utf-8');
+
+        try {
+            $chatId = $this->getChatId();
+            $userId = 0;
+
+            // Найдём user_id по chat_id
+            if ($chatId > 0) {
+                $db = Factory::getContainer()->get('DatabaseDriver');
+                $query = $db->getQuery(true)
+                    ->select('user_id')
+                    ->from($db->quoteName('#__radicalmart_telegram_users'))
+                    ->where($db->quoteName('chat_id') . ' = :chatId');
+                $query->bind(':chatId', $chatId, \Joomla\Database\ParameterType::INTEGER);
+                $db->setQuery($query);
+                $userId = (int) $db->loadResult();
+            }
+
+            if ($userId <= 0) {
+                echo json_encode([
+                    'success' => false,
+                    'error' => 'User not linked'
+                ], JSON_UNESCAPED_UNICODE);
+                $app->close();
+                return;
+            }
+
+            $db = Factory::getContainer()->get('DatabaseDriver');
+
+            // Получим все корзины
+            $query = $db->getQuery(true)
+                ->select(['id', 'products', 'modified'])
+                ->from($db->quoteName('#__radicalmart_carts'))
+                ->where($db->quoteName('user_id') . ' = :userId')
+                ->order($db->quoteName('modified') . ' DESC');
+            $query->bind(':userId', $userId, \Joomla\Database\ParameterType::INTEGER);
+            $db->setQuery($query);
+            $carts = $db->loadObjectList();
+
+            $deleted = [];
+            $kept = null;
+            $first = true;
+
+            foreach ($carts as $cart) {
+                if ($first) {
+                    // Оставляем самую новую корзину
+                    $kept = (int) $cart->id;
+                    $first = false;
+                    continue;
+                }
+                // Удаляем лишние корзины
+                $cartId = (int) $cart->id;
+                $delQuery = $db->getQuery(true)
+                    ->delete($db->quoteName('#__radicalmart_carts'))
+                    ->where($db->quoteName('id') . ' = ' . $cartId);
+                $db->setQuery($delQuery);
+                $db->execute();
+                $deleted[] = $cartId;
+            }
+
+            echo json_encode([
+                'success' => true,
+                'user_id' => $userId,
+                'chat_id' => $chatId,
+                'kept' => $kept,
+                'deleted' => $deleted,
+                'deleted_count' => count($deleted)
+            ], JSON_PRETTY_PRINT | JSON_UNESCAPED_UNICODE);
+
+        } catch (\Throwable $e) {
+            echo json_encode([
+                'success' => false,
+                'error' => $e->getMessage()
+            ], JSON_UNESCAPED_UNICODE);
+        }
+
+        $app->close();
+    }
+
 }
 
 

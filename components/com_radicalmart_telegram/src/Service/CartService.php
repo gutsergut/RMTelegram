@@ -92,7 +92,10 @@ class CartService
 
         if ($userCart && $userCart->id > 0) {
             LogHelper::debug('CartService::bindUserCart found cart id=' . $userCart->id . ' for user=' . $userId);
+            // Устанавливаем cookies (для HTTP ответа) И state модели (для текущего запроса)
             $model->setCookies((int) $userCart->id, (string) $userCart->code);
+            $model->setState('cart.id', (int) $userCart->id);
+            $model->setState('cart.code', (string) $userCart->code);
         }
     }
 
@@ -199,21 +202,30 @@ class CartService
 
         // Авторизуем пользователя
         $linkedUserId = $this->loginTelegramUser($chatId);
+        LogHelper::debug('CartService::remove linkedUserId=' . ($linkedUserId ?? 'null'));
 
         $model = new CartModel();
 
-        // Если пользователь связан — привязываем его корзину
+        // Если пользователь связан — привязываем его корзину И устанавливаем state
         if ($linkedUserId) {
             $this->bindUserCart($model, $linkedUserId);
         }
 
+        // Логируем состояние перед удалением
+        $cartBefore = $model->getItem();
+        LogHelper::debug('CartService::remove cart BEFORE: id=' . ($cartBefore ? $cartBefore->id : 'null') .
+            ' user_id=' . ($cartBefore ? ($cartBefore->user_id ?? 'null') : 'null') .
+            ' products=' . ($cartBefore && isset($cartBefore->products) ? count($cartBefore->products) : 0));
+
         $res = $model->removeProduct($productId, []);
+
         if ($res === false) {
-            LogHelper::warning('CartService::remove FAILED for productId=' . $productId);
+            $error = $model->getError();
+            LogHelper::warning('CartService::remove FAILED for productId=' . $productId . ' error=' . ($error ?: 'unknown'));
             return false;
         }
 
-        LogHelper::debug('CartService::remove SUCCESS');
+        LogHelper::debug('CartService::remove SUCCESS, res[cart]=' . ($res['cart'] ? 'object' : 'false'));
 
         // Обновляем cookies
         if (!empty($res['cart']) && is_object($res['cart'])) {
