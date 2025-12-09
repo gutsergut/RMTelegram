@@ -89,7 +89,16 @@ $chatId = $tgUser['chat_id'] ?? 0;
             const url = new URL(location.origin + '/index.php');
             url.searchParams.set('option','com_radicalmart_telegram');
             url.searchParams.set('task','api.'+method);
-            const chat = qs('chat'); if (chat) url.searchParams.set('chat', chat);
+            // Try URL param first, then global TG_CHAT_ID, then initDataUnsafe
+            let chat = qs('chat');
+            if (!chat && window.TG_CHAT_ID) chat = String(window.TG_CHAT_ID);
+            if (!chat) {
+                try {
+                    const tgUser = window.Telegram?.WebApp?.initDataUnsafe?.user;
+                    if (tgUser?.id) chat = String(tgUser.id);
+                } catch(e){}
+            }
+            if (chat) url.searchParams.set('chat', chat);
             try { if (window.Telegram && window.Telegram.WebApp && window.Telegram.WebApp.initData) { url.searchParams.set('tg_init', window.Telegram.WebApp.initData); } } catch(e){}
             for (const [k,v] of Object.entries(params)) url.searchParams.set(k, v);
 
