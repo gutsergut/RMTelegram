@@ -291,6 +291,13 @@ document.addEventListener('DOMContentLoaded', function() {
             Telegram.WebApp.ready();
             Telegram.WebApp.expand();
 
+            // Request fullscreen mode
+            try {
+                if (!Telegram.WebApp.isFullscreen) {
+                    Telegram.WebApp.requestFullscreen();
+                }
+            } catch(e) { console.log('requestFullscreen error:', e); }
+
             Telegram.WebApp.BackButton.show();
             Telegram.WebApp.BackButton.onClick(function() {
                 const chat = new URLSearchParams(location.search).get('chat') || '';

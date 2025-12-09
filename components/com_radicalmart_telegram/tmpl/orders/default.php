@@ -277,7 +277,14 @@ $baseQuery = $chatId > 0 ? '&chat=' . $chatId : '';
                     Telegram.WebApp.ready();
                     Telegram.WebApp.expand();
 
-                    // Add fullscreen class to body (navbar already has margin-top)
+                    // Request fullscreen mode
+                    try {
+                        if (!Telegram.WebApp.isFullscreen) {
+                            Telegram.WebApp.requestFullscreen();
+                        }
+                    } catch(e) { console.log('requestFullscreen error:', e); }
+
+                    // Fullscreen mode support (navbar already has margin-top)
                     if (Telegram.WebApp.isFullscreen) {
                         document.body.classList.add('tg-fullscreen');
                     }

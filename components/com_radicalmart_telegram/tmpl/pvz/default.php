@@ -99,6 +99,13 @@ $storeTitle = isset($this->params) ? (string) $this->params->get('store_title', 
                 Telegram.WebApp.ready();
                 Telegram.WebApp.expand();
 
+                // Request fullscreen mode
+                try {
+                    if (!Telegram.WebApp.isFullscreen) {
+                        Telegram.WebApp.requestFullscreen();
+                    }
+                } catch(e) { console.log('requestFullscreen error:', e); }
+
                 // BackButton - navigate to checkout
                 try {
                     Telegram.WebApp.BackButton.show();

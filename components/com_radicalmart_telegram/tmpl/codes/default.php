@@ -292,6 +292,13 @@ $referralCodes = $this->referralCodes ?? [];
             Telegram.WebApp.ready();
             Telegram.WebApp.expand();
 
+            // Request fullscreen mode
+            try {
+                if (!Telegram.WebApp.isFullscreen) {
+                    Telegram.WebApp.requestFullscreen();
+                }
+            } catch(e) { console.log('requestFullscreen error:', e); }
+
             // Fullscreen mode support (navbar already has margin-top)
             if (Telegram.WebApp.isFullscreen) {
                 document.body.classList.add('tg-fullscreen');

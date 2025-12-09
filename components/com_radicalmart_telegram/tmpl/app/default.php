@@ -2378,6 +2378,13 @@ $chatId = $tgUser['chat_id'] ?? 0;
                     Telegram.WebApp.ready();
                     Telegram.WebApp.expand();
 
+                    // Request fullscreen mode
+                    try {
+                        if (!Telegram.WebApp.isFullscreen) {
+                            Telegram.WebApp.requestFullscreen();
+                        }
+                    } catch(e) { console.log('requestFullscreen error:', e); }
+
                     // Add fullscreen class to body (navbar already has margin-top)
                     if (Telegram.WebApp.isFullscreen) {
                         document.body.classList.add('tg-fullscreen');
