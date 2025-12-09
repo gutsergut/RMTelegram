@@ -77,7 +77,12 @@ class HtmlView extends BaseHtmlView
             $order = $db->loadObject();
 
             if ($order) {
-                $order->products = json_decode($order->products ?? '[]', true) ?: [];
+                // Decode order products (basic info with id, quantity, price)
+                $orderProducts = json_decode($order->products ?? '[]', true) ?: [];
+
+                // Load full product info from database
+                $order->products = $this->loadProductsDetails($orderProducts, $order->currency ?? 'RUB');
+
                 $order->shipping = new Registry($order->shipping ?? '{}');
                 $order->payment = new Registry($order->payment ?? '{}');
                 $order->total = json_decode($order->total ?? '{}', true) ?: [];
@@ -92,12 +97,88 @@ class HtmlView extends BaseHtmlView
                     $order->total['base_string'] = PriceHelper::toString($order->total['base'], $currency);
                 }
 
+                // Format shipping cost
+                if ($order->shipping->get('final')) {
+                    $order->shipping->set('final_string', PriceHelper::toString($order->shipping->get('final'), $currency));
+                }
+
                 $order->status = $this->getStatus((int) ($order->status ?? 0));
-                $order->title = Text::sprintf('COM_RADICALMART_TELEGRAM_ORDER_NUMBER', $order->number ?: $order->id);
+                // Build order title with order number - always use direct format to avoid translation issues
+                $orderNumber = $order->number ?: $order->id;
+                $order->title = 'Заказ №' . $orderNumber;
+
                 $this->order = $order;
             }
         } catch (\Throwable $e) {
             // Log error
+        }
+    }
+
+    /**
+     * Load full product details from database
+     *
+     * @param array  $orderProducts  Products from order (with id, quantity, price info)
+     * @param string $currency       Currency code
+     * @return array Full products data with titles, images, etc.
+     */
+    protected function loadProductsDetails(array $orderProducts, string $currency = 'RUB'): array
+    {
+        if (empty($orderProducts)) {
+            return [];
+        }
+
+        // Get product IDs
+        $productIds = array_filter(array_map(function($p) {
+            return (int) ($p['id'] ?? 0);
+        }, $orderProducts));
+
+        if (empty($productIds)) {
+            return $orderProducts;
+        }
+
+        try {
+            $db = Factory::getContainer()->get('DatabaseDriver');
+
+            // Load products from database
+            $query = $db->getQuery(true)
+                ->select(['p.id', 'p.title', 'p.media', 'p.prices'])
+                ->from($db->quoteName('#__radicalmart_products', 'p'))
+                ->whereIn($db->quoteName('p.id'), $productIds);
+
+            $db->setQuery($query);
+            $dbProducts = $db->loadObjectList('id');
+
+            // Merge order product data with database product data
+            $result = [];
+            foreach ($orderProducts as $orderProduct) {
+                $productId = (int) ($orderProduct['id'] ?? 0);
+                $dbProduct = $dbProducts[$productId] ?? null;
+
+                // Get product image
+                $image = '';
+                if ($dbProduct && !empty($dbProduct->media)) {
+                    $media = json_decode($dbProduct->media, true);
+                    $image = $media['image'] ?? ($media[0]['image'] ?? '');
+                }
+
+                // Build full product data
+                $result[] = [
+                    'id' => $productId,
+                    'title' => $dbProduct->title ?? ($orderProduct['title'] ?? ''),
+                    'image' => $image,
+                    'quantity' => (int) ($orderProduct['quantity'] ?? 1),
+                    'final_string' => $orderProduct['final_string'] ?? PriceHelper::toString($orderProduct['final'] ?? 0, $currency),
+                    'sum_final_string' => $orderProduct['sum_final_string'] ?? PriceHelper::toString(
+                        ($orderProduct['sum_final'] ?? (($orderProduct['final'] ?? 0) * ($orderProduct['quantity'] ?? 1))),
+                        $currency
+                    ),
+                    'extra_display' => $orderProduct['extra_display'] ?? [],
+                ];
+            }
+
+            return $result;
+        } catch (\Throwable $e) {
+            return $orderProducts;
         }
     }
 

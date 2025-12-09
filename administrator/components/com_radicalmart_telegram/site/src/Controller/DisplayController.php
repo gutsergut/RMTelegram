@@ -15,11 +15,9 @@ class DisplayController extends BaseController
     public function display($cachable = false, $urlparams = [])
     {
         $app = Factory::getApplication();
-        // Keep requested view if any, otherwise app
         $view = $app->input->getCmd('view', 'app');
         $app->input->set('view', $view);
         $app->input->set('tmpl', 'component');
-
         return parent::display($cachable, $urlparams);
     }
 }

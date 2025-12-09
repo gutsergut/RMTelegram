@@ -5,45 +5,46 @@
 
 namespace Joomla\Component\RadicalMartTelegram\Site\View\Cart;
 
+\defined('_JEXEC') or die;
 
+use Joomla\CMS\Factory;
+use Joomla\CMS\Language\Text;
+use Joomla\CMS\MVC\View\HtmlView as BaseHtmlView;
+use Joomla\CMS\HTML\HTMLHelper;
+use Joomla\Component\RadicalMartTelegram\Site\Helper\TelegramUserHelper;
 
+class HtmlView extends BaseHtmlView
+{
+    protected $params;
+    public $tgUser = null; // Данные пользователя из TelegramUserHelper
 
+    public function display($tpl = null)
+    {
+        $lang = Factory::getLanguage();
+        $lang->load('com_radicalmart_telegram', JPATH_SITE);
 
+        $this->params = Factory::getApplication()->getParams('com_radicalmart_telegram');
 
+        // Используем централизованный хелпер для идентификации пользователя
+        $this->tgUser = TelegramUserHelper::getCurrentUser();
 
+        $app = Factory::getApplication();
 
+        if ($app->getTemplate() !== 'yootheme') {
+            $app->setTemplate('yootheme');
+        }
 
+        HTMLHelper::_('jquery.framework');
 
+        $doc = $app->getDocument();
+        $wa = $doc->getWebAssetManager();
 
+        $wa->registerAndUseStyle('yootheme.theme', 'templates/yootheme_cacao/css/theme.9.css?1745431273');
+        $wa->registerAndUseStyle('yootheme.custom', 'templates/yootheme_cacao/css/custom.css?4.5.9');
 
+        $wa->registerAndUseScript('uikit.js', 'templates/yootheme/vendor/assets/uikit/dist/js/uikit.min.js?4.5.9', [], ['defer' => false]);
+        $wa->registerAndUseScript('yootheme.theme', 'templates/yootheme/js/theme.js?4.5.9', ['uikit.js'], ['defer' => false]);
 
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-}    }        parent::display($tpl);        $wa->registerAndUseScript('yootheme.theme', 'templates/yootheme/js/theme.js?4.5.9', ['uikit.js'], ['defer' => false]);        $wa->registerAndUseScript('uikit.js', 'templates/yootheme/vendor/assets/uikit/dist/js/uikit.min.js?4.5.9', [], ['defer' => false]);        $wa->registerAndUseStyle('yootheme.custom', 'templates/yootheme_cacao/css/custom.css?4.5.9');        $wa->registerAndUseStyle('yootheme.theme', 'templates/yootheme_cacao/css/theme.9.css?1745431273');        $wa = $doc->getWebAssetManager();        $doc = $app->getDocument();        HTMLHelper::_('jquery.framework');        }            $app->setTemplate('yootheme');        {        if ($app->getTemplate() !== 'yootheme')        // Force YooTheme template for WebApp        $app = Factory::getApplication();        $this->params = Factory::getApplication()->getParams('com_radicalmart_telegram');        $lang->load('com_radicalmart_telegram', JPATH_SITE);        $lang = Factory::getLanguage();    {    public function display($tpl = null)    protected $params;{class HtmlView extends BaseHtmlViewuse Joomla\CMS\HTML\HTMLHelper;use Joomla\CMS\MVC\View\HtmlView as BaseHtmlView;use Joomla\CMS\Language\Text;use Joomla\CMS\Factory;\defined('_JEXEC') or die;
+        parent::display($tpl);
+    }
+}

@@ -78,9 +78,12 @@ use Joomla\CMS\Layout\LayoutHelper;
                 <th><?php echo Text::_('COM_RADICALMART_TELEGRAM_CHAT_ID'); ?></th>
                 <th><?php echo Text::_('COM_RADICALMART_TELEGRAM_TG_USER_ID'); ?></th>
                 <th><?php echo Text::_('COM_RADICALMART_TELEGRAM_TG_USERNAME'); ?></th>
+                <th><?php echo Text::_('COM_RADICALMART_TELEGRAM_TG_NAME'); ?></th>
+                <th><?php echo Text::_('COM_RADICALMART_TELEGRAM_PROFILE_FIO'); ?></th>
                 <th><?php echo Text::_('COM_RADICALMART_TELEGRAM_USER_ID'); ?></th>
                 <th><?php echo Text::_('COM_RADICALMART_TELEGRAM_USER_NAME'); ?></th>
                 <th><?php echo Text::_('COM_RADICALMART_TELEGRAM_PHONE'); ?></th>
+                <th><?php echo Text::_('COM_RADICALMART_TELEGRAM_EMAIL'); ?></th>
                 <th><?php echo Text::_('COM_RADICALMART_TELEGRAM_CREATED'); ?></th>
                 <th><?php echo Text::_('COM_RADICALMART_TELEGRAM_CONSENTS'); ?></th>
                 <th class="text-end">&nbsp;</th>
@@ -88,15 +91,39 @@ use Joomla\CMS\Layout\LayoutHelper;
             </thead>
             <tbody>
             <?php if (empty($this->items)) : ?>
-                <tr><td colspan="9" class="text-muted"><?php echo Text::_('COM_RADICALMART_TELEGRAM_NO_DATA'); ?></td></tr>
+                <tr><td colspan="12" class="text-muted"><?php echo Text::_('COM_RADICALMART_TELEGRAM_NO_DATA'); ?></td></tr>
             <?php else : foreach ($this->items as $row) : ?>
+                <?php
+                    // Собираем TG имя
+                    $tgName = trim(($row['tg_first_name'] ?? '') . ' ' . ($row['tg_last_name'] ?? ''));
+                    // Собираем ФИО профиля
+                    $profileFio = trim(($row['last_name'] ?? '') . ' ' . ($row['first_name'] ?? '') . ' ' . ($row['second_name'] ?? ''));
+                ?>
                 <tr>
                     <td><?php echo (int) ($row['chat_id'] ?? 0); ?></td>
                     <td><?php echo (int) ($row['tg_user_id'] ?? 0); ?></td>
                     <td><?php echo htmlspecialchars($row['username'] ?? '', ENT_QUOTES, 'UTF-8'); ?></td>
+                    <td><?php echo htmlspecialchars($tgName, ENT_QUOTES, 'UTF-8'); ?></td>
+                    <td><?php echo htmlspecialchars($profileFio, ENT_QUOTES, 'UTF-8'); ?></td>
                     <td><?php echo (int) ($row['user_id'] ?? 0); ?></td>
                     <td><?php echo htmlspecialchars(($row['jname'] ?? '') ?: ($row['jlogin'] ?? ''), ENT_QUOTES, 'UTF-8'); ?></td>
                     <td><?php echo htmlspecialchars($row['phone'] ?? '', ENT_QUOTES, 'UTF-8'); ?></td>
+                    <td>
+                        <?php
+                            $email = trim((string)($row['email'] ?? ''));
+                            $emailVerified = !empty($row['email_verified']) && (int)$row['email_verified'] === 1;
+                        ?>
+                        <?php if (!empty($email)) : ?>
+                            <?php echo htmlspecialchars($email, ENT_QUOTES, 'UTF-8'); ?>
+                            <?php if ($emailVerified) : ?>
+                                <span class="badge bg-success" title="<?php echo Text::_('COM_RADICALMART_TELEGRAM_EMAIL_VERIFIED_BADGE'); ?>">✓</span>
+                            <?php else : ?>
+                                <span class="badge bg-warning text-dark" title="<?php echo Text::_('COM_RADICALMART_TELEGRAM_EMAIL_NOT_VERIFIED'); ?>">?</span>
+                            <?php endif; ?>
+                        <?php else : ?>
+                            <span class="text-muted">—</span>
+                        <?php endif; ?>
+                    </td>
                     <td><?php echo htmlspecialchars($row['created'] ?? '', ENT_QUOTES, 'UTF-8'); ?></td>
                     <td class="small">
                         <?php

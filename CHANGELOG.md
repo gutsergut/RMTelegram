@@ -4,69 +4,26 @@
 
 Формат основан на [Keep a Changelog](https://keepachangelog.com/ru/1.0.0/).
 
-## [0.1.81] - 2025-11-29
+## [5.0.4] - 2025-11-11
 
-### Added (Добавлено)
+### Fixed / Improved
 
-#### Задача 5.3: Шаринг реферальной ссылки
-- **Кнопка «📤 Поделиться»** для каждого реферального кода в профиле:
-  - Использует Telegram native share через `openTelegramLink()`
-  - Формирует URL `https://t.me/share/url?url=...&text=...`
-  - Текст шаринга: "Используй мой промокод {code} и получи скидку!"
-  - Fallback на `window.open()` для браузера
-- **Улучшенный UI списка кодов**:
-  - Flex-layout с кнопкой справа
-  - Код выделен жирным шрифтом
-- **Новые языковые строки**:
-  - `COM_RADICALMART_TELEGRAM_SHARE` — "Поделиться"
-  - `COM_RADICALMART_TELEGRAM_SHARE_TEXT` — текст для шаринга
-- **Новая функция `shareReferralLink()`** в app.js
+#### Task плагин radicalmart_telegram_fetch
+- Добавлены недостающие языковые ключи в sys.ini: `PLG_TASK_RADICALMART_TELEGRAM_FETCH_TITLE`, `PLG_TASK_RADICALMART_TELEGRAM_FETCH_DESC` (ru/en) — теперь заголовок рутины корректно отображается в планировщике.
+- Расширен `TASKS_MAP` для обратной совместимости со старым `routineId` (`plg_task_radicalmart_telegram_fetch_apiship`) — предотвращает «молчаливый пропуск» задачи у инсталляций, где в БД осталось старое значение.
+- Добавлено раннее логирование запуска рутины: `Routine start: {routineId}` для форензики.
+- Усилен блок upsert: try/catch и логирование ошибок БД (`Upsert failed provider=...`).
+- Принудительная загрузка языков (`$this->loadLanguage()`) перед логированием — защита при нестандартных последовательностях инициализации.
 
-### Technical Details
-- Изменены файлы: `app.js`, `tgwebapp.php`, `com_radicalmart_telegram.ini`
-- Используется Telegram WebApp API: `Telegram.WebApp.openTelegramLink()`
+### Рекомендации по деплою
+1. Переустановить только плагин или пакет ≥5.0.4.
+2. Проверить в `administrator/logs/com_radicalmart.telegram.php` наличие строки `Routine start:` после ручного запуска.
+3. Если в БД у задач всё ещё старый `type`, выполнить: `UPDATE #__scheduler_tasks SET type='radicalmart_telegram.fetch' WHERE type='plg_task_radicalmart_telegram_fetch_apiship';`
 
-## [0.1.80] - 2025-11-12
-
-### Added (Добавлено)
-
-#### Задача 5.2: Виджет баланса в профиле
-- **Новый блок «💰 Баллы и рефералы»** в профиле:
-  - Баланс баллов с надписью «X баллов» для авторизованных пользователей
-  - Кликабельная ссылка «История» для перехода на страницу истории баллов (`view=points`)
-  - Блок реферальной программы (рефералы, коды) теперь в том же карточном блоке
-- **Для гостей**: показывается «0 баллов» с подсказкой «Авторизуйтесь, чтобы копить баллы»
-- **Новые языковые строки**:
-  - `COM_RADICALMART_TELEGRAM_POINTS_AND_REFERRALS` — заголовок блока
-  - `COM_RADICALMART_TELEGRAM_POINTS_UNIT` — «баллов»
-  - `COM_RADICALMART_TELEGRAM_VIEW_HISTORY` — «История»
-  - `COM_RADICALMART_TELEGRAM_POINTS_LOGIN_HINT` — подсказка для гостей
-- **Новая переменная `window.RMT_ROOT`** в tgwebapp.php для построения ссылок в JS
-
-### Technical Details
-- Изменены файлы: `app.js`, `tgwebapp.php`, `com_radicalmart_telegram.ini`
-- Новая функция `openPointsHistory()` в app.js для навигации
-- Профиль теперь использует карточный дизайн для группировки баллов и рефералов
-
-## [0.1.79] - 2025-11-12
-
-### Fixed (Исправлено)
-
-#### Расчёт тарифов в фоновом режиме для всех провайдеров
-- **КРИТИЧЕСКОЕ ИСПРАВЛЕНИЕ**: тарифы теперь правильно рассчитываются для ВСЕХ провайдеров (CDEK, Boxberry, X5 и т.д.), а не только для Яндекс
-  - **ПРИЧИНА ПРОБЛЕМЫ**: фоновый расчёт использовал один `shipping_id` для всех провайдеров, а каждый провайдер требует свой `shipping_id` из конфигурации
-  - **СИМПТОМЫ**: при клике на ПВЗ тариф рассчитывался правильно, но в фоне (для отображения цен на карте) — нет
-  - **РЕШЕНИЕ**: группировка ПВЗ по провайдерам и использование правильного `shipping_id` для каждой группы
-- **Изменения в `checkout/default.php`**:
-  - Очередь тарифов теперь хранит `{id, provider}` вместо просто ID
-  - `processTariffQueue()` группирует ПВЗ по провайдерам
-  - Каждая группа использует `providerToShippingId[provider]` для определения правильного `shipping_id`
-  - Добавлено предупреждение в консоль если `providerToShippingId` пуст
-
-### Technical Details
-- В `setpvz` (клик по ПВЗ) всегда использовался `providerToShippingId[provider]` — правильно
-- В `tariffs` (фоновый расчёт) использовался `defaultShippingId` для всех — неправильно
-- Теперь оба метода используют одинаковую логику маппинга провайдер → shipping_id
+### Files
+- `plugins/task/radicalmart_telegram_fetch/src/Extension/RadicalMartTelegramFetch.php`
+- `plugins/task/radicalmart_telegram_fetch/language/ru-RU/plg_task_radicalmart_telegram_fetch.sys.ini`
+- `plugins/task/radicalmart_telegram_fetch/language/en-GB/plg_task_radicalmart_telegram_fetch.sys.ini`
 
 ## [5.0.3] - 2025-11-11
 

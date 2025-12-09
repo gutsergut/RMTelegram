@@ -22,7 +22,11 @@
                      <option value="1">JYES</option>
                      <option value="0">JNO</option>
               </field>
-              <field name="acymailing_list_id" type="number" default="0" label="COM_RADICALMART_TELEGRAM_ACYMAILING_LIST_ID_LABEL" description="COM_RADICALMART_TELEGRAM_ACYMAILING_LIST_ID_DESC" class="input-small" />
+              <field name="acymailing_list_id" type="AcyMailingList" default="0" label="COM_RADICALMART_TELEGRAM_ACYMAILING_LIST_ID_LABEL" description="COM_RADICALMART_TELEGRAM_ACYMAILING_LIST_ID_DESC" addfieldprefix="Joomla\Component\RadicalMartTelegram\Administrator\Field" />
+              <field name="acymailing_activate_user" type="radio" default="1" label="COM_RADICALMART_TELEGRAM_ACYMAILING_ACTIVATE_USER_LABEL" description="COM_RADICALMART_TELEGRAM_ACYMAILING_ACTIVATE_USER_DESC">
+                     <option value="1">JYES</option>
+                     <option value="0">JNO</option>
+              </field>
               <field name="fullscreen_top_padding" type="number" default="60" min="0" max="200" label="COM_RADICALMART_TELEGRAM_FULLSCREEN_PADDING_LABEL" description="COM_RADICALMART_TELEGRAM_FULLSCREEN_PADDING_DESC" class="input-small" />
        </fieldset>
 

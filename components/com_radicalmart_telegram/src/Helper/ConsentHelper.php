@@ -134,6 +134,12 @@ class ConsentHelper
 				$db->insertObject('#__radicalmart_telegram_users', $obj);
 			}
 
+			// Синхронизируем согласие с com_j_sms_registration (#__privacy_consents)
+			// когда пользователь принимает политику personal_data
+			if ($consentType === 'personal_data' && $value) {
+				EmailVerificationHelper::syncPrivacyConsent($chatId, 0);
+			}
+
 			return true;
 		} catch (\Exception $e) {
 			return false;

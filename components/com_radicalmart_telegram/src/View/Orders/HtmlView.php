@@ -99,9 +99,17 @@ class HtmlView extends BaseHtmlView
                     $order->total['base_string'] = PriceHelper::toString($order->total['base'], $currency);
                 }
 
+                // Format shipping cost
+                if ($order->shipping->get('final')) {
+                    $order->shipping->set('final_string', PriceHelper::toString($order->shipping->get('final'), $currency));
+                }
+
                 $order->status = $this->getStatus((int) ($order->status ?? 0));
                 $order->link = Uri::root() . 'index.php?option=com_radicalmart&view=order&id=' . (int) $order->id;
-                $order->title = Text::sprintf('COM_RADICALMART_TELEGRAM_ORDER_NUMBER', $order->number ?: $order->id);
+                // Build order title with order number - always use direct format to avoid translation issues
+                $orderNumber = $order->number ?: $order->id;
+                $order->title = 'Заказ №' . $orderNumber;
+
                 $this->items[] = $order;
             }
         } catch (\Throwable $e) {
@@ -116,7 +124,6 @@ class HtmlView extends BaseHtmlView
             $query = $db->getQuery(true)
                 ->select(['id', 'title', 'params'])
                 ->from($db->quoteName('#__radicalmart_statuses'))
-                ->where($db->quoteName('state') . ' = 1')
                 ->order('ordering ASC');
 
             $db->setQuery($query);

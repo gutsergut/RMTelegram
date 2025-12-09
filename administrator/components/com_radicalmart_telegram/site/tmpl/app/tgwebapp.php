@@ -1,9 +1,4 @@
 <?php
-/**
- * Telegram WebApp layout (alias to default.php)
- * @deprecated Use default.php directly
- */
+// For first installer build, use simplified WebApp layout
 \defined('_JEXEC') or die;
-
-// Include the main template
-include __DIR__ . '/default.php';
+require __DIR__ . '/webapp.php';

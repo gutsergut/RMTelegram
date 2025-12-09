@@ -1,6 +1,6 @@
 # HOTFIX v5.0.2: Инструкция по установке
 
-**Дата**: 11 ноября 2025  
+**Дата**: 11 ноября 2025
 **Проблема**: `Class "Joomla\Plugin\Task\Radicalmart_telegram_fetch\Extension\RadicalMartTelegramFetch" not found`
 
 ## Причина ошибки
@@ -218,6 +218,6 @@ c:\Users\serge\PhpstormProjects\cacao.land\dist\pkg_radicalmart_telegram-5.0.zip
 
 ---
 
-**Дата создания**: 11.11.2025  
-**Автор**: @gutsergut  
+**Дата создания**: 11.11.2025
+**Автор**: @gutsergut
 **Версия**: 1.0

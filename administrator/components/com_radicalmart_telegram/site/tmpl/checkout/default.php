@@ -14,7 +14,6 @@ Factory::getLanguage()->load('com_radicalmart_telegram', JPATH_COMPONENT_SITE);
 
 $root = rtrim(Uri::root(), '/');
 $storeTitle = isset($this->params) ? (string) $this->params->get('store_title', 'магазин Cacao.Land') : 'магазин Cacao.Land';
-$fullscreenPadding = isset($this->params) ? (int) $this->params->get('fullscreen_top_padding', 60) : 60;
 
 // Данные пользователя из View (через TelegramUserHelper)
 $tgUser = $this->tgUser ?? null;
@@ -65,35 +64,10 @@ foreach ($pvzIcons as $k => $v) {
     <script src="<?php echo $root; ?>/templates/yootheme/vendor/assets/uikit/dist/js/uikit-icons.min.js"></script>
     <script src="https://telegram.org/js/telegram-web-app.js"></script>
     <script src="https://api-maps.yandex.ru/2.1/?lang=ru_RU&apikey=7866d4e2-e700-48ba-94e6-a53d93c03e96"></script>
-    <script>
-    // UIkit Icons fallback: load from CDN if icons plugin not present
-    (function(){
-        function hasIcons(){ try { return !!(window.UIkit && UIkit.icon); } catch(e){ return false; } }
-        function loadCdnIcons(){
-            try {
-                var s=document.createElement('script');
-                s.src='https://cdn.jsdelivr.net/npm/uikit@3.17.11/dist/js/uikit-icons.min.js';
-                s.async=true;
-                s.onload=function(){ try{ window.UIkit && UIkit.update && UIkit.update(); }catch(e){} };
-                document.head.appendChild(s);
-            } catch(e){}
-        }
-        if (!hasIcons()){
-            if (document.readyState==='loading'){
-                document.addEventListener('DOMContentLoaded', function(){ if (!hasIcons()) loadCdnIcons(); });
-            } else {
-                loadCdnIcons();
-            }
-        }
-    })();
-    </script>
     <style>
         html, body { background-color: var(--tg-theme-bg-color, #ffffff); color: var(--tg-theme-text-color, #222); }
-        body { padding-bottom: 70px; padding-top: env(safe-area-inset-top, 0px); } /* Space for bottom nav */
+        body { padding-bottom: 70px; } /* Space for bottom nav */
         body.contentpane { padding: 0 !important; margin: 0 !important; }
-        /* Fullscreen mode top padding for Telegram header buttons */
-        :root { --tg-fullscreen-padding: <?php echo $fullscreenPadding; ?>px; }
-        .tg-fullscreen-padding { padding-top: var(--tg-fullscreen-padding, 60px); }
 
         /* Bottom fixed navigation */
         #app-bottom-nav { position: fixed; left: 0; right: 0; bottom: 0; z-index: 10005; background: var(--tg-theme-bg-color, #fff); border-top: 1px solid rgba(0,0,0,0.1); }
@@ -174,34 +148,6 @@ foreach ($pvzIcons as $k => $v) {
         .rmt-dark .pvz-info-panel .pvz-provider { color: #333; }
         .rmt-dark .pvz-info-panel .pvz-title { color: #222; }
         .rmt-dark .pvz-info-panel .pvz-address { color: #666; }
-
-        /* PVZ Marker with price label */
-        .pvz-marker-with-price {
-            position: relative;
-            display: flex;
-            flex-direction: column;
-            align-items: center;
-        }
-        .pvz-marker-icon {
-            width: 32px;
-            max-width: 32px;
-            height: 32px;
-        }
-        .pvz-marker-price {
-            position: absolute;
-            bottom: -14px;
-            left: 50%;
-            transform: translateX(-50%);
-            background: #4CAF50;
-            color: #fff;
-            font-size: 10px;
-            font-weight: 600;
-            padding: 2px 5px;
-            border-radius: 8px;
-            white-space: nowrap;
-            box-shadow: 0 1px 3px rgba(0,0,0,0.3);
-            line-height: 1.2;
-        }
     </style>
     <script>
         // PVZ Icons configuration from settings
@@ -434,30 +380,6 @@ foreach ($pvzIcons as $k => $v) {
         let tariffFetchQueue = []; // Queue of {id, provider} objects to fetch tariffs
         let tariffFetchInProgress = false;
 
-        // Build marker options with or without price label
-        function buildFeatureOptions(iconHref, minPrice) {
-            if (!iconHref) return null;
-
-            if (minPrice !== null && mapObjectManager?._pvzPriceLayout) {
-                // Use custom layout with price label
-                return {
-                    iconLayout: mapObjectManager._pvzPriceLayout,
-                    iconShape: {
-                        type: 'Rectangle',
-                        coordinates: [[-20, -48], [20, 0]]
-                    }
-                };
-            } else {
-                // Use simple image layout
-                return {
-                    iconLayout: 'default#image',
-                    iconImageHref: iconHref,
-                    iconImageSize: [32, 32],
-                    iconImageOffset: [-16, -32]
-                };
-            }
-        }
-
         function getTariffCache() {
             try {
                 const raw = sessionStorage.getItem(TARIFF_CACHE_KEY);
@@ -579,10 +501,10 @@ foreach ($pvzIcons as $k => $v) {
                     }
                     console.log(`[Tariff] Batch complete for ${currentProvider}: ${withTariff} with tariff, ${noTariff} without`);
 
-                    // Refresh map after batch to update markers with prices and hide inactive PVZ
-                    if (withTariff > 0 || (noTariff > 0 && hideInactivePvz)) {
-                        applyProviderFilter(true);  // Force refresh to redraw markers with new prices
-                        console.log('[Tariff] Map refreshed (updated markers with prices)');
+                    // Refresh map after batch to hide inactive PVZ
+                    if (noTariff > 0 && hideInactivePvz) {
+                        applyProviderFilter();
+                        console.log('[Tariff] Map refreshed (hidden inactive PVZ)');
                     }
                 }
             } catch(e) {
@@ -605,13 +527,8 @@ foreach ($pvzIcons as $k => $v) {
             if (!feature) return;
 
             if (tariffData && tariffData.min_price !== undefined) {
-                // Round price UP to whole rubles (no kopecks)
-                const roundedPrice = Math.ceil(tariffData.min_price);
-
-                feature.properties._minPrice = roundedPrice;
+                feature.properties._minPrice = tariffData.min_price;
                 feature.properties._hasTariff = true;
-                // Update price label for custom layout
-                feature.properties.priceLabel = `от ${roundedPrice}₽`;
 
                 // Update balloon content with price
                 const p = feature.properties.data;
@@ -621,7 +538,7 @@ foreach ($pvzIcons as $k => $v) {
                     const providerName = p.provider_name || p.provider || '';
                     const typeLabel = p.pvz_type === '2' ? 'Постамат' : 'Пункт выдачи заказов';
                     const typeClass = p.pvz_type === '2' ? 'postamat' : 'pvz';
-                    const priceLabel = `<div style="margin-bottom:8px;color:#4CAF50;font-weight:600;">Доставка от ${roundedPrice} ₽</div>`;
+                    const priceLabel = `<div style="margin-bottom:8px;color:#4CAF50;font-weight:600;">Доставка от ${tariffData.min_price} ₽</div>`;
 
                     feature.properties.balloonContentBody = `
                         <div style="font-weight:600;font-size:14px;margin-bottom:8px;">${p.title}</div>
@@ -638,13 +555,7 @@ foreach ($pvzIcons as $k => $v) {
                     `;
 
                     // Update hint with price
-                    feature.properties.hintContent = p.title + (p.provider_name ? ' (' + p.provider_name + ')' : '') + ' — от ' + roundedPrice + ' ₽';
-
-                    // Update icon options to use price layout
-                    const newOptions = buildFeatureOptions(iconHref, roundedPrice);
-                    if (newOptions) {
-                        feature.options = newOptions;
-                    }
+                    feature.properties.hintContent = p.title + (p.provider_name ? ' (' + p.provider_name + ')' : '') + ' — от ' + tariffData.min_price + ' ₽';
                 }
 
                 // Update info panel if this PVZ is currently previewed
@@ -754,21 +665,6 @@ foreach ($pvzIcons as $k => $v) {
                 controls: ['zoomControl', 'geolocationControl']
             });
 
-            // Register custom icon layout with price label
-            const PvzPriceLayout = ymaps.templateLayoutFactory.createClass(
-                '<div class="pvz-marker-with-price">' +
-                    '<img class="pvz-marker-icon" src="{{ properties.iconHref }}">' +
-                    '{% if properties.priceLabel %}' +
-                    '<div class="pvz-marker-price">{{ properties.priceLabel }}</div>' +
-                    '{% endif %}' +
-                '</div>',
-                {
-                    build: function() {
-                        PvzPriceLayout.superclass.build.call(this);
-                    }
-                }
-            );
-
             mapObjectManager = new ymaps.ObjectManager({
                 clusterize: true,
                 gridSize: 32,
@@ -777,8 +673,6 @@ foreach ($pvzIcons as $k => $v) {
                 geoObjectOpenBalloonOnClick: false,
                 clusterOpenBalloonOnClick: false
             });
-            // Store layout reference for later use
-            mapObjectManager._pvzPriceLayout = PvzPriceLayout;
             mapInstance.geoObjects.add(mapObjectManager);
 
             // Handle click on PVZ point - show info below map
@@ -884,17 +778,18 @@ foreach ($pvzIcons as $k => $v) {
                                 data: p,
                                 _minPrice: minPrice,
                                 _hasTariff: minPrice !== null,
-                                _inactive: cachedTariff === null ? false : (cachedTariff && !cachedTariff.tariffs),
-                                // For custom layout with price
-                                iconHref: iconHref,
-                                priceLabel: minPrice !== null ? `от ${minPrice}₽` : null
+                                _inactive: cachedTariff === null ? false : (cachedTariff && !cachedTariff.tariffs)
                             }
                         };
 
-                        // Add custom icon with price label if available
-                        const featureOptions = buildFeatureOptions(iconHref, minPrice);
-                        if (featureOptions) {
-                            feature.options = featureOptions;
+                        // Add custom icon if available
+                        if (iconHref) {
+                            feature.options = {
+                                iconLayout: 'default#image',
+                                iconImageHref: iconHref,
+                                iconImageSize: [32, 32],
+                                iconImageOffset: [-16, -32]
+                            };
                         }
 
                         return feature;
@@ -986,17 +881,18 @@ foreach ($pvzIcons as $k => $v) {
                                 data: p,
                                 _minPrice: minPrice,
                                 _hasTariff: minPrice !== null,
-                                _inactive: cachedTariff === null ? false : (cachedTariff && !cachedTariff.tariffs),
-                                // For custom layout with price
-                                iconHref: iconHref,
-                                priceLabel: minPrice !== null ? `от ${minPrice}₽` : null
+                                _inactive: cachedTariff === null ? false : (cachedTariff && !cachedTariff.tariffs)
                             }
                         };
 
-                        // Add custom icon with price label if available
-                        const featureOptions = buildFeatureOptions(iconHref, minPrice);
-                        if (featureOptions) {
-                            feature.options = featureOptions;
+                        // Add custom icon if available
+                        if (iconHref) {
+                            feature.options = {
+                                iconLayout: 'default#image',
+                                iconImageHref: iconHref,
+                                iconImageSize: [32, 32],
+                                iconImageOffset: [-16, -32]
+                            };
                         }
 
                         return feature;
@@ -1047,77 +943,12 @@ foreach ($pvzIcons as $k => $v) {
                 );
             }
 
-            // For forceRefresh: completely recreate ObjectManager to bust cache
-            if (forceRefresh && mapInstance) {
-                console.log('[Map] Force refresh: recreating ObjectManager...');
-                // Remove old ObjectManager from map
-                mapInstance.geoObjects.remove(mapObjectManager);
-
-                // Create new ObjectManager with same settings
-                const PvzPriceLayout = mapObjectManager._pvzPriceLayout;
-                mapObjectManager = new ymaps.ObjectManager({
-                    clusterize: true,
-                    gridSize: 32,
-                    clusterDisableClickZoom: false,
-                    geoObjectOpenBalloonOnClick: false,
-                    clusterOpenBalloonOnClick: false
-                });
-                mapObjectManager._pvzPriceLayout = PvzPriceLayout;
-                mapInstance.geoObjects.add(mapObjectManager);
-
-                // Re-attach click handler
-                mapObjectManager.objects.events.add('click', (e) => {
-                    const objectId = e.get('objectId');
-                    const obj = mapObjectManager.objects.getById(objectId);
-                    if (obj) {
-                        showPvzInfo(obj);
-                    }
-                });
-            } else {
-                // Normal refresh: just clear and re-add
-                mapObjectManager.removeAll();
-            }
-
+            // Clear current objects and add filtered
+            mapObjectManager.removeAll();
             if (filteredFeatures.length > 0) {
-                // Deep clone features and rebuild options from current properties
-                let debugCount = 0;
-                const featuresWithOptions = filteredFeatures.map(f => {
-                    const p = f.properties.data;
-                    const iconHref = p ? (pvzIcons[p.provider] || '') : '';
-                    const minPrice = f.properties._minPrice;
-
-                    // Deep clone properties including nested data object
-                    // IMPORTANT: Add iconHref to properties for custom layout template
-                    const clonedProperties = {
-                        ...f.properties,
-                        data: f.properties.data ? { ...f.properties.data } : null,
-                        iconHref: iconHref  // Required for PvzPriceLayout template
-                    };
-
-                    // Rebuild options based on current tariff state
-                    const freshOptions = buildFeatureOptions(iconHref, minPrice);
-
-                    // Debug: log first few features with prices
-                    if (minPrice && debugCount < 3) {
-                        debugCount++;
-                        console.log(`[Map] Feature ${f.id}: minPrice=${minPrice}, iconHref=${iconHref}, priceLabel=${f.properties.priceLabel}`);
-                    }
-
-                    return {
-                        type: f.type,
-                        id: f.id,
-                        geometry: { ...f.geometry },
-                        properties: clonedProperties,
-                        options: freshOptions || undefined
-                    };
-                });
-                mapObjectManager.add({ type: 'FeatureCollection', features: featuresWithOptions });
-
-                // Count features with prices for debug
-                const withPrices = featuresWithOptions.filter(f => f.properties._minPrice).length;
-                console.log(`[Map] Added ${featuresWithOptions.length} features, ${withPrices} with prices`);
+                mapObjectManager.add({ type: 'FeatureCollection', features: filteredFeatures });
             }
-            console.log(`[Map] Refreshed: ${filteredFeatures.length} features, forceRefresh=${forceRefresh}`);
+            console.log(`[Map] Refreshed: ${filteredFeatures.length} features`);
         }
 
         // Show PVZ info in panel below map (instead of balloon)
@@ -1132,12 +963,11 @@ foreach ($pvzIcons as $k => $v) {
             const typeLabel = p.pvz_type === '2' ? 'Постамат' : 'Пункт выдачи';
             const typeClass = p.pvz_type === '2' ? 'postamat' : 'pvz';
 
-            // Get cached tariff and round UP to whole rubles
+            // Get cached tariff
             const cachedTariff = getCachedTariff(p.id);
-            const rawPrice = cachedTariff?.min_price;
-            const roundedPrice = rawPrice !== undefined ? Math.ceil(rawPrice) : undefined;
-            const priceHtml = roundedPrice !== undefined
-                ? `<div class="pvz-price">Доставка от <strong>${roundedPrice} ₽</strong></div>`
+            const minPrice = cachedTariff?.min_price;
+            const priceHtml = minPrice !== undefined
+                ? `<div class="pvz-price">Доставка от <strong>${minPrice} ₽</strong></div>`
                 : `<div class="pvz-price pvz-price-loading">Расчёт стоимости...</div>`;
 
             infoPanel.innerHTML = `
@@ -1563,26 +1393,8 @@ foreach ($pvzIcons as $k => $v) {
             }
         }
 
-        // Force UIkit icons rendering
-        function forceUikitIcons(){
-            try {
-                if (!window.UIkit || !UIkit.icon) return;
-                document.querySelectorAll('[uk-icon]').forEach(function(el){
-                    if (el.querySelector('svg')) return;
-                    var attr = el.getAttribute('uk-icon');
-                    var name = attr ? (attr.match(/icon\s*:\s*([^;]+)/) ? attr.match(/icon\s*:\s*([^;]+)/)[1].trim() : attr.trim()) : '';
-                    if (name) try { UIkit.icon(el, { icon: name }); } catch(e){}
-                });
-                UIkit.update();
-            } catch(e){}
-        }
-
         document.addEventListener('DOMContentLoaded', () => {
             try { document.body.classList.remove('contentpane'); } catch(e){}
-            // Force UIkit icons - multiple attempts
-            try { if (window.UIkit && UIkit.update) UIkit.update(); } catch(e){}
-            setTimeout(forceUikitIcons, 100);
-            setTimeout(forceUikitIcons, 500);
 
             // Set WebApp cookie for redirect protection
             try {
@@ -1594,11 +1406,6 @@ foreach ($pvzIcons as $k => $v) {
                 if (window.Telegram && window.Telegram.WebApp) {
                     Telegram.WebApp.ready();
                     Telegram.WebApp.expand();
-
-                    // Add fullscreen class to body (navbar already has margin-top)
-                    if (Telegram.WebApp.isFullscreen) {
-                        document.body.classList.add('tg-fullscreen');
-                    }
 
                     // BackButton - navigate to cart
                     try {
@@ -1838,23 +1645,8 @@ foreach ($pvzIcons as $k => $v) {
         }
         // ========== END BONUSES ==========
     </script>
-    <style>
-        #app-top-nav { min-height: 44px; }
-        #app-top-nav .uk-navbar-center { flex-grow: 1; display: flex; justify-content: center; }
-        #app-top-nav .uk-navbar-item { min-height: 44px; padding-top: 4px; padding-bottom: 4px; }
-        #app-top-nav .uk-logo img { height: 32px; display: block; }
-        body.tg-fullscreen #app-top-nav { margin-top: var(--tg-fullscreen-padding, 60px); }
-    </style>
 </head>
 <body>
-
-<nav id="app-top-nav" class="uk-navbar-container" uk-navbar>
-    <div class="uk-navbar-center">
-        <a class="uk-navbar-item uk-logo" href="<?php echo $root; ?>/index.php?option=com_radicalmart_telegram&view=app<?php echo $chatId ? '&chat=' . $chatId : ''; ?>" title="cacao.land">
-            <img src="/images/logo/cacao_logo.svg" alt="cacao.land">
-        </a>
-    </div>
-</nav>
 
 <div class="uk-container uk-padding-small">
     <h1 class="uk-h2 uk-margin-small-bottom"><?php echo Text::_('COM_RADICALMART_TELEGRAM_CHECKOUT'); ?></h1>

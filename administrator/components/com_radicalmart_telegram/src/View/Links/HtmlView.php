@@ -44,6 +44,9 @@ class HtmlView extends BaseHtmlView
             $query = $db->getQuery(true)
                 ->select([
                     'u.id AS link_id', 'u.chat_id', 'u.tg_user_id', 'u.username', 'u.user_id', 'u.phone', 'u.created',
+                    'u.first_name', 'u.second_name', 'u.last_name',
+                    'u.tg_first_name', 'u.tg_last_name',
+                    'u.email', 'u.email_verified',
                     'u.consent_personal_data', 'u.consent_personal_data_at',
                     'u.consent_terms', 'u.consent_terms_at',
                     'u.consent_marketing', 'u.consent_marketing_at',
@@ -57,7 +60,7 @@ class HtmlView extends BaseHtmlView
             if ($fSearch !== '') {
                 $like = '%' . $db->escape($fSearch, true) . '%';
                 $ors  = [];
-                foreach (['u.chat_id','u.tg_user_id','u.username','u.phone','ju.name','ju.username','ju.email'] as $col) {
+                foreach (['u.chat_id','u.tg_user_id','u.username','u.phone','u.email','u.first_name','u.second_name','u.last_name','u.tg_first_name','u.tg_last_name','ju.name','ju.username','ju.email'] as $col) {
                     $ors[] = $db->quoteName($col) . ' LIKE ' . $db->quote($like, false);
                 }
                 $query->where('(' . implode(' OR ', $ors) . ')');

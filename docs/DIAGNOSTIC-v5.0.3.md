@@ -176,5 +176,5 @@ tail -n 10 administrator/logs/com_radicalmart.telegram.php 2>/dev/null || echo "
 
 ---
 
-**Дата**: 11.11.2025  
+**Дата**: 11.11.2025
 **Версия**: 5.0.3

@@ -207,15 +207,15 @@ class EmailVerificationHelper
     public static function markVerified(int $chatId): bool
     {
         $db = Factory::getContainer()->get('DatabaseDriver');
-        
-        // Получаем email и имя перед обновлением
+
+        // Получаем данные пользователя перед обновлением
         $query = $db->getQuery(true)
-            ->select(['email', 'tg_first_name', 'tg_last_name'])
+            ->select(['email', 'user_id', 'phone', 'tg_first_name', 'tg_last_name', 'username'])
             ->from($db->quoteName('#__radicalmart_telegram_users'))
             ->where($db->quoteName('chat_id') . ' = :chat')
             ->bind(':chat', $chatId, ParameterType::INTEGER);
         $userData = $db->setQuery($query)->loadAssoc();
-        
+
         $query = $db->getQuery(true)
             ->update($db->quoteName('#__radicalmart_telegram_users'))
             ->set([$db->quoteName('email_verified') . ' = 1', $db->quoteName('email_verification_code') . ' = NULL', $db->quoteName('email_verification_expires') . ' = NULL', $db->quoteName('email_verification_attempts') . ' = 0'])
@@ -223,16 +223,325 @@ class EmailVerificationHelper
             ->bind(':chat', $chatId, ParameterType::INTEGER);
         try {
             $db->setQuery($query)->execute();
-            
-            // Подписываем на AcyMailing после успешной верификации
-            if ($userData && !empty($userData['email'])) {
-                $name = trim(($userData['tg_first_name'] ?? '') . ' ' . ($userData['tg_last_name'] ?? ''));
-                AcyMailingHelper::subscribeAndUpdateFlag($chatId, $userData['email'], $name);
+
+            $email = $userData['email'] ?? '';
+            $name = trim(($userData['tg_first_name'] ?? '') . ' ' . ($userData['tg_last_name'] ?? ''));
+            $existingUserId = (int) ($userData['user_id'] ?? 0);
+
+            // Если Joomla user ещё не привязан — создаём его
+            if ($existingUserId === 0 && !empty($email)) {
+                $newUserId = self::createJoomlaUser($chatId, $email, $name, $userData);
+                if ($newUserId > 0) {
+                    LogHelper::info("Created Joomla user {$newUserId} for chat {$chatId}");
+                }
             }
-            
+
+            // Подписываем на AcyMailing после успешной верификации
+            if (!empty($email)) {
+                AcyMailingHelper::subscribeAndUpdateFlag($chatId, $email, $name);
+            }
+
             return true;
         } catch (\Exception $e) {
             LogHelper::error('Failed to mark email verified: ' . $e->getMessage());
+            return false;
+        }
+    }
+
+    /**
+     * Создаёт Joomla пользователя и привязывает к telegram_users
+     * Отправляет сгенерированный пароль на email и в Telegram
+     */
+    public static function createJoomlaUser(int $chatId, string $email, string $name, array $tgData = []): int
+    {
+        $db = Factory::getContainer()->get('DatabaseDriver');
+
+        // Проверяем, не существует ли уже пользователь с таким email
+        $query = $db->getQuery(true)
+            ->select('id')
+            ->from($db->quoteName('#__users'))
+            ->where($db->quoteName('email') . ' = :email')
+            ->bind(':email', $email);
+        $existingId = (int) $db->setQuery($query, 0, 1)->loadResult();
+
+        if ($existingId > 0) {
+            // Пользователь уже существует — просто привязываем
+            self::linkTelegramToUser($chatId, $existingId);
+            return $existingId;
+        }
+
+        // Генерируем пароль
+        $password = self::generateSecurePassword();
+
+        // Создаём username из email или tg username
+        $username = $tgData['username'] ?? '';
+        if (empty($username)) {
+            $username = strstr($email, '@', true);
+        }
+        // Убеждаемся что username уникален
+        $username = self::ensureUniqueUsername($username);
+
+        // Имя пользователя
+        if (empty($name)) {
+            $name = $username;
+        }
+
+        try {
+            // Создаём пользователя через Joomla API
+            $user = new \Joomla\CMS\User\User();
+            $user->set('name', $name);
+            $user->set('username', $username);
+            $user->set('email', $email);
+            $user->set('password', $password);
+            $user->set('block', 0);
+            $user->set('activation', '');
+            $user->set('sendEmail', 0);
+            $user->set('registerDate', (new Date())->toSql());
+
+            // Получаем группу по умолчанию для новых пользователей
+            $params = \Joomla\CMS\Component\ComponentHelper::getParams('com_users');
+            $defaultGroup = $params->get('new_usertype', 2); // 2 = Registered
+            $user->set('groups', [$defaultGroup]);
+
+            if (!$user->save()) {
+                LogHelper::error('Failed to create Joomla user: ' . implode(', ', $user->getErrors()));
+                return 0;
+            }
+
+            $newUserId = (int) $user->id;
+
+            // Привязываем к telegram_users
+            self::linkTelegramToUser($chatId, $newUserId);
+
+            // Отправляем пароль на email
+            self::sendPasswordEmail($email, $username, $password, $name);
+
+            // Отправляем пароль в Telegram
+            self::sendPasswordTelegram($chatId, $username, $password);
+
+            // Синхронизируем согласие на политику конфиденциальности
+            self::syncPrivacyConsent($chatId, $newUserId);
+
+            return $newUserId;
+        } catch (\Exception $e) {
+            LogHelper::error('Exception creating Joomla user: ' . $e->getMessage());
+            return 0;
+        }
+    }
+
+    /**
+     * Привязывает telegram chat к Joomla user
+     */
+    private static function linkTelegramToUser(int $chatId, int $userId): void
+    {
+        $db = Factory::getContainer()->get('DatabaseDriver');
+        $query = $db->getQuery(true)
+            ->update($db->quoteName('#__radicalmart_telegram_users'))
+            ->set($db->quoteName('user_id') . ' = :uid')
+            ->where($db->quoteName('chat_id') . ' = :chat')
+            ->bind(':uid', $userId, ParameterType::INTEGER)
+            ->bind(':chat', $chatId, ParameterType::INTEGER);
+        $db->setQuery($query)->execute();
+
+        // Синхронизируем согласие на политику конфиденциальности
+        self::syncPrivacyConsent($chatId, $userId);
+    }
+
+    /**
+     * Синхронизирует согласие на политику конфиденциальности с com_j_sms_registration
+     * Если пользователь принял политику в нашем компоненте (consent_personal_data=1),
+     * автоматически проставляем согласие в #__privacy_consents
+     *
+     * @param int $chatId Telegram chat ID
+     * @param int $userId Joomla user ID (0 = получить из telegram_users)
+     */
+    public static function syncPrivacyConsent(int $chatId, int $userId = 0): bool
+    {
+        $db = Factory::getContainer()->get('DatabaseDriver');
+
+        // Получаем данные telegram пользователя
+        $query = $db->getQuery(true)
+            ->select(['consent_personal_data', 'user_id'])
+            ->from($db->quoteName('#__radicalmart_telegram_users'))
+            ->where($db->quoteName('chat_id') . ' = :chat')
+            ->bind(':chat', $chatId, ParameterType::INTEGER);
+        $tgUser = $db->setQuery($query)->loadObject();
+
+        if (!$tgUser) {
+            return false;
+        }
+
+        // Если user_id не передан, берём из telegram_users
+        if ($userId <= 0) {
+            $userId = (int) ($tgUser->user_id ?? 0);
+        }
+
+        if ($userId <= 0) {
+            // Нет привязанного Joomla пользователя — нечего синхронизировать
+            return false;
+        }
+
+        // Проверяем, принял ли пользователь политику в нашем компоненте
+        $hasConsent = (int) ($tgUser->consent_personal_data ?? 0) === 1;
+
+        if (!$hasConsent) {
+            // Пользователь не принял политику в нашем компоненте
+            return false;
+        }
+
+        // Проверяем, есть ли уже согласие в #__privacy_consents
+        $query = $db->getQuery(true)
+            ->select('COUNT(*)')
+            ->from($db->quoteName('#__privacy_consents'))
+            ->where($db->quoteName('user_id') . ' = :uid')
+            ->where($db->quoteName('subject') . ' = ' . $db->quote('PLG_SYSTEM_PRIVACYCONSENT_SUBJECT'))
+            ->where($db->quoteName('state') . ' = 1')
+            ->bind(':uid', $userId, ParameterType::INTEGER);
+        $alreadyConsented = (int) $db->setQuery($query)->loadResult() > 0;
+
+        if ($alreadyConsented) {
+            // Согласие уже есть
+            return true;
+        }
+
+        // Создаём запись о согласии
+        try {
+            $app = Factory::getApplication();
+            $ip = $app->input->server->get('REMOTE_ADDR', '', 'string');
+            $userAgent = $app->input->server->get('HTTP_USER_AGENT', 'Telegram WebApp', 'string');
+
+            $consentRecord = (object) [
+                'user_id' => $userId,
+                'subject' => 'PLG_SYSTEM_PRIVACYCONSENT_SUBJECT',
+                'body'    => sprintf('Согласие принято через Telegram бот. IP: %s, User-Agent: %s', $ip, $userAgent),
+                'created' => (new Date())->toSql(),
+                'state'   => 1,
+            ];
+
+            $db->insertObject('#__privacy_consents', $consentRecord);
+            LogHelper::info("Privacy consent synced for user {$userId} from chat {$chatId}");
+            return true;
+        } catch (\Exception $e) {
+            LogHelper::error('Failed to sync privacy consent: ' . $e->getMessage());
+            return false;
+        }
+    }
+
+    /**
+     * Генерирует безопасный пароль
+     */
+    private static function generateSecurePassword(int $length = 12): string
+    {
+        $chars = 'abcdefghjkmnpqrstuvwxyzABCDEFGHJKMNPQRSTUVWXYZ23456789!@#$%';
+        $password = '';
+        $max = strlen($chars) - 1;
+        for ($i = 0; $i < $length; $i++) {
+            $password .= $chars[random_int(0, $max)];
+        }
+        return $password;
+    }
+
+    /**
+     * Проверяет уникальность username и добавляет суффикс если нужно
+     */
+    private static function ensureUniqueUsername(string $username): string
+    {
+        $db = Factory::getContainer()->get('DatabaseDriver');
+        $baseUsername = preg_replace('/[^a-zA-Z0-9_]/', '', $username);
+        if (empty($baseUsername)) {
+            $baseUsername = 'user';
+        }
+
+        $checkUsername = $baseUsername;
+        $suffix = 1;
+
+        while (true) {
+            $query = $db->getQuery(true)
+                ->select('COUNT(*)')
+                ->from($db->quoteName('#__users'))
+                ->where($db->quoteName('username') . ' = :uname')
+                ->bind(':uname', $checkUsername);
+            $count = (int) $db->setQuery($query)->loadResult();
+
+            if ($count === 0) {
+                return $checkUsername;
+            }
+
+            $checkUsername = $baseUsername . $suffix;
+            $suffix++;
+
+            if ($suffix > 100) {
+                // Fallback: добавляем случайные символы
+                return $baseUsername . '_' . bin2hex(random_bytes(4));
+            }
+        }
+    }
+
+    /**
+     * Отправляет email с учётными данными
+     */
+    private static function sendPasswordEmail(string $email, string $username, string $password, string $name): bool
+    {
+        try {
+            $app = Factory::getApplication();
+            $mailer = Factory::getContainer()->get(MailerFactoryInterface::class)->createMailer();
+
+            $siteName = $app->get('sitename', 'Cacao.Land');
+            $siteUrl = rtrim(\Joomla\CMS\Uri\Uri::root(), '/');
+
+            $subject = Text::sprintf('COM_RADICALMART_TELEGRAM_ACCOUNT_CREATED_SUBJECT', $siteName);
+
+            $body = Text::sprintf(
+                'COM_RADICALMART_TELEGRAM_ACCOUNT_CREATED_BODY',
+                $name ?: $username,
+                $siteName,
+                $siteUrl,
+                $username,
+                $password
+            );
+
+            $mailer->addRecipient($email, $name);
+            $mailer->setSubject($subject);
+            $mailer->setBody($body);
+            $mailer->isHtml(false);
+
+            return $mailer->Send();
+        } catch (\Exception $e) {
+            LogHelper::error('Failed to send password email: ' . $e->getMessage());
+            return false;
+        }
+    }
+
+    /**
+     * Отправляет учётные данные в Telegram
+     */
+    private static function sendPasswordTelegram(int $chatId, string $username, string $password): bool
+    {
+        try {
+            $params = \Joomla\CMS\Component\ComponentHelper::getParams('com_radicalmart_telegram');
+            $botToken = $params->get('bot_token', '');
+
+            if (empty($botToken)) {
+                return false;
+            }
+
+            $siteName = Factory::getApplication()->get('sitename', 'Cacao.Land');
+            $siteUrl = rtrim(\Joomla\CMS\Uri\Uri::root(), '/');
+
+            $message = Text::sprintf(
+                'COM_RADICALMART_TELEGRAM_ACCOUNT_CREATED_TG',
+                $siteName,
+                $siteUrl,
+                $username,
+                $password
+            );
+
+            $client = new \Joomla\Component\RadicalMartTelegram\Site\Service\TelegramClient($botToken);
+            $client->sendMessage($chatId, $message);
+
+            return true;
+        } catch (\Exception $e) {
+            LogHelper::error('Failed to send password to Telegram: ' . $e->getMessage());
             return false;
         }
     }

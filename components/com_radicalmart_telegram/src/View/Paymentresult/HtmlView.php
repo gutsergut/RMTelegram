@@ -1,7 +1,7 @@
 <?php
 /**
  * @package     com_radicalmart_telegram (site)
- * @subpackage  View
+ * Payment Result View
  */
 
 namespace Joomla\Component\RadicalMartTelegram\Site\View\Paymentresult;
@@ -10,29 +10,32 @@ namespace Joomla\Component\RadicalMartTelegram\Site\View\Paymentresult;
 
 use Joomla\CMS\Factory;
 use Joomla\CMS\MVC\View\HtmlView as BaseHtmlView;
+use Joomla\Component\RadicalMartTelegram\Site\Helper\TelegramUserHelper;
 
 class HtmlView extends BaseHtmlView
+{
+    protected $params;
+    protected $orderNumber;
+    protected $result;
+    protected $orderId;
+    public $tgUser = null;
 
+    public function display($tpl = null)
+    {
+        $lang = Factory::getLanguage();
+        $lang->load('com_radicalmart_telegram', JPATH_SITE);
 
+        $app = Factory::getApplication();
+        $input = $app->input;
+        
+        $this->params = $app->getParams('com_radicalmart_telegram');
+        $this->orderNumber = $input->get('order_number', '', 'string');
+        $this->result = $input->get('result', 'return', 'string');
+        $this->orderId = $input->get('order_id', 0, 'int');
+        
+        // Используем централизованный хелпер для идентификации пользователя
+        $this->tgUser = TelegramUserHelper::getCurrentUser();
 
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-}    }        parent::display($tpl);        $this->orderId = $input->get('order_id', 0, 'int');        $this->result = $input->get('result', 'return', 'string'); // success, error, return        $this->orderNumber = $input->get('order_number', '', 'string');        $this->params = $app->getParams('com_radicalmart_telegram');        $input = $app->input;        $app = Factory::getApplication();        $lang->load('com_radicalmart_telegram', JPATH_SITE);        $lang = Factory::getLanguage();    {    public function display($tpl = null)    protected $orderId;    protected $result;    protected $orderNumber;    protected $params;{
+        parent::display($tpl);
+    }
+}
