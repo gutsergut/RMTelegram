@@ -182,7 +182,9 @@ M0 — Вопросы к согласованию
 - [x] Статус бота, webhook, информация — view=settings.
 - [x] Статус ПВЗ (last_fetch/last_total) — view=status.
 - [x] Настройки фич (промо/баллы/рефералка/доставка), локализация сообщений — config.xml.
-- [ ] CLI: установка/удаление webhook, рассылки, служебные задачи.
+- [x] CLI: установка/удаление webhook (`php cli/joomla.php com_radicalmart_telegram:webhook set|delete|info`).
+- [x] CLI: housekeeping (`php cli/joomla.php com_radicalmart_telegram:housekeep`).
+- [ ] CLI: рассылки (будущее).
 
 Критерии приемки:
 - Раздел настроек и списки в админке работают, CLI команды выполняются.

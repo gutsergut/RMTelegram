@@ -16,6 +16,7 @@ use Joomla\CMS\MVC\Factory\MVCFactoryInterface;
 use Joomla\Component\RadicalMartTelegram\Administrator\Extension\RadicalMartTelegramComponent;
 use Joomla\Component\RadicalMartTelegram\Administrator\Console\ApiShipFetchCommand;
 use Joomla\Component\RadicalMartTelegram\Administrator\Console\HousekeepCommand;
+use Joomla\Component\RadicalMartTelegram\Administrator\Console\WebhookCommand;
 use Joomla\DI\Container;
 use Joomla\DI\ServiceProviderInterface;
 
@@ -58,6 +59,17 @@ return new class () implements ServiceProviderInterface {
                 true
             );
             $container->tag('console.command', [HousekeepCommand::class]);
+        }
+
+        if (class_exists(WebhookCommand::class)) {
+            $container->set(
+                WebhookCommand::class,
+                function () {
+                    return new WebhookCommand();
+                },
+                true
+            );
+            $container->tag('console.command', [WebhookCommand::class]);
         }
     }
 };
